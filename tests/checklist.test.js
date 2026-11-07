@@ -353,3 +353,17 @@ test('Campers: loading until the list arrives, todo with none, a count when ther
   assert.equal(hubModel(clView()).total, 3, 'loading is not counted');
   assert.equal(hubModel(clView({ campers: { status: 'ok', total: 64, empty: [] } })).total, 4);
 });
+
+// ── Step 28: the hub door for a new-year setup under way ──
+test('a new-year setup under way is the hub door, for each of the three readers, ahead of the camp week and the original-week doors', () => {
+  const w = (o) => hubDoor(clView({ ownerName: 'patrick', doorActions: { wizard: true, 'new-year': true }, weekRunning: true, wizard: Object.assign({ step: 4, year: '2027', idleMs: 0, canTakeOver: false }, o) }));
+  const mine = w({ state: 'mine' });
+  assert.deepEqual([mine.door, mine.ownerButton, mine.text], ['wizard', 'Carry on', 'Step 4 of 5']);
+  const other = w({ state: 'other', idleMs: 5 * 60000 });
+  assert.deepEqual([other.door, other.ownerButton, other.pair, other.takeover], ['wizard', '', true, false]);
+  assert.equal(w({ state: 'other', canTakeOver: true }).takeover, true);
+  const watching = w({ state: 'watching' });
+  assert.equal(watching.lead, 'Patrick is setting up 2027 (step 4 of 5).');
+  assert.equal(watching.ownerButton + watching.ownerText, '', 'another director reads, never presses');
+  assert.equal(hubDoor(clView({ weekRunning: true, wizard: null })).door, 'running', 'no run: the camp week door as before');
+});

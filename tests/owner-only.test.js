@@ -227,3 +227,34 @@ test('Turn on and the way back for the four smaller sections are the owner\'s to
   assert.equal(await secUseOriginal('meals').then((x) => x.reason), 'owner');
   ooReset();
 });
+
+// ── Step 28: the new-year setup's screens (setup-ui.js §17) are the owner's by the same helpers ──
+test('the new-year setup, its Undo and Advanced refuse a non-owner director before asking or writing anything, and the screen reads as the hub', async () => {
+  ooReset();
+  authUser = OO_DIRECTOR;
+  setMemberRole('editor');
+  memberDirectory = { [OWNER_MEMBER_KEY]: { role: 'editor', name: 'Patrick' } };
+  memberDirectoryLoaded = true;
+  const toasts = [];
+  const realToast = showToast;
+  showToast = (m) => { toasts.push(m); };
+  try {
+    state.ui.builderScreen = 'wizard';
+    assert.equal(setupScreen(), 'hub', 'a stored wizard screen is the hub for anyone but the owner');
+    assert.equal((await nywStart()).reason, 'owner');
+    assert.equal((await nywTakeOver(), undefined), undefined);
+    nywOpenUndo();
+    await advAsk('meals');
+    assert.equal(nywUi.undo, null);
+    assert.ok(toasts.length >= 3 && toasts.every((t) => /Only Patrick can/.test(t)), toasts.join(' | '));
+    assert.equal((await setupRestartSection('meals', {})).reason, 'owner');
+    ['setup-advanced', 'nyw-staff', 'nyw-undo'].forEach((id) => assert.equal(setupSheetReady(id), false, id));
+    // the door click runs only for the owner, and a plain director's door is a sentence, never a button
+    const door = hubDoor({ ownerName: 'Patrick', doorActions: { wizard: true }, wizard: { state: 'watching', step: 2, year: '2027' } });
+    assert.equal(door.ownerButton, '');
+    assert.equal(door.pair, false);
+    // and its owner-only controls all start hidden
+    const html = readFixture('../index.html');
+    ['hub-door-pair', 'rp-year-undo', 'setup-advanced'].forEach((id) => assert.ok(new RegExp('id="' + id + '"[^>]*data-owner-only[^>]*hidden|data-owner-only[^>]*id="' + id + '"|id="' + id + '"[^>]*data-owner-only').test(html), id + ' is owner-only in the markup'));
+  } finally { showToast = realToast; state.ui.builderScreen = undefined; ooReset(); }
+});

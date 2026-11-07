@@ -9316,6 +9316,7 @@ async function nywTakeOver() {
   nywUi.watching = false;
   nywUi.save = { state: 'idle', res: null, why: '' };
   const inh = r.inherited;
+  nywOpenScreen(); // (it clears any question: the one about the inherited answers is raised after it)
   if (inh && !r.already && (inh.weekStart || JSON.stringify(inh.carry) !== JSON.stringify(wizardNormAnswers({}).carry) || inh.double !== 'same')) {
     nywUi.ask = {
       q: 'You chose on your other device:', list: nywAnswerLines(inh),
@@ -9323,7 +9324,6 @@ async function nywTakeOver() {
       b: { label: 'Start over', run: async () => { nywUi.ask = null; await wizardStartOver(); renderAll(); } },
     };
   }
-  nywOpenScreen();
   if (nywUi.ask) renderAll();
 }
 
