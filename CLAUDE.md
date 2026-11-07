@@ -719,6 +719,16 @@ never rebuilds a segmented control under a finger.
   `#games-live` (`data-card="standings"`) — and the Chat tab shows chat.js's "Chat is turned off right
   now". **Preview as a counselor** (§7.4) is built (Step 24): a lens over the role,
   not a role — see "Preview as a counselor: behaviour".
+- **A section with nothing real in it is not shown to counselors** (redesign §1.2 #14, Step 29). `verseSectionEmpty()` (no day's verse is real — a
+  "to be announced" with no reference is not — and the theme isn't either) and `cleanupSectionEmpty()` (`cleanupOnRota` false on every day) are asked
+  through the accessors, so they are right with each section's switch on or off and flip by themselves when a director fills a day in. For a
+  counselor or a preview (`viewRole()`), `applyCardVisibility`, `shellSheetAllowed` and `nowHiddenSections()` treat an empty section like a hidden one:
+  no More row, no sheet, Bible study is a plain activity card, and the schedule / calendar say no "TBA" cleanup line (`mealCleanupNote`,
+  `icsCleanupText` say nothing for a meal with no team). Directors always see both; the hub's to-do is their prompt. Pinned by
+  `empty-sections.test.js` (+ senior, in the seeded passes). Senior's seed is the case today; junior is unaffected unless EVERY day is empty.
+  `campWord()` is the one way to write the camp's name in the frame ("Junior camp"; the calendar's `X-WR-CALNAME` keeps the label).
+  The hub's **Phone alerts** row is judged (`hubAlertsView`: sender off / no dates / sending / "Schedule sent to phones", never a warning) and opens
+  the Alerts drawer over the builder.
 - **The Games tab** is built (Step 18, "The Games tab"): the Competitions, Current standings and Quick points cards are gone. The home cards no
   longer fold open: **the accordion, `jelly-collapsible` cards, `applyCardDefaults`,
   the 5-minute idle collapse and the `.card-opening` rise are gone**, and the
