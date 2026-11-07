@@ -291,10 +291,10 @@
       font-size: clamp(1.6rem, 6vw, 7rem); font-weight: 850; letter-spacing: -0.02em;
       color: var(--ink);
     }
-    /* The phones' "tie" tag: a word, lower case (the markup's TIE is lowered here). */
+    /* The phones' "tie" tag: a word, written lower case in the DOM. */
     .hero-place .tie { font-size: 0.5em; vertical-align: middle; margin-left: 0.5rem;
       background: var(--ink); color: #ffffff; padding: 0.15em 0.6em; border-radius: 999px;
-      text-transform: lowercase; letter-spacing: 0; }
+      letter-spacing: 0; }
     .hero-entries { display: flex; gap: clamp(1.4rem, 5vw, 6rem); align-items: center; justify-content: center; flex-wrap: wrap; }
     /* Shield large on the LEFT, bold text on the RIGHT. */
     .hero-entry { display: flex; flex-direction: row; align-items: center; gap: clamp(1rem, 3.5vw, 4.5rem); text-align: left; }
@@ -469,9 +469,8 @@
     /* The app's crown (#i-crown), gold on its edge, as the phones and the remote draw it. */
     .champ .crown { display: grid; place-items: center; animation: bob 2.4s ease-in-out infinite; }
     .champ .crown svg { width: clamp(2.6rem, 10vh, 8.5rem); height: clamp(2.6rem, 10vh, 8.5rem); fill: var(--gold); stroke: var(--gold-edge); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
-    /* Sentence case (§8.2): the markup's "Camp Champions" reads "Camp champions". */
-    .champ .lead { font-size: clamp(1.2rem, 3.8vw, 3.6rem); font-weight: 850; letter-spacing: -0.015em; color: var(--ink); text-transform: lowercase; }
-    .champ .lead::first-letter { text-transform: uppercase; }
+    /* Sentence case (§8.2): the DOM already says "Camp champions". */
+    .champ .lead { font-size: clamp(1.2rem, 3.8vw, 3.6rem); font-weight: 850; letter-spacing: -0.015em; color: var(--ink); }
     .champ-shields { display: flex; gap: clamp(1rem, 3vw, 2.5rem); justify-content: center; flex-wrap: wrap; }
     .champ-shields > * { width: clamp(150px, 40vh, 520px); height: auto;
       filter: drop-shadow(0 12px 22px rgba(20,26,72,0.28)); animation: bob 3s ease-in-out infinite; }

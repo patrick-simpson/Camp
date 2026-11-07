@@ -430,7 +430,7 @@ test('a full reveal: intro, each place through its beats, the board, the final t
   tv.advance(600);
   assert.equal(tv.byId('intro').style.display, 'none', 'and is gone');
   assert.ok(tv.board().has('dropped'), 'the board drops off the bottom while the spotlight is up');
-  assert.ok(/6th/.test(h.place) && !/TIE/.test(h.place));
+  assert.ok(/6th/.test(h.place) && !/tie/.test(h.place));
   assert.ok(/Runaway John Deersz/.test(h.entries[0].info) && /class="num">11</.test(h.entries[0].info));
   tv.advance(2500); // 3.1 s in
   h = tv.hero();
@@ -481,7 +481,7 @@ test('a tie is one place with two teams side by side; a two-way tie fights in th
   tv.feed({ real: nodeOf(tv, tie2, { cur: 0, shown: 1, teams: 3, seq: 2 }) });
   let h = tv.hero();
   assert.ok(h.has('tied') && h.has('fight') && h.has('solo'), 'two-way tie: side by side, the shields fight');
-  assert.ok(/TIE/.test(h.place) && /2nd/.test(h.place));
+  assert.ok(/tie/.test(h.place) && /2nd/.test(h.place));
   assert.equal(h.entries.length, 2);
   assert.ok(/Pumpkins/.test(h.entries[0].info) && /Turkeys/.test(h.entries[1].info), 'inside the tie, reveal-core\'s order (golds first)');
   tv.advance(3100);
@@ -551,7 +551,7 @@ test('a finale: the champions are crowned (a full-screen celebration), then the 
   tv.advance(8500);
   tv.feed({ real: nodeOf(tv, G, { phase: 'champion', cur: 5, shown: 6, finale: true, seq: 9 }) });
   assert.ok(tv.finale(), 'the crowning');
-  assert.ok(/Camp Champions/.test(tv.byId('champ').innerHTML) && /Ferocious Foxes/.test(tv.byId('champ').innerHTML) && /40 points/.test(tv.byId('champ').innerHTML));
+  assert.ok(/Camp champions/.test(tv.byId('champ').innerHTML) && /Ferocious Foxes/.test(tv.byId('champ').innerHTML) && /40 points/.test(tv.byId('champ').innerHTML));
   assert.equal(tv.board().style.display, 'none', 'the board is behind it');
   assert.ok(tv.cannonsShown(), 'confetti, because the crowning is inside its first three seconds');
   tv.feed({ real: nodeOf(tv, G, { phase: 'table', cur: 5, shown: 6, finale: true, seq: 10 }) });

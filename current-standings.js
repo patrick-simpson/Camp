@@ -552,7 +552,7 @@
     // Built from DOM nodes: the mark is created, not concatenated, and every string that came from the
     // database is esc()'d (names) or already laundered (emoji) before it lands in a markup fragment.
     var hero = box('hero');
-    hero.appendChild(box('hero-place', esc(ordinal(g.place)) + ' place' + (tie ? '<span class="tie">TIE</span>' : '')));
+    hero.appendChild(box('hero-place', esc(ordinal(g.place)) + ' place' + (tie ? '<span class="tie">tie</span>' : '')));
     var entriesEl = box('hero-entries');
     g.entries.forEach(function (e) {
       var entry = box('hero-entry');
@@ -625,7 +625,7 @@
     var emojis = g.entries.map(function (e) { return teamEmojiOf(e.id); }); // the confetti only, never beside a name
     var pts = g.entries[0].p;
     var champ = $('champ');
-    champ.innerHTML = '<div class="crown" aria-hidden="true"></div><div class="lead">Camp Champions</div>';
+    champ.innerHTML = '<div class="crown" aria-hidden="true"></div><div class="lead">Camp champions</div>';
     var crownSlot = champ.querySelector('.crown');
     if (crownSlot) {
       var crown = document.createElementNS(SVG_NS, 'svg');
