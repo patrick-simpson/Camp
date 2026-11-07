@@ -4814,6 +4814,43 @@ have no action. `docs/build-notes/verify/step28-design.cjs` draws every state (s
   `-fill-label`, `#nyu-hold-confirm`, `#nyu-hold-cancel`); `#sheet-setup-advanced` (`.adv-row[data-adv-section]` buttons
   with `[data-adv-state]`, each opening ONE askDialog); the stranded bar's `.sync-alert-ico`.
 
+## The new-year wizard: the engine (setup-sync.js §11 + app.js — Step 28, session 1)
+
+P2 §11.3, §7.3, §6.11. The ENGINE only: the screens, routing, hub door and menu rows are session 2 (the markup above is already in place).
+Every entry point is owner-only (`isOwner()`), every function answers `{ ok, reason? }` instead of throwing, and nothing runs until the
+owner acts: with no claim and no epoch every other engine is untouched.
+
+- **The claim** `setup/meta/wizard = { step, byKey, at, fromEpoch, archiveId?, answers? }`, always written whole by a transaction
+  (`wizardTxn`); `answers` is a JSON string (the driving device id, the step 1-2 answers). Another device or a non-owner reads it and
+  Watches; the owner's other device may Take over (`wizardTakeOver`) once the driver has been idle 15 minutes (`at` is refreshed by
+  every step, answer and tap). `wizardModel()` is the one reader (`mine | other | none`, `canTakeOver`). `wizardStart` refuses
+  (`camp-week`, `ask-camp-week`, `dates`, `offline`, ...) before it writes.
+- **The archive** (`wizardArchive`, step 3): a `pre-wizard` point and a pinned `archive` point written, READ BACK and compared (length and
+  hash: `wizardVerifyArchive`) before anything can be cleared. `wizardWaitQuiet` first lets this phone's own pushes finish (a few seconds;
+  `wizardQuietMs`, a variable so a test asks for no waiting): the archive must hold what the clear is about to delete.
+- **The clear** (`wizardClear`, step 4): re-checks everything (claim is mine, archive still matches the data, else a fresh archive; the
+  camp-week freeze; online; no unsent work) and sends ONE atomic multi-path update built by the pure `wizardClearUpdate`: the new epoch
+  pair in `state/meta` and `setup/meta`, last year's scoreboard keys (`WIZARD_STATE_CLEAR`), the step-2 Clear choices, `campers`,
+  `accessRequests`, BOTH children of `revealPublic` and `revealFull`, and the claim itself; **never `members/*`**. One refused path
+  refuses all of it. Members' teams then follow as one small update per member (`wizardTakeMembersOff`; the owner row skipped, an
+  incomplete row refused and listed). `wizardCommitInFlight` holds all three engines' pushes while it is on the wire.
+- **Undo the new-year setup** (`wizardUndoOffer`, `wizardUndo`): only the NEWEST archive, owner only, nothing of this phone's in flight; it
+  restores the data AND the epoch (a legacy archive DELETES the epoch pair) in one atomic update. **Recorded limit:** the rules cannot
+  refuse a director's hand-sent undo of a legacy-epoch archive (it only deletes; §1.4 limit b); the app refuses it first.
+- **The app's side of a new year** (app.js): the double-points window follows `state.meta.epoch` (none = pinned to the legacy window, a year
+  with no window = none); a device's remembered year (`campScoreboardEpochSeen`) is reset the first time it adopts another epoch (followed
+  team, identity, baseline, dismissed banners, undo, clashes, rain and wizard drafts; never on the first sight of the legacy week); the
+  change history drawer shows this camp year only (Show earlier years); a reveal from another year is ignored; sign-out wipes the wizard's
+  device keys.
+- **The setup engine's epoch check** (`setup-sync.js`): a snapshot whose `setup/meta/epoch` differs from the base's STRANDS the phone's
+  unconfirmed week (a download, nothing applied), like the state and config engines; the engine never applies old-year work to a new year.
+- **Tests**: `wizard.test.js` (+ `.senior`) against `fake-rtdb.js`; `tests/emulator/wizard-client.mjs` (opt-in, in `npm run test:r1`) runs
+  the real client's whole wizard on both camps under the published rules and replays its exact payloads as a non-owner director and a
+  counselor: refused, the clear and the undo as a whole. No rules change belongs to this step.
+- **Not built yet (session 2):** routing (`wizard` in `SETUP_SCREENS`, the three sheets in `SETUP_SHEETS`), `HUB_DOOR_ACTIONS['new-year']`
+  and the hub's `wizard` door, `SETUP_OWNER_ACTIONS` for new-year / undo-new-year / advanced, the screen's painters and motion, the
+  `#sheet-restore[data-kind=archive]` fill, and `strandedBarHtml`'s new template.
+
 ## Counselors ↔ teams ↔ accounts
 
 A member record can carry a **`teamId`** (`'t0'`…`'t5'`) — the team that
@@ -5103,7 +5140,7 @@ More sync invariants (each fixed after it bit us — don't regress these;
   ONE writer (two bullets down). A different EPOCH on the server strands this
   phone's work instead of merging it (next bullet).
 - **A new camp year strands a phone's unsent work, never applies it** (S2d, setup
-  rebuild spec §6.2 #3 / §6.11). The new-year wizard (Step 28, not built) will stamp
+  rebuild spec §6.2 #3 / §6.11). The new-year wizard (Step 28, engine built: see "The new-year wizard: the engine") stamps
   `state/meta/epoch` (`w<YYYYMMDD>`; absent = the legacy week, which is every camp
   today). `firstSnapshotMerge` compares the epoch in the baseline the server last
   CONFIRMED to this phone (`epochOfTree(base)`, i.e. `_syncBase`) with the one in
