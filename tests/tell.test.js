@@ -6,7 +6,9 @@
 // and a closed composer; that the auto-update waits (reloadBlocked) while a message is being typed or sent; and that a
 // counselor reaches none of it. Nothing here waits on the clock: every send is awaited through its own promise.
 
-const realPushConfigured = pushConfigured;
+// Phone alerts are live since Step 27 (push.js's PUSH_SERVICE_URL is set), so this file switches them OFF by default
+// and each case that wants them says live(true): every case below states the state it is about.
+pushConfigured = () => false;
 let toasts = [];
 let asked = [];
 let answer = 'replace';
@@ -23,7 +25,7 @@ pushSendAlert = async (o) => {
 };
 
 function el(id) { return document.getElementById(id); }
-function live(on) { pushConfigured = on ? () => true : realPushConfigured; }
+function live(on) { pushConfigured = on ? () => true : () => false; }
 
 function boot(role, opts) {
   opts = opts || {};
@@ -166,7 +168,7 @@ test('"ends in 38 min": the time left, in the words a director reads', () => {
 
 // ── Buzz: disabled with its reason until phone alerts are live ───────
 
-test('Buzz is disabled with its reason while phone alerts are not live (PUSH_SERVICE_URL is blank today), and offline', () => {
+test('Buzz is disabled with its reason while phone alerts are not live (as before Step 27, or if the sender is ever disconnected), and offline', () => {
   boot();
   assert.equal(tellBuzzState().available, false);
   assert.equal(tellBuzzState().reason, "Phone alerts aren't switched on yet");

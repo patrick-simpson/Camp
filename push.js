@@ -34,7 +34,7 @@
 // When you fill this in, ALSO add the same origin to connect-src in the
 // Content-Security-Policy in index.html — otherwise the browser silently
 // blocks every request to it (the drawer's sender line will say so).
-const PUSH_SERVICE_URL = '';
+const PUSH_SERVICE_URL = 'https://camp-alerts.patricksimpson-fx.workers.dev';
 
 // Part of the service worker's registration URL (sw.js?v=N). Bump it when
 // sw.js changes in a way an already-installed worker must pick up promptly —

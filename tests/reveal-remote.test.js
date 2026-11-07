@@ -428,6 +428,8 @@ test('the peek: the masked row shows while held and is masked again at once duri
 });
 
 test('the ready screen: the checks say what they found (a warning for an unscored game, never a gate), the switches say their state in words', async () => {
+  const realCfg = pushConfigured;
+  pushConfigured = () => false;                               // phone alerts not live (as before Step 27)
   await bootDirector();
   await openRemote();
   renderRevealRemote();
@@ -460,6 +462,7 @@ test('the ready screen: the checks say what they found (a warning for an unscore
   assert.equal(data('reveal-opt-buzz', 'off'), '');
   closeReveal();
   afterDirector();
+  pushConfigured = realCfg;
 });
 
 test('another director\'s reveal says who started it, by first name from the member list and never from the public node; the starter\'s own phone says nothing', async () => {

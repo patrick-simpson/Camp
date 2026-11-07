@@ -31,16 +31,16 @@
        moved out of this file polls this address and reads the exact `var TV_BUILD`
        text in the next comment instead, so that text must stay in the HTML or a
        stuck TV would never learn about this or any later build.
-       var TV_BUILD = '2026-11-04T01:00:42Z'
+       var TV_BUILD = '2026-11-07T04:48:52Z'
   -->
-  <meta name="tv-build" content="2026-11-04T01:00:42Z">
+  <meta name="tv-build" content="2026-11-07T04:48:52Z">
   <title>Current Standings</title>
   <meta name="description" content="Live camp standings — the big reveal.">
   <meta name="theme-color" content="#f5efe2">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%86%3C/text%3E%3C/svg%3E">
   <!-- Jelly UI web components (vendored — same module the scoreboard uses), so
        any control added here matches the rest of the site. -->
-  <script type="module" src="vendor/jelly.js?v=208"></script>
+  <script type="module" src="vendor/jelly.js?v=209"></script>
   <style>
     /* The big screen (redesign §4.11, mockup 11). Public: anyone with the address
        sees it, so it shows "Waiting for the directors…" and, while a director runs
@@ -572,16 +572,16 @@
           integrity="sha384-sEVIly94UBRLKWdkYoPpSG7GD/e79YHMrxVyZaOk712Ga7+EAw6w1EFi+xBzBdd+" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"
           integrity="sha384-1/m+A1jVWbD3yiK3/vtFvm1+LjK1WLpSoDY+Kaxppwn/yP9BVSgdHTNQVOjrzUO5" crossorigin="anonymous"></script>
-  <script src="firebase-config.js?v=208"></script>
+  <script src="firebase-config.js?v=209"></script>
   <!-- The camp this page shows, then the shared camp code, then the page itself.
        Order matters: tv-camp.js (sets CAMP_FORCE from ?camp=) before camps.js,
        defaults.js before camps.js (junior's catalog), camp-core.js before the page.
        None of the shared files run anything at load. -->
-  <script src="defaults.js?v=208"></script>
-  <script src="camp-core.js?v=208"></script>
-  <script src="reveal-core.js?v=208"></script>
-  <script src="tv-camp.js?v=208"></script>
-  <script src="camps.js?v=208"></script>
-  <script src="current-standings.js?v=208"></script>
+  <script src="defaults.js?v=209"></script>
+  <script src="camp-core.js?v=209"></script>
+  <script src="reveal-core.js?v=209"></script>
+  <script src="tv-camp.js?v=209"></script>
+  <script src="camps.js?v=209"></script>
+  <script src="current-standings.js?v=209"></script>
 </body>
 </html>

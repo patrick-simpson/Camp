@@ -576,8 +576,8 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
   targets yet (the Worker emits `chat:<ch>`, `schedule` or none; sw.js's
   validator drops anything else to "", which opens Now — where `reveal` and
   `alert:<id>` land anyway), so `PUSH_SW_VERSION` stays. Step 23's Buzz on a reveal's Start is an
-  ordinary director alert (`pushSendAlert`, no `reveal` target, and dark until
-  Step 27 sets the Worker's URL); when something does start sending `reveal`, the
+  ordinary director alert (`pushSendAlert`, no `reveal` target; live since Step 27
+  connected the sender); when something does start sending `reveal`, the
   Worker, sw.js's regex and `PUSH_SW_VERSION` change together.
 
 ## The shell frame (Step 13 — markup and visual system)
@@ -1204,8 +1204,8 @@ scope with reveal-core.js).
 - **Buzz** (`revealBuzzState`, `revealBuzzAfterStart`): a REAL Start calls
   `pushSendAlert({ text: 'The standings reveal is starting', audience: 'all' })`
   (push.js: a text argument is a direct send, no composer, no confirm, never throws)
-  only when phone alerts are live (`pushConfigured()`, i.e. `PUSH_SERVICE_URL` set at
-  Step 27); until then it is disabled with its reason. A practice has no path to it
+  only when phone alerts are live (`pushConfigured()`, i.e. `PUSH_SERVICE_URL` set — it is
+  since Step 27); without them it is disabled with its reason. A practice has no path to it
   (greyed: "Practice runs never buzz phones.") and never writes `real`.
 - **The screen stays on.** `wakeLockNeeded()` (app.js) = a timer running OR
   `revealWakeNeeded()` (a director with the remote open, or a real reveal live on a
@@ -1489,8 +1489,8 @@ the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintM
   yet" · "nobody on Turkey Dinner has phone alerts on yet" (a team by its whole name: a sentence, not a label).
   `tellSplit(text)`: the first sentence is the notice title (a trailing full stop dropped), the rest the line
   under it; a line break ends the title too.
-- **Buzz is disabled with its reason** until phone alerts are live (`pushConfigured()`; `PUSH_SERVICE_URL` is
-  blank today, so it reads "Phone alerts aren't switched on yet") and offline ("No signal: buzzing needs a
+- **Buzz is disabled with its reason** until phone alerts are live (`pushConfigured()`; `PUSH_SERVICE_URL` has
+  been set since Step 27 — blank, it reads "Phone alerts aren't switched on yet") and offline ("No signal: buzzing needs a
   connection"). It is off by default, never restored from the saved draft, and DISARMED the moment it becomes
   unavailable (a connection that comes back does not re-arm it). A tap on the disabled tick says why in a toast.
 - **Quick alerts** (`TELL_QUICK`, the owner's constant; the three buttons in index.html carry the same words, a
@@ -3251,13 +3251,17 @@ ignores the "director alerts" opt-out). Design spec:
   once a minute (it reads both camps' push trees — an unthrottled loop could
   burn the Spark plan's download quota), and keeps push-service error text
   off its public status page.
-- **Going live needs three things** (until then `PUSH_SERVICE_URL` in push.js
-  is blank and the feature is dormant — the drawer says so): (1) the owner
-  deploys the Worker (README); (2) set `PUSH_SERVICE_URL` to its exact URL AND
-  add that origin to `connect-src` in index.html's CSP (otherwise the browser
-  silently blocks it — the drawer's sender line will say "blocked"); (3)
-  publish `database.rules.json` (push/pushSchedule/pushAlerts blocks).
-- **Schedule-change alerts** (Step 26 / P2 S9; Worker version 2026-11-04.1, built and tested, NOT pasted until Step 27):
+- **LIVE since Step 27 (Sat Nov 7, 2026, about 12:15 AM ET).** The Worker runs on the owner's Cloudflare account as
+  `camp-alerts` (https://camp-alerts.patricksimpson-fx.workers.dev, its status page; the every-minute timer on; the
+  `FIREBASE_SERVICE_ACCOUNT` secret added by the owner, never seen by an agent), `PUSH_SERVICE_URL` in push.js is that
+  address and index.html's `connect-src` names that exact origin (change the two TOGETHER: a sender the page may not
+  reach is blocked silently — the drawer's sender line says "blocked"; never a `*.workers.dev` wildcard). The TV page
+  does not talk to the sender, so its CSP does not name it. Blanking `PUSH_SERVICE_URL` (and the `connect-src` entry)
+  puts the whole feature back to dormant; `tests/push.test.js` pins both the address and the CSP. A newer `worker.js` is
+  deployed by re-uploading it to `camp-alerts` (the README's "Updating the sender later"; secrets and the timer stay).
+  The Cloudflare account also hosts the owner's Awana site (`kvbcawana` Pages + `awana-sync` Worker): the free plan's
+  100,000 requests a day are shared, and the camp timer alone uses about 1,440.
+- **Schedule-change alerts** (Step 26 / P2 S9; Worker version 2026-11-04.1, deployed at Step 27):
   `POST /notify` `{camp, kind: 'schedule', alert, ids}` — an EDITOR of that camp only (403 `not-editor`). `ids` are published
   block ids (`^[a-z0-9-]{1,40}$`, at most 200) or exactly `['*']` with `alert: false` (the baseline reset; anything else
   malformed is 400 `bad-ids`). The Worker takes no words from the request: it compares the published schedule NOW
@@ -3994,8 +3998,8 @@ Both camps, junior and senior, run all of it.
   Prepare for bed and the devotional: the longer item of each overlapping pair), so a freshly
   seeded camp warns about nothing; the frozen id fixtures are unaffected (they pin ids and
   alert keys only).
-- **The published schedule** (push.js; the whole push layer is still dormant while
-  `PUSH_SERVICE_URL` is blank): `pushPublishSchedule(weekStart)` is ONE transaction on
+- **The published schedule** (push.js; live since Step 27 — with `PUSH_SERVICE_URL` blank the whole push layer is
+  dormant): `pushPublishSchedule(weekStart)` is ONE transaction on
   `pushSchedule` — `{weekStart, at, by, blocks, rev: (cur.rev||0)+1, src}`, where
   `src = fnv1a(pushStableJson({weekStart, blocks}))` (8 hex, what the rules pin) — and
   writes NOTHING when `cur` already holds that content (identical content is already
@@ -4026,7 +4030,7 @@ Both camps, junior and senior, run all of it.
   goes when the schedule switch moved (`pushSchedResetOwed`; the Worker also remakes it itself on a change of id style).
   **The tick** (`#si-tell` on the item sheet, `#rain-tell` docked above Done; ONE compact 44px row, its caveat a bell note
   in the body, and left out of `schedItemFit`'s measure so it can never flip the sheet into flow mid-edit) needs
-  `pushScheduleAlertOffered()` (phone alerts live — `PUSH_SERVICE_URL`, blank today —, `canEdit()`, the camp week running,
+  `pushScheduleAlertOffered()` (phone alerts live — `PUSH_SERVICE_URL`, set since Step 27 —, `canEdit()`, the camp week running,
   no `bad-kind` answer this page load: `pushSchedAlertsOff`) AND a change the sender would actually tell: item sheet
   (`schedItemTell`) a moved start, a new NAME (not just a team list) or a new item; rain plan a moved start or a skip —
   with a time, before or after, still to come today or tomorrow by the sender's own window (`pushScheduleTimeTellable`:

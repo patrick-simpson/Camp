@@ -1137,7 +1137,7 @@ test('Buzz: a real Start buzzes everyone once when phone alerts are live; until 
   const buzzes = [];
   const realAlert = pushSendAlert, realConfigured = pushConfigured;
   pushSendAlert = (o) => { buzzes.push(o); return Promise.resolve({ ok: true, sent: 3 }); };
-  assert.equal(pushConfigured(), false, 'PUSH_SERVICE_URL is blank today (Step 27 sets it)');
+  pushConfigured = () => false;                               // phone alerts not live (as before Step 27)
   assert.deepEqual(revealBuzzState('real'), { available: false, on: false, forced: false, reason: 'Phone alerts are not switched on yet.' });
   assert.equal(revealRemoteModel().buzz.available, false, 'the remote reads the same');
   assert.equal((await revealStart({ quiet: true })).ok, true);

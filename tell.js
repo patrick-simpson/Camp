@@ -138,7 +138,7 @@ function tellCanon(v) {
 }
 function tellClone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
 
-// Can this phone buzz right now? Dark until PUSH_SERVICE_URL is set (Step 27), and a buzz needs a connection.
+// Can this phone buzz right now? Only with phone alerts connected (PUSH_SERVICE_URL, set since Step 27), and a buzz needs a connection.
 function tellBuzzState() {
   const live = typeof pushConfigured === 'function' && pushConfigured() && typeof pushSendAlert === 'function';
   if (!live) return { available: false, reason: "Phone alerts aren't switched on yet" };
