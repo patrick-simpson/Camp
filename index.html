@@ -1122,7 +1122,10 @@
              comment, and fills the lists marked "renderer:" with the row
              templates given. Every other director never reaches this screen
              (owner-only route); what they read is the hub door's sentence.
-             Copy, step by step (headline · lede), the renderer's:
+             NO YEAR IS WRITTEN IN THIS MARKUP: every year in the words is painted
+             from setup-ui.js nywYears() (the chosen Sunday's year, and the year of
+             the week being put away), never from a score's time or the clock.
+             Copy, step by step (headline · lede), the renderer's, for example:
                1  When is camp? · Pick the Sunday it starts. → (with a date)
                   Sun, Jul 18 to Sat, Jul 24, 2027
                2  What carries over from 2026? · Keep what still fits. Scores
@@ -1200,7 +1203,7 @@
                turned on first (A1, §11.3), and no signal. -->
           <p class="setup-note" id="nyw-older" hidden><svg class="ico" aria-hidden="true"><use href="#i-phone"/></svg><span id="nyw-older-text">2 director devices are on an older version. They update when they’re reopened.</span></p>
           <p class="setup-note" id="nyw-a1" hidden><svg class="ico" aria-hidden="true"><use href="#i-calendar"/></svg><span>Starting also turns on editing here for the schedule. A restore point is saved before it.</span></p>
-          <p class="setup-note" id="nyw-offline" hidden><svg class="ico" aria-hidden="true"><use href="#i-hourglass"/></svg><span id="nyw-offline-text">No signal. Your answers are kept on this phone; saving 2026 needs a connection.</span></p>
+          <p class="setup-note" id="nyw-offline" hidden><svg class="ico" aria-hidden="true"><use href="#i-hourglass"/></svg><span id="nyw-offline-text">No signal.</span></p>
 
           <!-- ── Step 1 · When is camp? ── -->
           <div class="nyw-step" data-nyw-step="1">
@@ -1229,7 +1232,7 @@
                  ("18"; "Aug 1" when the month turns) and [data-nyw-tag]
                  ("Arrival day"); #nyw-week-month says the month(s): "July 2027". -->
             <div class="more-sec" id="nyw-sec-week" hidden>
-              <div class="gl-head"><h3 class="gl-label" id="nyw-week-month">The week</h3><span class="gl-note">Day names from 2026</span></div>
+              <div class="gl-head"><h3 class="gl-label" id="nyw-week-month">The week</h3><span class="gl-note" id="nyw-week-was"></span></div>
               <ol class="gl nyw-days" id="nyw-days" aria-labelledby="nyw-week-month">
                 <li class="nyw-day" data-dow="0"><span class="nyw-day-wd">Sun</span><span class="nyw-day-n" data-nyw-date></span><span class="nyw-day-tag" data-nyw-tag></span></li>
                 <li class="nyw-day" data-dow="1"><span class="nyw-day-wd">Mon</span><span class="nyw-day-n" data-nyw-date></span><span class="nyw-day-tag" data-nyw-tag></span></li>
@@ -1249,9 +1252,9 @@
             <div class="more-sec" id="nyw-sec-double">
               <div class="gl-head"><h3 class="gl-label" id="nyw-double-label">Double points</h3></div>
               <div class="gl nyw-opts" role="radiogroup" aria-labelledby="nyw-double-label">
-                <button type="button" class="nyw-opt" role="radio" aria-checked="true" data-nyw-double="same"><i class="wk-tick-mark" aria-hidden="true"></i><span class="nyw-opt-text"><span class="nyw-opt-t">Same as 2026</span><span class="nyw-opt-s" id="nyw-double-same-sub"></span></span></button>
+                <button type="button" class="nyw-opt" role="radio" aria-checked="true" data-nyw-double="same"><i class="wk-tick-mark" aria-hidden="true"></i><span class="nyw-opt-text"><span class="nyw-opt-t" id="nyw-double-same-t">Same as last year</span><span class="nyw-opt-s" id="nyw-double-same-sub"></span></span></button>
                 <button type="button" class="nyw-opt" role="radio" aria-checked="false" data-nyw-double="none"><i class="wk-tick-mark" aria-hidden="true"></i><span class="nyw-opt-text"><span class="nyw-opt-t">No double points this year</span></span></button>
-                <button type="button" class="nyw-opt" role="radio" aria-checked="false" data-nyw-double="change"><i class="wk-tick-mark" aria-hidden="true"></i><span class="nyw-opt-text"><span class="nyw-opt-t">Change the times</span></span></button>
+                <button type="button" class="nyw-opt" role="radio" aria-checked="false" data-nyw-double="change"><i class="wk-tick-mark" aria-hidden="true"></i><span class="nyw-opt-text"><span class="nyw-opt-t">Change the times</span><span class="nyw-opt-s" id="nyw-double-change-sub"></span></span></button>
               </div>
               <div class="gl wk-double nyw-double-form" id="nyw-double-form" hidden>
                 <label class="fld"><span class="fld-label">From</span><select class="fld-input" id="nyw-double-from"></select></label>
@@ -1261,11 +1264,16 @@
             </div>
           </div>
 
-          <!-- ── Step 2 · What carries over from 2026? ──
+          <!-- ── Step 2 · What carries over from last year? ──
                A printed form: one row per thing, two tick columns under one
-               header ("Keep" | "Clear"), so what carries over reads down the
-               first column at a glance (the Camp week screen's tick sheet: the
-               same .wk-* rows and their large-text layout). Per row the renderer
+               header, so what carries over reads down the first column at a
+               glance (the Camp week screen's tick sheet: the same .wk-* rows and
+               their large-text layout). TWO groups, each with its own header,
+               because the second column means two different things: for the
+               week this camp built (schedule, games, team names) it is "App's
+               own" — going back to the copy the app came with, which REPLACES
+               a year of edits — never "Clear" (read under "Schedule" as "empty
+               the schedule"); for the rest it is "Clear". Per row the renderer
                sets data-choice="keep|clear" and aria-checked on the two ticks;
                the note that matches the choice shows (CSS, from data-choice), so
                the row always says what will happen. The defaults are the spec's
@@ -1276,11 +1284,11 @@
                un-hidden by the renderer where CAMP.features.electives. -->
           <div class="nyw-step" data-nyw-step="2">
             <div class="more-sec">
-              <div class="gl-head"><h3 class="gl-label">You choose</h3></div>
-              <div class="gl wk-days nyw-carry" id="nyw-carry">
-                <div class="wk-day wk-head" aria-hidden="true"><span></span><span class="wk-col">Keep</span><span class="wk-col">Clear</span></div>
+              <div class="gl-head"><h3 class="gl-label" id="nyw-carry-built-label">The week you built</h3></div>
+              <div class="gl wk-days nyw-carry" id="nyw-carry" aria-labelledby="nyw-carry-built-label">
+                <div class="wk-day wk-head" aria-hidden="true"><span></span><span class="wk-col">Keep</span><span class="wk-col">App’s own</span></div>
                 <div class="wk-day nyw-item" data-nyw-item="schedule" data-choice="keep">
-                  <span class="wk-day-name">Schedule<span class="wk-day-tag" data-when="keep">The typical day, arrival and send-off. You can change anything after.</span><span class="wk-day-tag" data-when="clear">Back to the schedule the app came with.</span>
+                  <span class="wk-day-name">Schedule<span class="wk-day-tag" data-when="keep">The typical day, arrival and send-off. You can change anything after.</span><span class="wk-day-tag" data-when="clear">Your edited schedule is replaced by the one the app came with.</span>
                     <!-- Schedule items whose label names someone (ux-R9): "4 items
                          name people: Snack and campfire — TJ, Laura’s cottage…"
                          and Review them (opens #sheet-nyw-staff). Nothing is
@@ -1289,13 +1297,19 @@
                   <div class="wk-ticks" role="radiogroup" aria-label="Schedule"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">The app’s schedule</span></button></div>
                 </div>
                 <div class="wk-day nyw-item" data-nyw-item="games" data-choice="keep">
-                  <span class="wk-day-name">Games<span class="wk-day-tag" data-when="keep">On the same schedule items. Their results are always cleared.</span><span class="wk-day-tag" data-when="clear">Back to the games the app came with.</span></span>
+                  <span class="wk-day-name">Games<span class="wk-day-tag" data-when="keep">On the same schedule items. Their results are always cleared.</span><span class="wk-day-tag" data-when="clear">Your edited games are replaced by the ones the app came with.</span></span>
                   <div class="wk-ticks" role="radiogroup" aria-label="Games"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">The app’s games</span></button></div>
                 </div>
                 <div class="wk-day nyw-item" data-nyw-item="teams" data-choice="keep">
-                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Back to the names the app came with.</span></span>
+                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Your team names, emoji and colours are replaced by the app’s own.</span></span>
                   <div class="wk-ticks" role="radiogroup" aria-label="Team names, emoji and colours"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">The app’s names</span></button></div>
                 </div>
+              </div>
+            </div>
+            <div class="more-sec">
+              <div class="gl-head"><h3 class="gl-label" id="nyw-carry-label">Keep or clear</h3></div>
+              <div class="gl wk-days nyw-carry" id="nyw-carry-rest" aria-labelledby="nyw-carry-label">
+                <div class="wk-day wk-head" aria-hidden="true"><span></span><span class="wk-col">Keep</span><span class="wk-col">Clear</span></div>
                 <div class="wk-day nyw-item" data-nyw-item="counselors" data-choice="clear">
                   <span class="wk-day-name">Counselor names typed on teams<span class="wk-day-tag" data-when="keep">Last year’s names show on the teams until people are put on them.</span><span class="wk-day-tag" data-when="clear">Each team shows its counselors once you put people on teams.</span></span>
                   <div class="wk-ticks" role="radiogroup" aria-label="Counselor names typed on teams"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
@@ -1337,7 +1351,7 @@
             <div class="more-sec">
               <div class="gl-head"><h3 class="gl-label">Every year</h3></div>
               <div class="gl nyw-fixed">
-                <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-trophy"/></svg></span><span class="gl-text"><span class="gl-title">Scores, results and the reveal</span><span class="gl-sub">Cleared in step 4, once 2026 is saved</span></span><span class="nyw-fixed-word">Cleared</span></div>
+                <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-trophy"/></svg></span><span class="gl-text"><span class="gl-title">Scores, results and the reveal</span><span class="gl-sub" id="nyw-scores-sub">Cleared in step 4, once last year is saved</span></span><span class="nyw-fixed-word">Cleared</span></div>
                 <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-tent"/></svg></span><span class="gl-text"><span class="gl-title">Campers</span><span class="gl-sub">Camper names are never kept between years</span></span><span class="nyw-fixed-word">Cleared</span></div>
                 <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-megaphone"/></svg></span><span class="gl-text"><span class="gl-title">Notice board</span><span class="gl-sub">Kept, but nobody sees it until it’s posted again</span></span><span class="nyw-fixed-word">Draft</span></div>
                 <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span><span class="gl-text"><span class="gl-title">People asking to join</span><span class="gl-sub">Waiting requests are cleared</span></span><span class="nyw-fixed-word">Cleared</span></div>
@@ -1356,10 +1370,10 @@
                (renderer: TALLY ROWS, below) is what the point holds; its first row
                is the year's champion with the team's mark. -->
           <div class="nyw-step" data-nyw-step="3">
-            <p class="setup-sync nyw-state" id="nyw-save-state" data-tone="saving" aria-live="polite"><i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-body" id="nyw-save-text">Saving 2026…</span></p>
-            <button type="button" class="btn nyw-retry" id="nyw-save-retry" hidden><svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg>Try again</button>
+            <p class="setup-sync nyw-state" id="nyw-save-state" data-tone="saving" aria-live="polite"><i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-body" id="nyw-save-text">Saving…</span></p>
+            <button type="button" class="btn nyw-retry" id="nyw-save-retry" hidden>Try again</button>
             <div class="more-sec" id="nyw-sec-saved">
-              <div class="gl-head"><h3 class="gl-label" id="nyw-saved-label">In the 2026 restore point</h3></div>
+              <div class="gl-head"><h3 class="gl-label" id="nyw-saved-label">In the restore point</h3></div>
               <!-- TALLY ROWS (shared by steps 3, 4, 5 and the Undo sheet): the
                    count in its own tabular column, like a printed tally sheet.
                      <div class="nyw-t" data-key="results">
@@ -1377,7 +1391,7 @@
               <div class="gl nyw-tally" id="nyw-saved-list"></div>
             </div>
             <!-- The same body as a file (§7.3: the wizard offers a JSON download). -->
-            <button type="button" class="sched-add nyw-dl" id="nyw-save-download"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span>Download a copy of 2026</span></button>
+            <button type="button" class="sched-add nyw-dl" id="nyw-save-download"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span id="nyw-save-download-text">Download a copy</span></button>
           </div>
 
           <!-- ── Step 4 · Clear the scoreboard ──
@@ -1394,13 +1408,13 @@
                Nothing was cleared." -->
           <div class="nyw-step" data-nyw-step="4">
             <div class="more-sec">
-              <div class="gl-head"><h3 class="gl-label">Cleared for 2027</h3><span class="gl-note">All of it is in the 2026 restore point</span></div>
+              <div class="gl-head"><h3 class="gl-label" id="nyw-clear-label">Cleared</h3><span class="gl-note" id="nyw-clear-note"></span></div>
               <div class="gl nyw-tally nyw-tally-clear" id="nyw-clear-list"></div>
             </div>
             <p class="nyw-kept" id="nyw-kept"><span class="nyw-kept-label">Stays:</span> <span id="nyw-kept-text">the schedule, games, team names, cleanup rota and every sign-in.</span></p>
             <p class="si-ask-q nyw-warn" id="nyw-members-warn" hidden><span id="nyw-members-warn-text"></span> <button type="button" class="gl-link" id="nyw-members-warn-btn">Open People</button></p>
             <p class="setup-sync nyw-state" id="nyw-clear-state" data-tone="saving" aria-live="polite" hidden><i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-body" id="nyw-clear-text">Clearing…</span></p>
-            <button type="button" class="btn nyw-retry" id="nyw-clear-retry" hidden><svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg>Try again</button>
+            <button type="button" class="btn nyw-retry" id="nyw-clear-retry" hidden>Try again</button>
           </div>
 
           <!-- ── Step 5 · Next steps ──
@@ -1450,9 +1464,11 @@
               <button type="button" class="btn btn-gold nyw-next" id="nyw-next">Next: what carries over</button>
             </div>
             <button type="button" class="btn btn-danger btn-block btn-hold nyw-hold" id="nyw-hold-btn" hidden><span class="btn-hold-label" id="nyw-hold-label">Hold to clear Junior camp’s scoreboard</span><span class="btn-hold-fill" aria-hidden="true"><span class="btn-hold-label" id="nyw-hold-fill-label"></span></span></button>
+            <!-- No signal: the dashed well in the hold's place (a hold that can only be refused is a button that leads to a refusal). -->
+            <button type="button" class="btn btn-block nyw-hold" id="nyw-hold-wait" aria-disabled="true" hidden>Needs a connection</button>
             <button type="button" class="btn btn-danger btn-danger-fill btn-block nyw-hold" id="nyw-hold-confirm" hidden>Yes, clear Junior camp’s scoreboard</button>
             <button type="button" class="btn-quiet" id="nyw-hold-cancel" hidden>Cancel</button>
-            <button type="button" class="btn-quiet nyw-back-quiet" id="nyw-back-quiet" hidden><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg>Back to Save 2026</button>
+            <button type="button" class="btn-quiet nyw-back-quiet" id="nyw-back-quiet" hidden><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span id="nyw-back-quiet-text">Back</span></button>
           </div>
         </section>
 
@@ -1488,8 +1504,11 @@
             <div class="gl-head"><h3 class="gl-label">Dates</h3></div>
             <div class="gl">
               <!-- A label row: the whole row focuses the native date picker. While
-                   newYearDue() the input row is hidden and #week-wizard (the
-                   route into the new-year setup, §10.6) shows instead. -->
+                   newYearDue(), for the OWNER only, the input row is hidden and
+                   #week-wizard (the route into the new-year setup, §10.6) shows
+                   instead; every other director keeps the date row and reads
+                   #week-wizard-owner under the group ("Patrick starts the new-year
+                   setup."): never a chevron row that does nothing. -->
               <label class="gl-row wk-field" id="week-start-row" for="week-start">
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
                 <span class="gl-text"><span class="gl-title">Starts on</span><span class="gl-sub" id="week-start-sub">A Sunday</span></span>
@@ -1498,10 +1517,11 @@
               <p class="fld-error" id="week-start-error" role="alert" hidden></p>
               <button type="button" class="gl-row" id="week-wizard" hidden>
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-sun"/></svg></span>
-                <span class="gl-text"><span class="gl-title" id="week-wizard-title">Getting ready for 2027?</span><span class="gl-sub">The new-year setup sets the dates</span></span>
+                <span class="gl-text"><span class="gl-title" id="week-wizard-title">Getting ready for the new year?</span><span class="gl-sub">The new-year setup sets the dates</span></span>
                 <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
               </button>
             </div>
+            <p class="hub-door-owner week-wizard-owner" id="week-wizard-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="week-wizard-owner-text"></span></p>
           </div>
 
           <!-- Seven days, Sun–Sat (ux-R14: ONE choice per day), as a printed
@@ -3473,7 +3493,7 @@
           <div class="gl">
             <button type="button" class="gl-row" data-setup-act="new-year" data-owner-only hidden>
               <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-sun"/></svg></span>
-              <span class="gl-text"><span class="gl-title">Start the new-year setup</span><span class="gl-sub" data-setup-why>Dates, what carries over, save this year, clear</span></span>
+              <span class="gl-text"><span class="gl-title">Start the new-year setup</span><span class="gl-sub" data-setup-why>Dates, what carries over, save this year, clear the scoreboard</span></span>
               <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
             </button>
             <button type="button" class="gl-row" data-setup-act="undo-new-year" data-owner-only hidden>
@@ -3659,8 +3679,9 @@
        days after a run) and from the newest Past years point. Lists are TALLY
        ROWS (see #nyw-saved-list): #nyu-back "22 game results", "Camp week ·
        Jul 19–25, 2026", "Double points · Thu 5 PM – end of Fri", "The
-       schedule, games, menus and verses as they were", "History shows 2026
-       again" (item rows); #nyu-stay "Counselors' teams · as they are now",
+       schedule, games, menus and verses as they were", "The change history
+       shows 2026 again" (item rows); #nyu-stay "Counselors' teams · as they
+       are now, change them in People",
        "Campers · not in the saved copy", and, when 2027 was edited since,
        "Changes made for 2027 · kept in a restore point first". #nyu-state
        (sync-line marks) while it runs or when it was refused. -->
@@ -3682,15 +3703,16 @@
           <div class="gl nyw-tally" id="nyu-back"></div>
         </div>
         <div class="more-sec">
-          <div class="gl-head"><h3 class="gl-label">Stays as it is now</h3></div>
+          <div class="gl-head"><h3 class="gl-label">Stays</h3></div>
           <div class="gl nyw-tally nyw-tally-stay" id="nyu-stay"></div>
         </div>
         <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-archive"/></svg><span>A restore point of today’s week is saved first.</span></p>
         <p class="setup-sync nyw-state" id="nyu-state" data-tone="saving" aria-live="polite" hidden><i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-body" id="nyu-state-text"></span></p>
       </div>
       <div class="sheet-dock">
-        <button type="button" class="btn btn-danger btn-block btn-hold nyw-hold" id="nyu-hold-btn"><span class="btn-hold-label" id="nyu-hold-label">Hold to undo Junior camp’s new-year setup</span><span class="btn-hold-fill" aria-hidden="true"><span class="btn-hold-label" id="nyu-hold-fill-label"></span></span></button>
-        <button type="button" class="btn btn-danger btn-danger-fill btn-block nyw-hold" id="nyu-hold-confirm" hidden>Yes, undo the new-year setup</button>
+        <button type="button" class="btn btn-danger btn-block btn-hold nyw-hold" id="nyu-hold-btn"><span class="btn-hold-label" id="nyu-hold-label">Hold to put last year back</span><span class="btn-hold-fill" aria-hidden="true"><span class="btn-hold-label" id="nyu-hold-fill-label"></span></span></button>
+        <button type="button" class="btn btn-block nyw-hold" id="nyu-hold-wait" aria-disabled="true" hidden>Needs a connection</button>
+        <button type="button" class="btn btn-danger btn-danger-fill btn-block nyw-hold" id="nyu-hold-confirm" hidden>Yes, put last year back</button>
         <button type="button" class="btn-quiet" id="nyu-hold-cancel" hidden>Cancel</button>
       </div>
     </div>

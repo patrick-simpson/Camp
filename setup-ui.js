@@ -880,10 +880,13 @@ function paintHub() {
   const model = hubModel(view);
   setTextIfChanged(setupEl('hub-title'), model.kicker);
   setTextIfChanged(setupEl('hub-headline'), model.headline);
-  setTextIfChanged(setupEl('hub-lede'), model.lede);
+  // While the owner's new-year setup is open (this device or another of theirs) the door below is the next thing: a
+  // "Next: Games" above it would point the other way, at a week the run is about to change.
+  const runOpen = !!(view.wizard && (view.wizard.state === 'mine' || view.wizard.state === 'other'));
+  setTextIfChanged(setupEl('hub-lede'), runOpen ? 'Next: finish the new-year setup' : model.lede);
   // "Next: People" is the line to act on: when its row opens something it is a target (#hub-next) in
   // place of the plain lede, and opens that row.
-  const nextKey = model.next && HUB_OPENS[model.next] ? model.next : '';
+  const nextKey = !runOpen && model.next && HUB_OPENS[model.next] ? model.next : '';
   setHiddenIfChanged(setupEl('hub-lede'), !!nextKey);
   setTextIfChanged(setupEl('hub-next-text'), nextKey ? model.lede : '');
   const nextBtn = setupEl('hub-next');
@@ -2033,10 +2036,18 @@ function renderWeekScreen() {
     ? 'Sunday to Saturday' + (follow.length ? ' · ' + schedDaysWords(follow) + ' follow the typical day' : '')
     : 'Pick the Sunday camp starts. Reminders and the TV page use it.');
   paintPreviewDoor('week', preview);
-  // Dates. A native date: the phone's own picker. While the new year is due, the route into its setup replaces it.
+  // Dates. A native date: the phone's own picker. While the new year is due, the OWNER's route into its setup replaces it;
+  // every other director keeps the date and reads whose the setup is (a chevron row that does nothing is a dead button).
   const due = typeof newYearDue === 'function' && !!newYearDue();
-  setHiddenIfChanged(setupEl('week-start-row'), due);
-  setHiddenIfChanged(setupEl('week-wizard'), !due);
+  const route = due && isOwner();
+  setHiddenIfChanged(setupEl('week-start-row'), route);
+  setHiddenIfChanged(setupEl('week-wizard'), !route);
+  setHiddenIfChanged(setupEl('week-wizard-owner'), !due || isOwner());
+  if (due) {
+    const ny = typeof nywNextYear === 'function' ? nywNextYear() : '';
+    setTextIfChanged(setupEl('week-wizard-title'), 'Getting ready for ' + (ny || 'the new year') + '?');
+    setTextIfChanged(setupEl('week-wizard-owner-text'), ownerSays('starts the new-year setup'));
+  }
   const input = setupEl('week-start');
   if (input && document.activeElement !== input && input.value !== ymd) input.value = ymd;
   setTextIfChanged(setupEl('week-start-sub'), range ? range : 'A Sunday');
@@ -6931,7 +6942,7 @@ const campersUi = {
   add: null,    // the Add sheet: { tid, fresh, busy, error }
   undo: null,   // the one line that undoes the last change: { text, run, timer }
 };
-const CAMPERS_SCREENS = ['hub', 'campers', 'people', 'teams'];  // the screens that hold the list (counts on the hub, Teams, People)
+const CAMPERS_SCREENS = ['hub', 'campers', 'people', 'teams', 'wizard'];  // the screens that hold the list (counts on the hub, Teams, People, the new-year clear)
 const CAMPERS_UNDO_MS = 15000;
 
 // The hub row's plain view: only counts, never a name.
@@ -6968,6 +6979,7 @@ function campersRepaint() {
   else if (s === 'teams') renderTeamsScreen();
   else if (s === 'people') renderPeopleScreen();
   else if (s === 'campers') renderCampersScreen();
+  else if (s === 'wizard' && typeof renderNywScreen === 'function') renderNywScreen(); // step 4's count
   if (campersUi.edit && shell.sheets.includes('camper-edit')) renderCamperEditSheet();
   if (campersUi.add && shell.sheets.includes('camper-add')) renderCamperAddSheet();
 }
@@ -9120,10 +9132,26 @@ function nywLastDouble() {
   return wizardDoubleValue('same', { epoch: state.meta && state.meta.epoch, double: setupTree.meta && setupTree.meta.double });
 }
 
-function nywNextYear(answers) {
+// The two years the run names, from DATES only (never a score's timestamp or the clock: one stray score in the new year
+// would otherwise make the run read "Save 2027 … Ready for 2027"): `next` is the chosen Sunday's year, else the year after
+// the outgoing week; `out` is the outgoing week's year, else the year before `next`. After the clear (`done`) the camp's own
+// week IS the new one. With no date anywhere both are '' and the words say "last year" / "the new year".
+function nywYears(answers, opts) {
   const a = answers || wizardAnswers();
-  if (a.weekStart) return a.weekStart.slice(0, 4);
-  return String(Number(wizardOutgoingYear()) + 1);
+  const o = opts || {};
+  const yr = (ymd) => (/^20\d\d-\d\d-\d\d$/.test(String(ymd || '')) ? String(ymd).slice(0, 4) : '');
+  const cur = (typeof campWeek === 'function' && campWeek().start) || '';
+  const chosen = a && a.weekStart ? a.weekStart : '';
+  let next = yr(chosen) || (o.done ? yr(cur) : '');
+  // The camp's week is the outgoing one until the clear writes the chosen Sunday over it.
+  let out = !o.done && cur && cur !== chosen ? yr(cur) : '';
+  if (!next && out) next = String(Number(out) + 1);
+  if (!out && next) out = String(Number(next) - 1);
+  return { out, next };
+}
+
+function nywNextYear(answers) {
+  return nywYears(answers).next;
 }
 
 // "July 2027", "July – August 2027" (a week that crosses a month).
@@ -9244,7 +9272,7 @@ function nywDoorView() {
   const answers = wm.claim.answers;
   return {
     state: wm.state, step: wm.claim.step, byName: wm.byName, idleMs: wm.idleMs, canTakeOver: !!wm.canTakeOver,
-    year: answers.weekStart ? answers.weekStart.slice(0, 4) : nywNextYear(answers),
+    year: nywNextYear(answers) || 'the new year',
   };
 }
 
@@ -9372,7 +9400,8 @@ function nywNextWhy(m, a) {
   if (m.step === 3) {
     const s = nywUi.save.state;
     if (s === 'saved') return '';
-    return s === 'offline' ? 'Needs a connection' : s === 'error' ? 'Try the copy again first' : 'Saving ' + wizardOutgoingYear() + '…';
+    const out = nywYears(a).out;
+    return s === 'offline' ? 'Needs a connection' : s === 'error' ? 'Try the copy again first' : 'Saving ' + (out || 'last year') + '…';
   }
   return '';
 }
@@ -9427,6 +9456,8 @@ function nywSetDouble(choice) {
 }
 
 function nywDoubleFromForm() {
+  const m = nywModelNow();
+  if (!m || m.mode !== 'me') return; // a watching device reads, never answers
   const from = Number((setupEl('nyw-double-from') || {}).value);
   const until = Number((setupEl('nyw-double-until') || {}).value);
   const at = String((setupEl('nyw-double-at') || {}).value || '17:00').split(':').map(Number);
@@ -9469,7 +9500,7 @@ async function nywDownloadCopy() {
   if (rid && typeof restoreRead === 'function') { try { const r = await restoreRead(rid); if (r && r.ok) body = r.body; } catch (e) { body = null; } }
   if (!body && typeof restoreBodyObject === 'function') body = restoreBodyObject();
   if (!body) return;
-  downloadBlob(new Blob([JSON.stringify(body)], { type: 'application/json' }), 'camp-' + CAMP.id + '-' + wizardOutgoingYear() + '-copy-' + new Date().toISOString().slice(0, 10) + '.json');
+  downloadBlob(new Blob([JSON.stringify(body)], { type: 'application/json' }), 'camp-' + CAMP.id + '-' + (nywYears().out || 'last-year') + '-copy-' + new Date().toISOString().slice(0, 10) + '.json');
 }
 
 // ── step 4: the clear ────────────────────────────────────────────────
@@ -9511,7 +9542,7 @@ async function nywRunClear() {
     const wk = campWeek();
     nywUi.clear = { state: 'idle', why: '', reveal: false };
     nywUi.ask = {
-      q: 'Camp week is running' + (wk.start ? ' (' + hubWeekRange(wk.start).replace(/^\w+ /, '').replace(/ – \w+ /, '–') + ')' : '') + '. The new-year setup clears its scoreboard.',
+      q: 'Camp week is running' + (wk.start ? ' (' + weekHeadline(wk.start) + ')' : '') + '. The new-year setup clears its scoreboard.',
       a: { label: 'Not now', run: () => { nywUi.ask = null; renderAll(); } },
       b: { label: 'Carry on anyway', danger: true, run: () => { nywUi.freeze.overrideCampWeek = true; nywUi.ask = null; nywRunClear(); } },
     };
@@ -9521,13 +9552,14 @@ async function nywRunClear() {
 
 // ── the screen ───────────────────────────────────────────────────────
 
+// `out` / `next` are nywYears' (either may be '': then the words say "last year" / "the new year").
 function nywStepHeadline(step, out, next) {
   return [
     ['When is camp?', 'Pick the Sunday it starts. The rest of the week follows.'],
-    ['What carries over from ' + out + '?', 'Tick Keep or Clear for each. You can change anything after.'],
-    ['Save ' + out, 'A copy of the whole week is saved and checked before anything is cleared.'],
-    ['Clear the scoreboard', 'Hold the button to start ' + next + ' fresh.'],
-    ['Ready for ' + next, 'Here’s what was done.'],
+    ['What carries over from ' + (out || 'last year') + '?', 'Pick for each one. You can change anything after.'],
+    ['Save ' + (out || 'last year'), 'A copy of the whole week is saved and checked before anything is cleared.'],
+    ['Clear the scoreboard', 'Hold the button to start ' + (next || 'the new year') + ' fresh.'],
+    ['Ready for ' + (next || 'the new year'), 'Here’s what was done.'],
   ][step - 1];
 }
 
@@ -9550,20 +9582,28 @@ function renderNywScreen() {
   if (!root || !m) return;
   const owner = isOwner();
   const a = nywAnswersFor(m);
-  const out = wizardOutgoingYear();
-  const next = nywNextYear(a);
   const step = m.step;
+  // Another device's run is named by ITS answers (the claim's), never this device's draft.
+  const yrs = nywYears(m.mode !== 'me' && m.claim ? m.claim.answers : a, { done: step === 5 });
+  const out = yrs.out;
+  const next = yrs.next;
   const stepChanged = nywUi.lastStep && (nywUi.lastStep !== step || nywUi.lastMode !== m.mode);
   const back = nywUi.lastStep > step;
   // The screen's two switches (the CSS reads them).
   const drive = m.mode === 'me' ? 'me' : m.mode;
   if (root.dataset.step !== String(step)) root.dataset.step = String(step);
   if (root.dataset.drive !== drive) root.dataset.drive = drive;
+  // Watching reads the other device's step: `inert` keeps every control out of reach of a tap AND the keyboard (the
+  // CSS draws the picks read-only), so nothing on the watching device can answer for the driving one.
+  document.querySelectorAll('#setup-wizard > .nyw-step').forEach((el) => {
+    const inert = m.mode === 'watch';
+    if (el.hasAttribute('inert') !== inert) el.toggleAttribute('inert', inert);
+  });
   setTextIfChanged(setupEl('nyw-title'), 'New-year setup · ' + CAMP.label);
   paintNywBars(step, stepChanged);
   setTextIfChanged(setupEl('nyw-count'), 'Step ' + step + ' of ' + NYW_STEPS);
   const claimMode = m.mode !== 'me';
-  const head = claimMode && m.mode === 'other' ? ['You’re setting up ' + next + ' on another device', ''] : nywStepHeadline(step, out, next);
+  const head = claimMode && m.mode === 'other' ? ['You’re setting up ' + (next || 'the new year') + ' on another device', ''] : nywStepHeadline(step, out, next);
   setTextIfChanged(setupEl('nyw-headline'), head[0]);
   setTextIfChanged(setupEl('nyw-lede'), head[1]);
   setHiddenIfChanged(setupEl('nyw-lede'), !head[1]);
@@ -9574,7 +9614,7 @@ function renderNywScreen() {
     const dv = m.mode === 'watch' ? 'watching' : 'other';
     if (claim.dataset.claim !== dv) claim.dataset.claim = dv;
     const ago = hubAgo(m.claim.at, typeof serverNow === 'function' ? serverNow() : Date.now());
-    setTextIfChanged(setupEl('nyw-claim-lead'), m.mode === 'watch' ? 'Watching your other device · last tap ' + ago : 'Set up on your other device · step ' + step + ' of ' + NYW_STEPS);
+    setTextIfChanged(setupEl('nyw-claim-lead'), m.mode === 'watch' ? 'Watching your other device · read only · last tap ' + ago : 'Set up on your other device · step ' + step + ' of ' + NYW_STEPS);
     setTextIfChanged(setupEl('nyw-claim-sub'), 'Last tap there ' + ago);
     setHiddenIfChanged(setupEl('nyw-takeover'), !m.wm.canTakeOver);
     setHiddenIfChanged(setupEl('nyw-takeover-note'), !!m.wm.canTakeOver || m.mode === 'watch');
@@ -9599,11 +9639,14 @@ function renderNywScreen() {
   setHiddenIfChanged(setupEl('nyw-older'), !(dev && dev.older) || m.mode !== 'me');
   setHiddenIfChanged(setupEl('nyw-a1'), !(m.mode === 'me' && step === 1 && !setupOn('schedule')));
   const offline = m.mode === 'me' && (step === 3 || step === 4) && !restoreOnline();
-  setTextIfChanged(setupEl('nyw-offline-text'), step === 3
-    ? 'No signal. Your answers are kept on this phone; saving ' + out + ' needs a connection.'
-    : 'No signal. Clearing needs a connection. Nothing has been cleared.');
+  // Once the copy is saved and checked, "saving needs a connection" would contradict the line under it: say what is next.
+  setTextIfChanged(setupEl('nyw-offline-text'), step === 3 && nywUi.save.state === 'saved'
+    ? 'No signal. Clearing in the next step needs a connection.'
+    : step === 3
+      ? 'No signal. Your answers are kept on this phone; saving ' + (out || 'last year') + ' needs a connection.'
+      : 'No signal. Clearing needs a connection. Nothing has been cleared.');
   setHiddenIfChanged(setupEl('nyw-offline'), !offline);
-  if (step === 1) paintNywStep1(a, m);
+  if (step === 1) paintNywStep1(a, m, out);
   else if (step === 2) paintNywStep2(a, m);
   else if (step === 3) paintNywStep3(a, out);
   else if (step === 4) paintNywStep4(a, out, next);
@@ -9622,15 +9665,16 @@ function renderNywScreen() {
   nywUi.lastStep = step; nywUi.lastMode = m.mode;
 }
 
-function paintNywStep1(a, m) {
+function paintNywStep1(a, m, out) {
   const input = setupEl('nyw-start');
   const shown = nywUi.typed || a.weekStart;
   if (input && document.activeElement !== input && input.value !== shown) input.value = shown;
-  setTextIfChanged(setupEl('nyw-start-sub'), a.weekStart ? hubWeekRange(a.weekStart).replace(' – ', ' to ') : 'A Sunday');
-  const was = hubWeekStart();
-  setTextIfChanged(setupEl('nyw-start-was'), was ? wizardOutgoingYear() + ': ' + hubWeekRange(was).replace(/^\w+ /, '').replace(/ – \w+ /, '–') : '');
-  // A date that isn't a Sunday: never an error, a nudge to the nearest one.
+  // A date that isn't a Sunday: never an error, a nudge to the nearest one. Until it is answered the row and the
+  // calendar don't go on showing the week that was picked before it.
   const near = nywUi.typed && !wizardIsSunday(nywUi.typed) ? nywSundayNear(nywUi.typed) : '';
+  setTextIfChanged(setupEl('nyw-start-sub'), a.weekStart && !near ? hubWeekRange(a.weekStart).replace(' – ', ' to ') : 'A Sunday');
+  const was = hubWeekStart();
+  setTextIfChanged(setupEl('nyw-start-was'), was && was !== a.weekStart ? 'Last camp: ' + weekHeadline(was) : '');
   setHiddenIfChanged(setupEl('nyw-snap'), !near);
   if (near) {
     setTextIfChanged(setupEl('nyw-snap-q'), 'Camp weeks start on a Sunday. Did you mean ' + nywDayWords(near) + '?');
@@ -9638,11 +9682,12 @@ function paintNywStep1(a, m) {
     setupEl('nyw-snap-use').dataset.sunday = near;
   }
   // The week it makes, as a printed calendar.
-  const ymd = a.weekStart;
+  const ymd = near ? '' : a.weekStart;
   setHiddenIfChanged(setupEl('nyw-sec-week'), !ymd);
   if (ymd) {
     const p = nywYmdParts(ymd);
     setTextIfChanged(setupEl('nyw-week-month'), nywMonthWords(ymd));
+    setTextIfChanged(setupEl('nyw-week-was'), 'Day names as in ' + (out || 'last year'));
     const days = weekDays();
     document.querySelectorAll('#nyw-days .nyw-day').forEach((li) => {
       const dow = Number(li.dataset.dow);
@@ -9661,10 +9706,12 @@ function paintNywStep1(a, m) {
   });
   const lastWords = nywDoubleWords(last);
   setTextIfChanged(setupEl('nyw-double-same-sub'), lastWords || 'No double points last year');
-  const sameLbl = document.querySelector('[data-nyw-double="same"] .nyw-opt-t');
-  setTextIfChanged(sameLbl, 'Same as ' + wizardOutgoingYear());
+  setTextIfChanged(setupEl('nyw-double-same-t'), 'Same as ' + (out || 'last year'));
+  // Watching: the chosen window in words, never the form (a control on a read-only screen looks broken).
+  const watch = m && m.mode === 'watch';
+  setTextIfChanged(setupEl('nyw-double-change-sub'), watch && choice === 'change' ? nywDoubleWords(a.double) : '');
   const form = setupEl('nyw-double-form');
-  setHiddenIfChanged(form, choice !== 'change');
+  setHiddenIfChanged(form, choice !== 'change' || watch);
   if (choice === 'change') {
     const d = a.double;
     weekSelectOptions(setupEl('nyw-double-from'), WEEK_DOW_WORDS.map((w, i) => [i, w]), d.fromDow);
@@ -9677,7 +9724,7 @@ function paintNywStep1(a, m) {
 
 function paintNywStep2(a) {
   const electives = !!(CAMP.features && CAMP.features.electives);
-  document.querySelectorAll('#nyw-carry .nyw-item').forEach((row) => {
+  document.querySelectorAll('.nyw-carry .nyw-item').forEach((row) => {
     const k = row.dataset.nywItem;
     if (row.hasAttribute('data-feature')) setHiddenIfChanged(row, !electives);
     const v = a.carry[k];
@@ -9689,10 +9736,16 @@ function paintNywStep2(a) {
   });
   const items = a.carry.schedule === 'keep' ? nywStaffItems() : [];
   setHiddenIfChanged(setupEl('nyw-staff'), !items.length);
-  if (items.length) setTextIfChanged(setupEl('nyw-staff-text'), items.length + ' ' + nywWord(items.length, 'item names', 'items name') + ' people: ' + items.slice(0, 2).map((i) => i.label.split(' — ')[0]).join(', ') + (items.length > 2 ? '…' : '') + '.');
+  if (items.length) {
+    // Whole labels (the names ARE the difference: "Snack and campfire — TJ" and "— Laura" are two items), each once.
+    const labels = items.map((i) => i.label).filter((l, i, all) => all.indexOf(l) === i);
+    const cut = labels.length > 2;
+    setTextIfChanged(setupEl('nyw-staff-text'), items.length + ' ' + nywWord(items.length, 'item names', 'items name') + ' people: ' + labels.slice(0, 2).join(', ') + (cut ? '…' : '.'));
+  }
 }
 
-function nywSaveWords(out) {
+function nywSaveWords(out0) {
+  const out = out0 || 'last year';
   const s = nywUi.save;
   if (s.state === 'saved') return ['saved', 'Saved and checked: the copy on the server matches.'];
   if (s.state === 'offline') return ['offline', 'Needs a connection. Nothing is saved yet.'];
@@ -9708,13 +9761,14 @@ function paintNywStep3(a, out) {
   setHiddenIfChanged(setupEl('nyw-save-retry'), !(tone === 'error' || tone === 'offline'));
   const res = nywUi.save.res;
   setHiddenIfChanged(setupEl('nyw-sec-saved'), !res);
-  setTextIfChanged(setupEl('nyw-saved-label'), 'In the ' + out + ' restore point');
+  setTextIfChanged(setupEl('nyw-saved-label'), out ? 'In the ' + out + ' restore point' : 'In the restore point');
+  setTextIfChanged(setupEl('nyw-save-download-text'), 'Download a copy of ' + (out || 'last year'));
   let rows = '';
   if (res) {
     const c = res.counts || {};
     const ch = nywChampion();
     if (ch) rows += '<div class="nyw-t nyw-champ" data-key="champion"><span class="nyw-t-n">' + teamMarkHtml(ch.id, { size: 34 }) + '</span><span class="nyw-t-text"><span class="nyw-t-what">' +
-      esc(ch.tied ? 'Tied for first in ' + out : ch.name + ' won ' + out) + '</span><span class="nyw-t-sub">' + esc(ch.points + ' points') + '</span></span></div>';
+      esc(ch.tied ? 'Tied for first' + (out ? ' in ' + out : '') : ch.name + ' won' + (out ? ' ' + out : '')) + '</span><span class="nyw-t-sub">' + esc(ch.points + ' points') + '</span></span></div>';
     if (c.results) rows += nywTallyRow('results', c.results, nywWord(c.results, 'game result', 'game results'), '');
     if (c.bonuses) rows += nywTallyRow('bonuses', c.bonuses, nywWord(c.bonuses, 'bonus point entry', 'bonus point entries'), '');
     if (c.brackets) rows += nywTallyRow('brackets', c.brackets, nywWord(c.brackets, 'bracket in progress', 'brackets in progress'), '');
@@ -9724,17 +9778,25 @@ function paintNywStep3(a, out) {
   setHtmlIfChanged(setupEl('nyw-saved-list'), rows);
 }
 
+const NYW_CAMPERS_GONE = 'Not saved anywhere · Undo can’t bring them back';
+
 function nywClearRows(a) {
   const c = wizardCounts(state);
   const req = typeof peopleRequests === 'function' ? peopleRequests().length : 0;
-  const kids = typeof campersTotal === 'function' ? campersTotal() : 0;
   let rows = '';
   const add = (key, n, what, sub) => { if (n === 0) return; rows += nywTallyRow(key, n, what, sub); }; // a count of nothing is no row
-  add('results', c.results, nywWord(c.results, 'game result', 'game results'), c.results ? 'Monday to Friday' : '');
+  add('results', c.results, nywWord(c.results, 'game result', 'game results'), '');
   add('bonuses', c.bonuses, nywWord(c.bonuses, 'bonus point entry', 'bonus point entries'), '');
   add('brackets', c.brackets, nywWord(c.brackets, 'bracket in progress', 'brackets in progress'), '');
   add('announcements', c.announcements, nywWord(c.announcements, 'announcement', 'announcements'), '');
-  add('campers', kids, nywWord(kids, 'camper name', 'camper names'), 'Never kept between years');
+  // Camper names are the one thing the clear deletes that neither the restore point nor Undo brings back, so the list always
+  // says them: the count once this screen holds it (CAMPERS_SCREENS has 'wizard': counts only, never a name), else in words.
+  // A list known to be empty is a count of nothing (no row).
+  const kidsKnown = typeof campersStatus === 'function' && campersStatus() === 'ok' && canEdit();
+  if (kidsKnown) {
+    const kids = campersTotal();
+    add('campers', kids, nywWord(kids, 'camper name', 'camper names'), NYW_CAMPERS_GONE);
+  } else rows += nywTallyRow('campers-all', { mark: 'item' }, 'Every camper name', NYW_CAMPERS_GONE);
   add('requests', req, nywWord(req, 'request to join', 'requests to join'), '');
   add('reveal', { mark: 'item' }, 'The standings reveal on the big screen', '');
   WIZARD_ITEMS.forEach((k) => {
@@ -9746,12 +9808,14 @@ function nywClearRows(a) {
   if (c.noticePosted) add('notice', { mark: 'item' }, 'Notice board · back to a draft', '');
   const mem = nywUi.members;
   if (a.carry.memberTeams === 'clear' && mem && mem.withTeam.length) {
-    add('members', mem.withTeam.length, nywWord(mem.withTeam.length, 'counselor taken off their team', 'counselors taken off their teams'), 'After the clear');
+    add('members', mem.withTeam.length, nywWord(mem.withTeam.length, 'counselor taken off their team', 'counselors taken off their teams'), 'After the clear · Undo doesn’t put teams back');
   }
   return rows;
 }
 
 function paintNywStep4(a, out, next) {
+  setTextIfChanged(setupEl('nyw-clear-label'), next ? 'Cleared for ' + next : 'Cleared');
+  setTextIfChanged(setupEl('nyw-clear-note'), 'Everything else is in the ' + (out ? out + ' ' : '') + 'restore point');
   setHtmlIfChanged(setupEl('nyw-clear-list'), nywClearRows(a));
   const keep = WIZARD_ITEMS.filter((k) => a.carry[k] === 'keep' && NYW_KEEP_WORDS[k] && (!(k === 'stations' || k === 'stationPeople') || (CAMP.features && CAMP.features.electives)));
   setTextIfChanged(setupEl('nyw-kept-text'), hubJoin(keep.map((k) => NYW_KEEP_WORDS[k]).concat(['every sign-in'])) + '.');
@@ -9780,7 +9844,7 @@ function paintNywStep5(out, next) {
   let rows = '';
   const add = (key, text, sub) => { rows += nywTallyRow(key, { mark: 'check' }, text, sub); };
   if (nywUi.a1Ran) add('a1', 'Editing turned on for the schedule', '');
-  add('saved', out + ' saved', 'In Restore points, under Past years');
+  add('saved', (out || 'Last year') + ' saved', 'In Restore points, under Past years');
   add('cleared', 'Scoreboard cleared', '');
   if (cleared) add('members', cleared + ' ' + nywWord(cleared, 'counselor taken off their team', 'counselors taken off their teams'), '');
   setHtmlIfChanged(setupEl('nyw-done-list'), rows);
@@ -9816,20 +9880,29 @@ function paintNywDock(m, a, out) {
   setHiddenIfChanged(setupEl('nyw-back'), step === 1 || step === 5);
   const nextBtn = setupEl('nyw-next');
   const why = me ? nywNextWhy(m, a) : '';
-  const label = step === 1 ? 'Next: what carries over' : step === 2 ? 'Next: save ' + out : step === 3 ? 'Next: clear the scoreboard' : 'Go to the checklist';
+  // Step 5 has ONE next action, the filled "1 Put people on teams" in the list: the dock is a plain Done (back to the
+  // checklist), never a second gold.
+  const label = step === 1 ? 'Next: what carries over' : step === 2 ? 'Next: save ' + (out || 'last year') : step === 3 ? 'Next: clear the scoreboard' : 'Done';
   setTextIfChanged(nextBtn, why || label);
-  if (nextBtn) { const dis = !!why; if ((nextBtn.getAttribute('aria-disabled') === 'true') !== dis) { if (dis) nextBtn.setAttribute('aria-disabled', 'true'); else nextBtn.removeAttribute('aria-disabled'); } }
+  if (nextBtn) {
+    const dis = !!why; if ((nextBtn.getAttribute('aria-disabled') === 'true') !== dis) { if (dis) nextBtn.setAttribute('aria-disabled', 'true'); else nextBtn.removeAttribute('aria-disabled'); }
+    const gold = step !== 5; if (nextBtn.classList.contains('btn-gold') !== gold) nextBtn.classList.toggle('btn-gold', gold);
+  }
   const busy = cs.state === 'saving';
+  // No signal: the dashed well in the hold's place (the hold could only be refused after 1.2 s); it comes back with the signal.
+  const online = restoreOnline();
   const hold = setupEl('nyw-hold-btn');
-  setHiddenIfChanged(hold, !(holding && !cs.reveal && !busy));
+  setHiddenIfChanged(setupEl('nyw-hold-wait'), !(holding && !cs.reveal && !busy && !online));
+  setHiddenIfChanged(hold, !(holding && !cs.reveal && !busy && online));
   const holdText = 'Hold to clear ' + restoreCampWord() + '’s scoreboard';
   setTextIfChanged(setupEl('nyw-hold-label'), holdText);
   setTextIfChanged(setupEl('nyw-hold-fill-label'), holdText);
   setHiddenIfChanged(setupEl('nyw-hold-confirm'), !(holding && cs.reveal && !busy));
   setTextIfChanged(setupEl('nyw-hold-confirm'), 'Yes, clear ' + restoreCampWord() + '’s scoreboard');
   setHiddenIfChanged(setupEl('nyw-hold-cancel'), !(holding && cs.reveal && !busy));
-  setHiddenIfChanged(setupEl('nyw-back-quiet'), !(holding && !busy));
-  setTextIfChanged(setupEl('nyw-back-quiet').lastChild, 'Back to Save ' + out);
+  // While the two-tap confirm is up, Cancel is the way out: Back beside it read as a second one.
+  setHiddenIfChanged(setupEl('nyw-back-quiet'), !(holding && !busy && !cs.reveal));
+  setTextIfChanged(setupEl('nyw-back-quiet-text'), 'Back to Save ' + (out || 'last year'));
 }
 
 // ── taps ─────────────────────────────────────────────────────────────
@@ -9870,6 +9943,7 @@ function wireNyw() {
   const focusOn = (id) => { const b = setupEl(id); if (b && !b.hidden && typeof b.focus === 'function') { try { b.focus({ preventScroll: true }); } catch (x) { /* fine */ } } };
   if (hold) wireHold(hold, () => { nywRunClear(); }, () => { nywUi.clear.reveal = true; renderNywScreen(); focusOn('nyw-hold-confirm'); });
   on('#nyw-hold-cancel', 'click', () => { nywUi.clear.reveal = false; renderNywScreen(); focusOn('nyw-hold-btn'); });
+  on('#nyw-hold-wait', 'click', () => { setupSay('No signal. Clearing needs a connection. Nothing has been cleared.'); });
   wireNywSheets();
 }
 
@@ -9931,13 +10005,13 @@ function renderNywUndoSheet() {
   if (c.results) back += nywTallyRow('results', c.results, nywWord(c.results, 'game result', 'game results'), '');
   if (c.bonuses) back += nywTallyRow('bonuses', c.bonuses, nywWord(c.bonuses, 'bonus point entry', 'bonus point entries'), '');
   if (c.brackets) back += nywTallyRow('brackets', c.brackets, nywWord(c.brackets, 'bracket in progress', 'brackets in progress'), '');
-  if (typeof meta.weekStart === 'string' && hubWeekRange(meta.weekStart)) back += nywTallyRow('week', { mark: 'item' }, 'Camp week · ' + hubWeekRange(meta.weekStart).replace(/^\w+ /, '').replace(/ – \w+ /, '–') + ', ' + meta.weekStart.slice(0, 4), '');
+  if (typeof meta.weekStart === 'string' && weekHeadline(meta.weekStart)) back += nywTallyRow('week', { mark: 'item' }, 'Camp week · ' + weekHeadline(meta.weekStart), '');
   const dbl = wizardDoubleOk(meta.double) ? meta.double : (!(b && b.epoch) ? WIZARD_DOUBLE_SAME_LEGACY : null);
   if (dbl) back += nywTallyRow('double', { mark: 'item' }, 'Double points · ' + nywDoubleWords(dbl), '');
   back += nywTallyRow('week-data', { mark: 'item' }, 'The schedule, games, menus and verses as they were', '');
-  back += nywTallyRow('history', { mark: 'item' }, 'History shows ' + (year || 'that year') + ' again', '');
+  back += nywTallyRow('history', { mark: 'item' }, 'The change history shows ' + (year || 'that year') + ' again', '');
   setHtmlIfChanged(setupEl('nyu-back'), u.state === 'ready' ? back : '');
-  let stay = nywTallyRow('members', { mark: 'item' }, 'Counselors’ teams', 'As they are now');
+  let stay = nywTallyRow('members', { mark: 'item' }, 'Counselors’ teams', 'As they are now. Put people on teams again in People');
   stay += nywTallyRow('campers', { mark: 'item' }, 'Campers', 'Not in the saved copy');
   const edited = typeof setupEditedAt === 'function' && setupEditedAt('schedule') > ((state.meta && state.meta.epochAt) || Infinity);
   if (edited) stay += nywTallyRow('since', { mark: 'item' }, 'Changes made since the setup', 'Kept in a restore point first');
@@ -9951,10 +10025,16 @@ function renderNywUndoSheet() {
     setTextIfChanged(setupEl('nyu-state-text'), u.busy ? 'Putting ' + (year || 'last year') + ' back…' : u.state === 'loading' ? 'Reading the saved copy…' : u.msg || 'Couldn’t read the saved copy. Check your connection.');
   }
   const ready = u.state === 'ready' && !u.busy;
-  const holdText = 'Hold to undo ' + restoreCampWord() + '’s new-year setup';
-  setHiddenIfChanged(setupEl('nyu-hold-btn'), !(ready && !u.reveal));
+  // Short enough not to break "new-/year" at 360px; the sheet's title already says which camp and what it undoes.
+  const holdText = 'Hold to put ' + (year || 'last year') + ' back';
+  // No signal: the dashed well in the hold's place (the undo needs the server); the hold comes back with the signal.
+  const online = restoreOnline();
+  setHiddenIfChanged(setupEl('nyu-hold-btn'), !(ready && !u.reveal && online));
+  setHiddenIfChanged(setupEl('nyu-hold-wait'), !(ready && !u.reveal && !online));
+  setTextIfChanged(setupEl('nyu-hold-wait'), 'Needs a connection to put ' + (year || 'last year') + ' back');
   setTextIfChanged(setupEl('nyu-hold-label'), holdText);
   setTextIfChanged(setupEl('nyu-hold-fill-label'), holdText);
+  setTextIfChanged(setupEl('nyu-hold-confirm'), 'Yes, put ' + (year || 'last year') + ' back');
   setHiddenIfChanged(setupEl('nyu-hold-confirm'), !(ready && u.reveal));
   setHiddenIfChanged(setupEl('nyu-hold-cancel'), !(ready && u.reveal));
 }
@@ -10088,6 +10168,7 @@ function wireNywSheets() {
   const focusOn = (id) => { const b = setupEl(id); if (b && !b.hidden && typeof b.focus === 'function') { try { b.focus({ preventScroll: true }); } catch (x) { /* fine */ } } };
   if (hold) wireHold(hold, () => { nywRunUndo(); }, () => { if (nywUi.undo && shell.sheets.includes('nyw-undo')) { nywUi.undo.reveal = true; renderNywUndoSheet(); focusOn('nyu-hold-confirm'); } });
   on('#nyu-hold-cancel', 'click', () => { if (nywUi.undo) { nywUi.undo.reveal = false; renderNywUndoSheet(); focusOn('nyu-hold-btn'); } });
+  on('#nyu-hold-wait', 'click', () => { setupSay('No signal. Putting last year back needs a connection. Nothing has changed.'); });
 }
 
 // ── the doors ────────────────────────────────────────────────────────

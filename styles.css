@@ -5633,6 +5633,16 @@ button.cb-row:active {
 .wk-double[hidden] {
   display: none;
 }
+@container (max-width: 25em) {
+  .week .wk-double {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* After a camp week, every director but the owner keeps the date and reads whose
+   the new-year setup is, under the Dates group (the hub door's sentence). */
+.week-wizard-owner {
+  margin: var(--s-3) 2px 0;
+}
 
 /* ── Item sheet (§11.5) ── */
 /* ≤ 90% of the screen (§11.0); the form scrolls, the save stays docked. */
@@ -17962,12 +17972,31 @@ button.gs-row:focus-visible {
   margin-top: 0;
 }
 /* Another device drives and this one isn't watching: only the claim. Watching:
-   the step reads, nothing in it takes a tap, and there is no dock. */
+   the step READS — the renderer sets `inert` on it (no tap, no keyboard focus;
+   pointer-events is the fallback where inert is missing), and it is drawn as a
+   record, not a form: only the chosen answer keeps its mark, in ink-3 (a live
+   radio in a screen that takes no tap looked broken), and the controls that
+   would act (the date box, Review them, the double-points form, Try again,
+   Download) step aside; their words stay. No dock. */
 .nyw[data-drive="other"] > :not(.setup-intro):not(.nyw-claim) {
   display: none;
 }
 .nyw[data-drive="watch"] .nyw-step {
   pointer-events: none;
+}
+.nyw[data-drive="watch"] :is(.wk-tick, .nyw-opt) {
+  cursor: default;
+}
+.nyw[data-drive="watch"] .nyw-opt[aria-checked="false"] .wk-tick-mark,
+.nyw[data-drive="watch"] .wk-tick[aria-checked="false"] {
+  visibility: hidden; /* a whole tick: at large text its words show beside the ring */
+}
+.nyw[data-drive="watch"] :is(.wk-tick, .nyw-opt)[aria-checked="true"] .wk-tick-mark {
+  box-shadow: inset 0 0 0 2px var(--ink-3), inset 0 0 0 6px var(--sheet);
+  background: var(--ink-3);
+}
+.nyw[data-drive="watch"] :is(.wk-ctl, #nyw-staff-btn, .nyw-retry, .nyw-dl, #nyw-members-warn-btn, .nyw-snap) {
+  display: none;
 }
 .nyw:not([data-drive="me"]) .nyw-dock {
   display: none;
@@ -18194,6 +18223,24 @@ button.gs-row:focus-visible {
 .nyw-double-form {
   margin-top: var(--s-2);
   padding: 14px;
+}
+/* From / At / Until: side by side, the time box clipped its own value on a phone
+   ("05:00 P" at 100 %, "05:0" at 130 %). Under ~25em of the group's own text they
+   stack full width, as the field rows do; wider, a time box keeps room for
+   "hh:mm AM" and the picker's icon. */
+#nyw-sec-double {
+  container: nywdbl / inline-size;
+}
+.wk-double input[type="time"] {
+  min-width: 8.5em;
+}
+@container nywdbl (max-width: 25em) {
+  .nyw-double-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nyw-double-form input[type="time"] {
+    min-width: 0;
+  }
 }
 
 /* ── Step 2: the tick sheet (the .wk-* rows: Keep | Clear) ── */
@@ -18555,4 +18602,36 @@ button.gs-row:focus-visible {
   width: 18px;
   height: 18px;
   stroke-width: 2.3;
+}
+/* The sentence is the news ("3 changes from 2026 weren't added"), and the only
+   lasting notice that this phone's old work was set aside: it never truncates.
+   Two rows, always: the icon and the whole sentence (wrapping as it needs, at any
+   text size), then Download · Dismiss at the right under it — side by side, the
+   year was cut at 360px and at 200 % the words vanished and Dismiss ran off the
+   edge. The bar is in flow in the header, so its taller height reserves itself. */
+.sync-alert:has([data-stranded]) {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 0;
+  padding: 0.5rem 0.6rem 0.1rem 0.9rem;
+}
+.sync-alert:has([data-stranded]) .sync-alert-ico {
+  min-height: 1.3em;
+}
+.sync-alert:has([data-stranded]) .sync-alert-text {
+  flex: 1 1 0;
+  display: block;
+  overflow: visible;
+  white-space: normal;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+  font-size: 0.85rem;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+.sync-alert:has([data-stranded]) .sync-quarantine-actions {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }

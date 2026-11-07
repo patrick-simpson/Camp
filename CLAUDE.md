@@ -4705,7 +4705,7 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
 - **The listener** (`campersAttach` / `campersDetach` / `campersWant(on)`): ONE editor-only `.on('value')` on `campers`, attached only after
   sign-in resolved and sync started (`campersMayListen`: `canEdit() && memberRoleConfirmed && syncStarted`), only while a screen that shows
   counts or names asks for it — `renderSetupUi` calls `campersWant(canEdit() && CAMPERS_SCREENS.includes(screen))` on every paint:
-  **hub, Campers, People, Teams** (the spec says Campers, People or Teams; the hub is added on purpose because its Campers row is judged —
+  **hub, Campers, People, Teams and the new-year setup** (step 4 counts what the clear deletes; the spec says Campers, People or Teams; the hub is added on purpose because its Campers row is judged —
   counts only, never a name — and says "Loading…" until the list arrives; **an owner question, recorded**: drop the hub from `CAMPERS_SCREENS` and
   its row would have no count to show). **The names are drawn only while the Campers screen is the one showing**: `renderSetupUi` calls
   `campersUiForget()` on every other screen (the hub, which still holds the list for its counts, included), emptying the chips and the held list
@@ -4788,7 +4788,10 @@ wizard: the screens"). `docs/build-notes/verify/step28-design.cjs` draws every s
   nudge `#nyw-snap` (`#nyw-snap-q`, `#nyw-snap-use`), the week as a printed calendar `#nyw-sec-week` / `#nyw-days`
   (`.nyw-day[data-dow]` with `[data-nyw-date]`, `[data-nyw-tag]`, `#nyw-week-month`), double points as three pen-mark
   radios `.nyw-opt[data-nyw-double=same|none|change]` (`#nyw-double-same-sub`) and `#nyw-double-form` (`#nyw-double-from`
-  / `-at` / `-until`). **Step 2**: the Camp week screen's tick sheet (`.wk-*` rows: Keep | Clear) in `#nyw-carry`, one
+  / `-at` / `-until`; under ~25em of `#nyw-sec-double`'s own width they stack, so the time box never clips its value).
+  **Step 2**: the Camp week screen's tick sheet (`.wk-*` rows) in TWO groups, `.nyw-carry` each: `#nyw-carry` "The week you
+  built" (schedule, games, teams) headed **Keep | App's own** (going back to the app's copy REPLACES a year of edits, never
+  "Clear"), and `#nyw-carry-rest` "Keep or clear" (Keep | Clear) for the rest; one
   `.nyw-item[data-nyw-item][data-choice=keep|clear]` per thing (schedule, games, teams, counselors, photos, cleanup,
   meals, verses, junior's stations / stationPeople with `data-feature="electives"`, memberTeams), ticks
   `[data-nyw-pick]`, the note matching the choice shown by CSS (`[data-when]`), the staff line `#nyw-staff`
@@ -4804,7 +4807,15 @@ wizard: the screens"). `docs/build-notes/verify/step28-design.cjs` draws every s
 - **The dock** `#nyw-dock` (`.setup-dock`): `#nyw-back` beside the gold `#nyw-next` (2 : 3; its words say what happens;
   not ready = `aria-disabled`, the dashed well naming what's missing); step 4 is the hold alone, `#nyw-hold-btn`
   (`#nyw-hold-label`, `#nyw-hold-fill-label`; the restore sheet's `.btn-hold`) → `#nyw-hold-confirm` / `#nyw-hold-cancel`,
-  with `#nyw-back-quiet` under it, never beside it. Large text stacks it, gold first.
+  with `#nyw-back-quiet` under it, never beside it (hidden while the two-tap confirm is up: Cancel is the way out). With no
+  signal the hold is `#nyw-hold-wait`, the dashed "Needs a connection" well (the Undo sheet's `#nyu-hold-wait` too): a hold that
+  can only be refused is never offered. Step 5's `#nyw-next` is a plain "Done" (the renderer drops `btn-gold`): the filled "1 Put
+  people on teams" is that screen's one next action. Large text stacks it, gold first.
+- **No year is written in the markup**: every year in the words is painted from `nywYears(answers, {done})` (setup-ui.js):
+  `next` = the chosen Sunday's year, `out` = the outgoing week's (`campWeek().start`, until the clear writes the chosen Sunday
+  over it), each else one from the other; never a score's timestamp or the clock (one stray score once made the run read "Save
+  2027 … Ready for 2027"). With no date anywhere the words say "last year" / "the new year". Another device's run is named by
+  the claim's answers.
 - **Elsewhere**: the hub door's `data-door="wizard"` with the owner's equal pair `#hub-door-pair` (`#hub-door-watch`,
   `#hub-door-takeover`; `data-owner-only hidden`); the menu rows' default sublines; `#sheet-restore[data-kind="archive"]`
   steps the section ticks, keep / delete and the dock aside for `#rp-year` (`#rp-year-download`, the owner's
@@ -4854,21 +4865,28 @@ stored `wizard` as the hub unless `nywMayShow()` (`isOwner()` and a run, or step
 sheets are `isOwner()` in `setupSheetReady`; every other director reads the hub door's sentence (`hubDoor`'s `wizard` case, `ownerSays`).
 
 - **Modes** (`nywModelNow()`): `me` (this device drives the claim, or step 5 from the device's own `done` record, 3 days), `watch`, `other`
-  (the CSS reads `#setup-wizard[data-drive]`, `[data-step]`). The step is the CLAIM's (a reload resumes on it); the answers are
+  (the CSS reads `#setup-wizard[data-drive]`, `[data-step]`). Watching, every `.nyw-step` is `inert` (no tap, no keyboard focus;
+  every answer handler, `nywDoubleFromForm` included, also refuses a mode that isn't `me`) and drawn as a record: only the chosen
+  answer keeps its mark, in ink-3; the date box, Review them, the double-points form (its window in words instead), Try again and
+  Download step aside; the claim line says "read only". The step is the CLAIM's (a reload resumes on it); the answers are
   the device draft (`wizardAnswers()`; a lost draft resumes from the claim's copy). An acknowledged write's claim is held 8 s
   (`nywUi.claim`) until the tree catches up. `renderNywScreen()` is idempotent (text / hidden / data-* only; the tally lists are
   `setHtmlIfChanged` roots) and runs from `renderSetupUi` and the engine's `'tree'` event.
 - **Doors**: `nywStart` (`HUB_DOOR_ACTIONS['new-year']` and `.wizard`, the menu's "Start the new-year setup", Camp week's route) asks the
   freeze in words (`ask-camp-week` / `camp-week`) then `wizardStart`, which turns on the schedule first (A1) when it isn't edited
   here; `newYearDue()` = the camp week is `after`. The hub door (`nywDoorView`): driving device Carry on, the owner's other device
-  Watch (+ Take over once idle 15 min), anyone else a sentence. `nywTakeOver` brings the other device's answers and asks "You chose
+  Watch (+ Take over once idle 15 min), anyone else a sentence. Camp week's route row (`#week-wizard`) is the OWNER's only; every
+  other director keeps the date row and reads `#week-wizard-owner` ("Patrick starts the new-year setup."). While a run is open
+  the hub's lede says "Next: finish the new-year setup" (no "Next: Games" target above the door). `nywTakeOver` brings the other device's answers and asks "You chose
   on your other device: Use these / Start over". Back on step 1 with no date offers Cancel (`wizardRelease`); any other Back
   leaves the run open for Carry on.
 - **Steps**: 1 date (a non-Sunday is a nudge, never an answer; Next is the dashed well until a Sunday), the week as a calendar
-  from the 2026 day tags, double points (same / none / change, validated before it is stored). 2 the Keep | Clear ticks
+  from last year's day tags, double points (same / none / change, validated before it is stored). 2 the two tick groups
   (`wizardAnswer({carry})`, junk taps write nothing), the staff line (`nywStaffItems`: schedule labels naming someone, listed only).
   3 arrival runs `wizardArchive` (saved and READ BACK) by itself, with Try again / Download a copy; Next stays the well until it
-  verified. 4 the clear's tally (counts of nothing are no row; members from `wizardMembersPreflight`, incomplete ones named), the
+  verified. 4 the clear's tally (counts of nothing are no row; camper names ALWAYS said — the count once the screen holds the
+  list, `CAMPERS_SCREENS` has `wizard`, counts only, else "Every camper name" — with "Not saved anywhere · Undo can't bring them
+  back", and the members row with "Undo doesn't put teams back"; members from `wizardMembersPreflight`, incomplete ones named), the
   hold (`wireHold`) with the two-tap alternative, then `wizardClear`: `ask-camp-week` / `camp-week` become the one inline question and
   the answer re-runs the clear. 5 the done list (check marks), people the follow-up couldn't move, the numbered next list,
   when Undo runs out.
@@ -4884,7 +4902,8 @@ sheets are `isOwner()` in `setupSheetReady`; every other director reads the hub 
   setup node (the section's keys replaced by the seed, the switch on, the section's `meta/edited` stamp: the rules' meta has no room
   for a field of its own); the schedule's games are re-placed after it (A2, only unresolved links).
 - **The stranded bar** (app.js `strandedBarHtml`): "3 changes from 2026 weren't added" (the year when every entry agrees), Dismiss asks
-  through `askDialog` (the browser's confirm where the setup frame didn't load).
+  through `askDialog` (the browser's confirm where the setup frame didn't load). It is two rows, never truncated
+  (`.sync-alert:has([data-stranded])`: the sentence, then Download · Dismiss at the right): it is the only lasting notice.
 - **Tests**: `wizard-ui.test.js` (+ senior): the pure pieces, the hub door's three readers, a non-owner shut out, the whole walk through
   the real engine (date, ticks, save and check, hold to clear, step 5), the claim's other views and Take over, Undo, a past year,
   Advanced's re-seed (pure and against the database); `owner-only.test.js` / `checklist.test.js` pin the owner gates and the door.

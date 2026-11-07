@@ -16,14 +16,18 @@ const MEASURE = eval('(' + designSrc.match(/const MEASURE = ([\s\S]*?\n\});?\n/)
 // What each state sets up in the page (runs inside it). `who`: owner | director | counselor.
 function fill(sp) {
   const draft = (a) => { const d = wizardDraftRead(); d.answers = wizardNormAnswers(a); };
-  const claim = (step, dev, at) => { setupTree.meta.wizard = { step, byKey: OWNER_MEMBER_KEY, at: at || Date.now(), fromEpoch: 'legacy', answers: JSON.stringify({ dev: dev || wizardDeviceId(), weekStart: '2027-07-18', double: 'same' }) }; setupRev++; };
+  const claim = (step, dev, at) => { setupTree.meta.wizard = { step, byKey: OWNER_MEMBER_KEY, at: at || Date.now(), fromEpoch: 'legacy', answers: JSON.stringify({ dev: dev || wizardDeviceId(), weekStart: '2027-07-18', double: (sp.answers && sp.answers.double) || 'same' }) }; setupRev++; };
   const dev = wizardDeviceId();
   const A = { weekStart: '2027-07-18', double: 'same', carry: {} };
   if (sp.who !== 'owner') authUser = { email: 'jenn@example.com', emailVerified: true };
+  // Firebase is blocked here, so restoreOnline() is false: an "online" state says so, an offline one leaves it.
+  if (!sp.offline) window.restoreOnline = () => true;
+  if (sp.pastWeek) { setupTree.meta.weekStart = sp.pastWeek; setupRev++; }
   if (sp.who === 'counselor') setMemberRole('viewer');
   memberDirectory = { [OWNER_MEMBER_KEY]: { role: 'editor', name: 'Patrick', addedBy: 's', addedAt: 1 } }; memberDirectoryLoaded = true;
   if (sp.claim) claim(sp.step || 1, sp.claim === 'other' ? 'other-device-123' : dev, sp.idle ? Date.now() - 20 * 60000 : Date.now() - 4 * 60000);
   if (sp.step) draft(Object.assign({}, A, sp.answers || {}));
+  if (sp.typed) nywUi.typed = sp.typed;
   if (sp.step === 3) nywUi.save = { state: sp.save || 'saved', res: sp.save === 'error' ? null : { rid: 'rp-x-1234', counts: { results: 22, bonuses: 4, brackets: 1, announcements: 2 } }, why: 'verify' };
   if (sp.step === 4) { nywUi.members = { ok: true, withTeam: [{ key: 'a', name: 'Alex' }, { key: 'b', name: 'Bo' }], incomplete: [{ key: 'c', name: 'Casey' }] }; nywUi.membersAsked = true; if (sp.reveal) nywUi.clear.reveal = true; }
   if (sp.step === 5) { wizardDraftRead().done = { epoch: 'w20270718', at: Date.now(), archiveId: 'rp-x-1234', counts: {}, cleared: 2, failed: 1 }; nywUi.done = { ok: true, members: { cleared: 2, failed: [{ key: 'c', name: 'Casey' }], incomplete: [] } }; }
@@ -36,6 +40,10 @@ function fill(sp) {
   renderAll();
   if (sp.sheet) { renderSetupSheet(sp.sheet); const el = document.getElementById('sheet-' + sp.sheet); if (el) el.hidden = false; }
   if (sp.menu) { document.getElementById('sheet-setup-menu').hidden = false; renderSetupMenuRows(); }
+  if (sp.stranded) {
+    localStorage.setItem(lsKey(STRANDED_KEY), JSON.stringify([{ at: '2026-07-25T12:00:00.000Z', from: 'legacy', to: 'w20270718', lastSyncedAt: '2026-07-24T20:00:00.000Z', changes: [{ path: 'results/a', what: 'A result', value: 1 }, { path: 'results/b', what: 'A result', value: 1 }, { path: 'results/c', what: 'A result', value: 1 }] }]));
+    strandedList = null; setupCloseBuilder(); renderAll(); updateSyncIndicator();
+  }
   if (sp.past) {
     const row = { rid: 'rp-x-1234', kind: 'archive', label: '2026 week (junior)', at: Date.now() - 86400000, epoch: '', byKey: OWNER_MEMBER_KEY };
     setupUi.restore = { status: 'ok', rows: [row], at: Date.now(), loading: false };
@@ -53,6 +61,15 @@ const STATES = {
   'w4-confirm': { who: 'owner', claim: 'mine', step: 4, reveal: true },
   w5: { who: 'owner', step: 5 },
   'w-ask': { who: 'owner', claim: 'mine', step: 1, ask: true },
+  'w1-change': { who: 'owner', claim: 'mine', step: 1, answers: { double: { fromDow: 4, fromMin: 1020, toDow: 6, toMin: 0 } } },
+  'w1-nudge': { who: 'owner', claim: 'mine', step: 1, typed: '2027-07-21' },
+  'w3-offline': { who: 'owner', claim: 'mine', step: 3, save: 'saved', offline: true },
+  'w4-offline': { who: 'owner', claim: 'mine', step: 4, offline: true },
+  'w1-watch': { who: 'owner', claim: 'other', step: 1, idle: true, watch: true, answers: { double: { fromDow: 4, fromMin: 1020, toDow: 6, toMin: 0 } } },
+  'week-due-owner': { who: 'owner', screen: 'week', pastWeek: '2026-07-19' },
+  'week-due-director': { who: 'director', screen: 'week', pastWeek: '2026-07-19' },
+  stranded: { who: 'director', stranded: true },
+  'undo-offline': { who: 'owner', screen: 'hub', sheet: 'nyw-undo', offline: true },
   'w-other': { who: 'owner', claim: 'other', step: 3 },
   'w-watch': { who: 'owner', claim: 'other', step: 2, idle: true, watch: true },
   'hub-mine': { who: 'owner', claim: 'mine', step: 3, screen: 'hub' },

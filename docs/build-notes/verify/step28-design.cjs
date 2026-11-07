@@ -150,7 +150,7 @@ function fill(sp) {
     }
     // step 2
     if (sp.step === 2) {
-      document.querySelectorAll('#nyw-carry [data-feature="electives"]').forEach((r) => { r.hidden = !(CAMP.features && CAMP.features.electives); });
+      document.querySelectorAll('.nyw-carry [data-feature="electives"]').forEach((r) => { r.hidden = !(CAMP.features && CAMP.features.electives); });
       hide('nyw-staff', !sp.staff);
       text('nyw-staff-text', senior ? '2 items name people: Devotions — Coach Dave, Pizza with Ms. Kim.' : '4 items name people: Snack and campfire — TJ, Laura’s cottage, and 2 more.');
     }
