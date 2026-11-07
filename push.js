@@ -1169,16 +1169,110 @@ function pushScheduleSoon(ms) {
   clearTimeout(pushRepublishTimer);
   pushRepublishTimer = setTimeout(() => {
     pushRepublishTimer = null;
-    pushRepublishSchedule().catch((e) => console.warn('[push] schedule republish failed', e));
+    pushRepublishSchedule().then(() => pushScheduleSettle()).catch((e) => console.warn('[push] schedule republish failed', e));
   }, ms === undefined ? 5000 : ms);
+}
+
+// ── Schedule-change alerts: the client half (Step 26) ────────────────────────────────────────────────────────────
+// After a director commits a schedule change the page publishes the new schedule (above), then asks the Worker's
+// /notify kind 'schedule' which published blocks it touched. The Worker takes NO words from the page: it compares the
+// published schedule with its own per-block baseline and writes the digest itself. So the page only names block ids
+// and says whether to alert. A change made without the tick is still named with alert:false, so the baseline moves and
+// a later alert about the same block never repeats it. Nothing here ever throws into, or blocks, a setup commit.
+let pushSchedSent = null;        // the published blocks as the sender was last told about them (this device's view)
+let pushSchedAlertsOff = false;  // an older Worker answered "unknown kind": the tick is hidden for this page load
+let pushSchedResetOwed = false;  // the schedule switch moved: the baseline is remade (ids ['*'], never an alert)
+const PUSH_SCHED_IDS_MAX = 200;  // the Worker's own cap on one request
+
+function pushScheduleSnapshot() {
+  try { return pushScheduleBlocks(scheduleWeek()); } catch (e) { return null; }
+}
+
+// The published block ids whose slim record differs (added, removed, moved, renamed), at most PUSH_SCHED_IDS_MAX.
+function pushScheduleChangedIds(a, b) {
+  if (!a || !b) return [];
+  const ids = [];
+  const all = new Set(Object.keys(a).concat(Object.keys(b)));
+  all.forEach((id) => { if (pushStableJson(a[id] === undefined ? null : a[id]) !== pushStableJson(b[id] === undefined ? null : b[id])) ids.push(id); });
+  return ids.slice(0, PUSH_SCHED_IDS_MAX);
+}
+
+// Should the "Tell people who follow this" tick be offered at all? Only with phone alerts live, a director who may
+// act now, the camp week running, and a Worker that knows the kind. `dow` (optional) limits it to today and tomorrow:
+// the Worker only tells people about times from now to the end of tomorrow.
+function pushScheduleAlertOffered(dow) {
+  if (!pushConfigured() || pushSchedAlertsOff) return false;
+  if (!(typeof canEdit === 'function' && canEdit())) return false;
+  if (typeof campWeek !== 'function' || campWeek().phase !== 'during') return false;
+  if (dow === undefined || dow === null) return true;
+  const today = campNow().dow;
+  return dow === today || dow === (today + 1) % 7;
+}
+
+// Publish, then name what changed since `before` (a pushScheduleSnapshot taken before the commit). Resolves
+// { ok, reason?, sent, queued, failed, devices, items } and never rejects.
+async function pushScheduleTell(before, alert) {
+  const after = pushScheduleSnapshot();
+  const ids = pushScheduleChangedIds(before, after);
+  if (after) pushSchedSent = after;
+  if (!pushConfigured() || pushSchedAlertsOff) return { ok: false, reason: 'off' };
+  if (!(typeof directorTab === 'function' && directorTab())) return { ok: false, reason: 'readonly' };
+  if (!ids.length) return { ok: true, reason: 'no-change' };
+  if (!alert && !(typeof campWeek === 'function' && campWeek().phase === 'during')) return { ok: true, reason: 'quiet' };
+  try {
+    await pushRepublishSchedule({ force: true });
+    const res = await pushPost('/notify', { camp: CAMP.id, kind: 'schedule', alert: !!alert, ids }, true);
+    pushDrainBatches(res.batches);
+    return { ok: true, reason: res.reason || '', sent: Number(res.sent) || 0, queued: Number(res.queued) || 0, failed: Number(res.failed) || 0, devices: Number(res.devices) || 0, items: Number(res.items) || 0 };
+  } catch (e) {
+    if (e && e.serverError === 'bad-kind') pushSchedAlertsOff = true; // an older Worker: hide the tick, change nothing else
+    console.warn('[push] schedule alert failed', e);
+    return { ok: false, reason: 'failed', error: pushErrorMessage(e) };
+  }
+}
+
+// One plain sentence for what a tick did ('' = say nothing).
+function pushScheduleTellWords(r) {
+  if (!r) return '';
+  if (r.ok === false) return r.reason === 'failed' ? "The change is saved, but the alert didn't go out. " + (r.error || '') : '';
+  const n = (r.sent || 0) + (r.queued || 0);
+  if (n) return 'Told ' + n + ' phone' + (n === 1 ? '' : 's') + ' that follow' + (n === 1 ? 's' : '') + ' this.';
+  if (r.reason === 'no-followers') return 'Nobody has reminders on for this item, so nobody was alerted. Tell people in person.';
+  if (r.reason === 'nothing-to-tell') return 'That time is too far off for an alert, so nobody was alerted.';
+  return '';
+}
+
+// The quiet half after any setup commit (copy a day, bring an item back…): what changed since the sender was last
+// told is named with alert:false, so the baseline keeps up. Also remakes the baseline when the schedule switch moved.
+async function pushScheduleSettle() {
+  if (!pushConfigured() || pushSchedAlertsOff || !(typeof directorTab === 'function' && directorTab())) return;
+  if (typeof campWeek !== 'function' || campWeek().phase !== 'during') return;
+  const cur = pushScheduleSnapshot();
+  if (!cur) return;
+  try {
+    if (pushSchedResetOwed) {
+      pushSchedResetOwed = false;
+      pushSchedSent = cur;
+      await pushPost('/notify', { camp: CAMP.id, kind: 'schedule', alert: false, ids: ['*'] }, true);
+      return;
+    }
+    if (!pushSchedSent) { pushSchedSent = cur; return; }
+    const ids = pushScheduleChangedIds(pushSchedSent, cur);
+    if (!ids.length) return;
+    pushSchedSent = cur;
+    await pushPost('/notify', { camp: CAMP.id, kind: 'schedule', alert: false, ids }, true);
+  } catch (e) {
+    if (e && e.serverError === 'bad-kind') pushSchedAlertsOff = true;
+  }
 }
 
 function pushOnSetupEvent(kind) {
   if (kind === 'commit') { pushScheduleSoon(); pushMigrateWeekStart(); return; }
   if (kind === 'tree') {
     const shared = typeof scheduleIsShared === 'function' && scheduleIsShared();
-    if (pushLastShared !== null && shared !== pushLastShared) pushScheduleSoon();
+    if (pushLastShared !== null && shared !== pushLastShared) { pushSchedResetOwed = true; pushScheduleSoon(); }
     pushLastShared = shared;
+    if (pushSchedSent === null) pushSchedSent = pushScheduleSnapshot();
     pushMigrateWeekStart();
   }
 }
