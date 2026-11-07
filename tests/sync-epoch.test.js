@@ -373,7 +373,7 @@ test('the bar names the count, offers Download and Dismiss, and is calm (not the
     watchLook();
     updateSyncIndicator();
     assert.equal(bar().hidden, false);
-    assert.ok(bar().innerHTML.includes('1 old change not added to this week'), bar().innerHTML);
+    assert.ok(/1 change from \d{4} wasn’t added/.test(bar().innerHTML), bar().innerHTML);
     assert.ok(bar().innerHTML.includes('data-stranded="download"') && bar().innerHTML.includes('data-stranded="dismiss"'));
     assert.equal(calmLook, true, 'the neutral news look');
     assert.notOk(bar().innerHTML.includes('gold') || bar().innerHTML.includes('results/gA'), 'a count only, no scores');
@@ -445,11 +445,13 @@ test('Dismiss asks first; No keeps it, Yes deletes it from the phone and drops t
   try {
     confirm = (m) => { asked = m; return false; };
     onSyncStatusClick({ target: { closest: (sel) => (sel === '[data-stranded]' ? { dataset: { stranded: 'dismiss' } } : null) } });
+    await waitQuiet();
     assert.ok(/Delete this change from this phone/.test(asked), asked);
     assert.equal(strandedCount(), 1);
     assert.equal(storedStranded().length, 1);
     confirm = (m) => { asked = m; return true; };
     onSyncStatusClick({ target: { closest: (sel) => (sel === '[data-stranded]' ? { dataset: { stranded: 'dismiss' } } : null) } });
+    await waitUntil(() => strandedCount() === 0, 'the dismissal to go through');
     assert.equal(strandedCount(), 0);
     assert.equal(localStorage.getItem(STRANDED()), null);
     assert.equal(bar().hidden, true);

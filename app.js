@@ -5711,11 +5711,24 @@ function addStranded(entry) {
   return writeStranded();
 }
 
+// The year the set-aside work belongs to, when every entry agrees on one (the camp week it was last synced in), else ''.
+function strandedYear() {
+  const years = [];
+  readStranded().forEach((en) => {
+    const t = Date.parse(en.lastSyncedAt || en.at);
+    const y = isFinite(t) ? String(new Date(t).getUTCFullYear()) : '';
+    if (y && years.indexOf(y) === -1) years.push(y);
+  });
+  return years.length === 1 ? years[0] : '';
+}
+
+// Step 28's template (the calm "tab" look, two lines at most): the year named once an entry can say which. The toast and the
+// sign-out question carry the full sentence.
 function strandedBarHtml() {
   const n = strandedCount();
-  // Short on purpose: the calm strip clips at two lines, and at 320px that is ~38
-  // characters. The toast and the sign-out question carry the full sentence.
-  return `<span class="sync-alert-text" title="From last camp week: they never synced, so they weren’t added to this week.">${n} old change${n === 1 ? '' : 's'} not added to this week.</span>` +
+  const y = strandedYear();
+  return '<span class="sync-alert-ico" aria-hidden="true"><svg class="ico"><use href="#i-download"/></svg></span>' +
+    `<span class="sync-alert-text" title="From the last camp week: they never synced, so they weren’t added to this week.">${n} change${n === 1 ? '' : 's'} from ${y ? esc(y) : 'last camp week'} ${n === 1 ? 'wasn’t' : 'weren’t'} added</span>` +
     '<span class="sync-quarantine-actions">' +
     '<button type="button" class="link-btn sync-quarantine-btn" data-stranded="download">Download</button> ' +
     '<button type="button" class="link-btn danger-link sync-quarantine-btn" data-stranded="dismiss">Dismiss</button>' +
@@ -5743,11 +5756,17 @@ function downloadStranded() {
   showToast('Saved to your downloads. Tap Dismiss in the bar once you have the file.');
 }
 
-// Delete what was set aside. Asked first: this is the only copy.
-function dismissStranded() {
+// Delete what was set aside. Asked first: this is the only copy (askDialog where the setup frame loaded, the browser's own question otherwise).
+async function dismissStranded() {
   const n = strandedCount();
   if (!n) return;
-  if (!confirm(`Delete ${n === 1 ? 'this change' : 'these ' + n + ' changes'} from this phone? ${n === 1 ? 'It was' : 'They were'} not added to this week, and ${n === 1 ? 'it' : 'they'} can’t be brought back.`)) return;
+  const q = `Delete ${n === 1 ? 'this change' : 'these ' + n + ' changes'} from this phone?`;
+  const body = `${n === 1 ? 'It was' : 'They were'} not added to this week, and ${n === 1 ? 'it' : 'they'} can’t be brought back.`;
+  let yes;
+  if (typeof askDialog === 'function') {
+    yes = (await askDialog({ title: q, body, actions: [{ label: 'Keep ' + (n === 1 ? 'it' : 'them'), value: 'keep', cancel: true }, { label: 'Delete ' + (n === 1 ? 'it' : 'them'), value: 'delete', kind: 'danger' }] })) === 'delete';
+  } else yes = confirm(q + ' ' + body);
+  if (!yes) return;
   strandedList = [];
   writeStranded();
   updateSyncIndicator();

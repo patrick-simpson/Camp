@@ -67,7 +67,8 @@ test('the header says who you are: the team and your name for a counselor, the c
   const d = headerModel();
   assert.equal(d.teamId, null, 'a director with no team gets the camp mark');
   assert.equal(d.name, camp, 'with no team the headline is the camp, so a director on both camps never loses which one this is');
-  assert.equal(d.sub, 'Jenn · Director · ' + dayLabel(campNow().dow));
+  // A weekend has no day label (the header drops an empty part, it never ends on a dangling separator).
+  assert.equal(d.sub, ['Jenn', 'Director', dayLabel(campNow().dow)].filter(Boolean).join(' · '));
   memberName = null;
   assert.equal(headerModel().sub.startsWith('Director'), true, 'with no name on file the role stands alone: never a guess from the email');
   assert.equal(headerModel().name, camp);

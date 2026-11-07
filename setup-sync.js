@@ -3071,6 +3071,84 @@ function setupUseOriginal(sections) {
   return r.ok ? { ok: true, turnedOff: want } : r;
 }
 
+// ── Advanced → Start this section again from the original (§10.1, §11.16) — the OWNER's ────────────
+// The emergency valve for a section that has EVER been on (`meta/on/<s>` present, true or false): what is stored for it is
+// replaced by the app's own seed and the switch ends up on. Never for a section that was never turned on (nothing to start
+// again: Edit the week here is its door). PURE heart: `restartSeed(cur, seed, section, info)` returns the new setup node, or
+// undefined (abort) for a section never turned on or a node a newer build wrote. Every other field (stamps, weekStart, a live
+// wizard claim, the other sections) is copied unchanged, so the rules' keep-clauses accept it, as for mergeSeed.
+function restartSeed(cur, seed, section, info) {
+  if (SETUP_SECTIONS.indexOf(section) === -1 || !setupIsMap(cur) || !setupIsMap(cur.meta)) return undefined;
+  if (typeof cur.meta.schema === 'number' && cur.meta.schema > SETUP_SCHEMA) return undefined;
+  if (!setupIsMap(cur.meta.on) || typeof cur.meta.on[section] !== 'boolean') return undefined;
+  const out = setupClone(cur);
+  (RP_SETUP_KEYS[section] || []).forEach((k) => {
+    if (seed && seed[k] !== undefined) out[k] = setupClone(seed[k]); else delete out[k];
+  });
+  out.meta.on[section] = true;
+  out.meta.schema = SETUP_SCHEMA;
+  // The rules' meta has no room for a field of its own (`$other: false`): the section's own edited stamp says who and when.
+  if (!setupIsMap(out.meta.edited)) out.meta.edited = {};
+  out.meta.edited[section] = { at: info.at, byKey: info.byKey };
+  return out;
+}
+
+// → { ok, section, attach } or { ok:false, reason }: owner (message) · none · never (never turned on) · loading · denied · schema ·
+// tab · offline · camp-week · ask-camp-week · restore-point · refused · failed. A `pre-seed` restore point first (required, online), then ONE
+// transaction. The schedule's games are re-placed after it (A2: only games whose link no longer resolves).
+async function setupRestartSection(section, opts) {
+  const o = opts || {};
+  const refuse = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
+  if (SETUP_SECTIONS.indexOf(section) === -1 || (section === 'electives' && !setupHasElectives())) return refuse('none');
+  const gate = ownerGate('start a section again');
+  if (!gate.ok) return refuse('owner', { message: gate.reason });
+  if (!setupRef || !setupReady) return refuse('loading');
+  if (setupDenied || setupWriteRefused) return refuse('denied');
+  if (setupSchemaTooNew()) return refuse('schema');
+  if (!tabMayPush('setup')) return refuse('tab');
+  if (!restoreOnline()) return refuse('offline');
+  if (typeof (setupTree.meta.on || {})[section] !== 'boolean') return refuse('never');
+  if (!o.overrideCampWeek) {
+    const wk = campWeek();
+    if (wk.phase === 'during') return refuse('camp-week');
+    if (wk.phase === 'unset') {
+      if (o.campRunning === undefined) return refuse('ask-camp-week');
+      if (o.campRunning === true) return refuse('camp-week');
+    }
+  }
+  const key = identityKey(authUser);
+  if (!key) return refuse('owner', { message: ownerGate('start a section again').reason });
+  const rp = await restoreSave('pre-seed', 'Before starting ' + setupSectionWords(section) + ' again', { requireOnline: true });
+  if (!rp.ok) return refuse('restore-point', { why: rp.reason });
+  const seed = buildSeed(CAMP, [section]);
+  const info = { at: firebase.database.ServerValue.TIMESTAMP, byKey: key };
+  setupPending++;
+  setupNotify('sync');
+  let res;
+  try {
+    res = await setupRef.transaction((cur) => restartSeed(cur, seed, section, info), null, false);
+  } catch (e) {
+    return refuse(e && e.code === 'PERMISSION_DENIED' ? 'refused' : 'failed', { code: e && e.code });
+  } finally {
+    setupPending = Math.max(0, setupPending - 1);
+    setupNotify('sync');
+  }
+  if (typeof setupIdleTick === 'function') setupIdleTick();
+  if (!res || !res.committed) return refuse('failed');
+  let attach = null;
+  if (section === 'schedule' && canEdit() && (typeof configEditable !== 'function' || configEditable())) {
+    const tree = normalizeSetup(setupClone(res.snapshot.val()));
+    const plan = setupGameAttachments(state.config, (dow) => resolveDay(tree, dow).map(setupRichBlock), CAMP);
+    if (plan.ops.length) { setupApplyGameAttachments(state.config, plan.ops); saveConfig(); }
+    attach = { attached: plan.ops.length, unplaced: plan.unplaced };
+  }
+  return { ok: true, section, attach, pre: rp.rid };
+}
+
+function setupSectionWords(section) {
+  return { schedule: 'the schedule', meals: 'the menus', verses: 'the memory verses', cleanup: 'the cleanup rota', electives: 'the electives' }[section] || section;
+}
+
 // ── 8. Schedule editing (§11.5): the mutators the Schedule screen's sheets commit ─────────────────
 // Everything here is PURE over a draft tree (commitSetup hands the mutator a COPY and diffs it), so a test drives
 // each rule with a plain object and the screens only gather the answers. The fields an item has, in the order a
@@ -4867,7 +4945,12 @@ async function wizardClear(opts) {
 async function wizardUndoOffer() {
   let rows;
   try { rows = await restoreList(); } catch (e) { return null; }
-  const row = rows.find((r) => r.kind === 'archive');
+  return wizardUndoPick(rows);
+}
+
+// The same answer from a list already read (the hub's menu row asks without a new read). Pure over the rows.
+function wizardUndoPick(rows) {
+  const row = (rows || []).find((r) => r.kind === 'archive');
   if (!row) return null;
   if ((row.epoch || '') === ((state.meta && state.meta.epoch) || '')) return null; // taken under this year's own epoch: nothing to undo
   const days = Math.floor(Math.max(0, serverNow() - ((state.meta && state.meta.epochAt) || row.at)) / 86400000);

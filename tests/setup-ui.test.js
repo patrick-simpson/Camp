@@ -176,7 +176,12 @@ test('a director sees the setup sheets only while the builder is up', () => {
     assert.equal(shellSheetAllowed('game'), false, 'the game sheet needs a game a tap named');
     assert.equal(shellSheetAllowed('sg-day'), false, 'a day\'s sheet needs a games day');
     gmUi.open = { mode: 'new', pane: 'form', gid: null }; gmUi.dayDk = SETUP_DK[competitionDays()[0].dow];
+    // Step 28's three sheets are the owner's: a plain director is shut out whatever a tap opened.
+    nywUi.undo = { rid: 'x' }; nywUi.staffOpen = true;
+    ['setup-advanced', 'nyw-staff', 'nyw-undo'].forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' is the owner\'s'));
+    authUser = { email: 'patricksimpson.fx@gmail.com', emailVerified: true };
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), true, id));
+    authUser = null;
     state.ui.view = 'home';
     // The game sheet is the one that also opens over the Games tab (Quick game, Add games) with the builder closed; never for a counselor.
     SETUP_SHEETS.filter((id) => id !== 'game').forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
@@ -184,7 +189,7 @@ test('a director sees the setup sheets only while the builder is up', () => {
     setMemberRole('viewer');
     assert.equal(shellSheetAllowed('game'), false, 'a counselor never');
     setMemberRole('editor');
-  } finally { gmUi.open = null; gmUi.dayDk = ''; setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; peopleUi.person = null; peopleUi.request = null; peopleUi.teams = null; peopleUi.add = null; peopleUi.blocked = false; campersUi.edit = null; campersUi.add = null; suClose(); }
+  } finally { nywUi.undo = null; nywUi.staffOpen = false; authUser = null; gmUi.open = null; gmUi.dayDk = ''; setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; peopleUi.person = null; peopleUi.request = null; peopleUi.teams = null; peopleUi.add = null; peopleUi.blocked = false; campersUi.edit = null; campersUi.add = null; suClose(); }
 });
 
 // ── askDialog ──
@@ -422,8 +427,10 @@ test('the owner\'s menu rows exist only for the owner AND only when their action
     assert.equal(document.querySelector('.setup-owner-sec').hidden, false, 'Use the original week again is built (Step 15)');
     assert.equal(row('original').hidden, false);
     assert.equal(row('original').querySelector('[data-setup-why]').textContent, 'Already using the original week.', 'greyed, with its reason: the schedule is not edited here, so there is nothing to go back from');
-    assert.equal(row('new-year').hidden, true, 'the wizard is not built until Step 28: never listed');
-    assert.equal(row('advanced').hidden, true);
+    assert.equal(row('new-year').hidden, false, 'the new-year setup is built (Step 28)');
+    assert.equal(row('undo-new-year').querySelector('[data-setup-why]').textContent, 'Nothing to undo yet', 'greyed until a past year is saved');
+    assert.equal(row('advanced').hidden, false);
+    delete SETUP_OWNER_ACTIONS['undo-new-year'];
     SETUP_OWNER_ACTIONS.original = { run: () => {}, why: () => '' };
     SETUP_OWNER_ACTIONS['new-year'] = { run: () => {}, why: () => 'Not during camp week' };
     renderSetupMenuRows();

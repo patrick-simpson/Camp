@@ -328,6 +328,19 @@ function hubDoor(view) {
   const v = view || {};
   const name = hubCap(v.ownerName || 'the owner');
   const actions = v.doorActions || {};
+  // A new-year setup under way outranks every other door: the owner's driving device carries on, the owner's other device
+  // watches or takes over, every other director just reads where it is.
+  if (v.wizard) {
+    const w = v.wizard;
+    const step = 'Step ' + w.step + ' of 5';
+    if (w.state === 'mine') {
+      return { door: 'wizard', lead: 'You’re setting up ' + w.year, text: step, ownerButton: actions.wizard ? 'Carry on' : '', ownerText: '', pair: false, takeover: false };
+    }
+    if (w.state === 'other') {
+      return { door: 'wizard', lead: 'You’re setting up ' + w.year + ' on another device', text: step + ' · last tap ' + hubAgo(Date.now() - w.idleMs, Date.now()), ownerButton: '', ownerText: '', pair: true, takeover: !!w.canTakeOver };
+    }
+    return { door: 'wizard', lead: name + ' is setting up ' + w.year + ' (' + step.toLowerCase() + ').', text: 'Scores saved before ' + name + ' finishes are cleared with the rest.', ownerButton: '', ownerText: '', pair: false, takeover: false };
+  }
   if (v.weekRunning) {
     return { door: 'running', lead: 'Camp week in progress — the new-year setup is locked.', text: v.on && v.on.schedule ? 'Rain plans and small edits are fine.' : '', ownerButton: '', ownerText: '' };
   }
@@ -449,7 +462,8 @@ function hubView() {
     teams: state.teams || [], teamInfo: teamsInfoView(), days: (state.config && state.config.days) || [], games: (state.config && state.config.games) || [],
     members: hubMembers(), membersLoaded: !!memberDirectoryLoaded, join: peopleJoinView(), campers: campersView(),
     on, skip: meta.skip && typeof meta.skip === 'object' ? meta.skip : {}, weekStart, weekRunning: hubWeekRunning(weekStart),
-    newYearDue: typeof newYearDue === 'function' ? !!newYearDue() : false, nextYear: '',
+    newYearDue: typeof newYearDue === 'function' ? !!newYearDue() : false, nextYear: typeof nywNextYear === 'function' ? nywNextYear() : '',
+    wizard: typeof nywDoorView === 'function' ? nywDoorView() : null,
     setupTooNew: typeof setupSchemaTooNew === 'function' && setupSchemaTooNew(),
     notice: { status: notice && notice.status, has: !!(notice && (notice.title || notice.sub || (notice.zones && notice.zones.length) || (notice.steps && notice.steps.length))) },
     restore: { status: rest.status, newestAt: rest.rows.length ? rest.rows[0].at : 0, count: rest.rows.length },
@@ -616,9 +630,9 @@ function hubScheduleView() {
 
 // #setup[data-screen] is the ONE switch the CSS reads (styles.css "SET UP THE WEEK"): hub | backups |
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
-const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers', 'games'];
+const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers', 'games', 'wizard'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
-const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add', 'game', 'sg-day'];
+const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add', 'game', 'sg-day', 'setup-advanced', 'nyw-staff', 'nyw-undo'];
 // The sheets that hold a half-made edit and ask before they let it go: the id → a function that takes the close over
 // (it asks, and returns true) or returns false when nothing is at stake. app.js's Escape handler and shellApply (the
 // phone's Back) call setupSheetGuardClose; ✕ and the backdrop reach the same question through the sheet's own
@@ -654,6 +668,8 @@ function setupEl(id) {
 
 function setupScreen() {
   const s = state.ui && state.ui.builderScreen;
+  // The new-year setup is the owner's, and only while a run (or its step 5) is there to show: anyone else reads the hub.
+  if (s === 'wizard' && !(typeof nywMayShow === 'function' && nywMayShow())) return 'hub';
   // The rain plan is the edited schedule's: a reload after Use the original week again lands on the Schedule preview.
   if (s === 'rain' && !(typeof scheduleIsShared === 'function' && scheduleIsShared())) return 'schedule';
   // A camp with no electives (senior) has no such screen: a stale stored one reads as the hub.
@@ -675,6 +691,7 @@ function setupWhereNow() {
   if (s === 'hub') return 'hub';
   if (s === 'backups') return 'restore';
   if (s === 'week') return 'week';
+  if (s === 'wizard') return 'wizard';
   if (s === 'schedule') return 'schedule:' + (state.ui.setupDay || 'typical');
   if (s === 'rain') return 'rain:' + ((state.ui.rainDay && SETUP_DK.indexOf(state.ui.rainDay) !== -1) ? state.ui.rainDay : 'wed');
   if (HUB_SECTIONS.indexOf(s) !== -1) return s;
@@ -748,6 +765,7 @@ async function setupBack() {
     return;
   }
   if (screen === 'hub') setupCloseBuilder();
+  else if (screen === 'wizard') await nywBackFromScreen();
   else if (screen === 'people' && peopleUi.from === 'more') { peopleUi.from = ''; setupCloseBuilder(); } // opened from More: Back goes back there
   else {
     if (typeof discardGameDraft === 'function') discardGameDraft();
@@ -923,6 +941,8 @@ function paintHubDoor(door) {
   setHiddenIfChanged(btn, !(owner && door.ownerButton));
   setTextIfChanged(setupEl('hub-door-owner-text'), door.ownerText);
   setHiddenIfChanged(setupEl('hub-door-owner'), owner || !door.ownerText);
+  setHiddenIfChanged(setupEl('hub-door-pair'), !(owner && door.pair));
+  setHiddenIfChanged(setupEl('hub-door-takeover'), !(owner && door.takeover));
 }
 
 // A tap on a hub row that opens something.
@@ -958,6 +978,7 @@ function renderSetupUi(open) {
   // counts, or to the Classic editor, which holds nothing) takes them out of the page, so a hidden screen never keeps a minor's name.
   if (screen !== 'campers' && typeof campersUiForget === 'function') campersUiForget();
   if (typeof applyOwnerClass === 'function') applyOwnerClass();
+  if (nywUi.openNow !== (screen === 'wizard')) { nywUi.openNow = screen === 'wizard'; if (typeof wizardSetOpen === 'function') wizardSetOpen(nywUi.openNow); }
   // Back from the hub returns to the tab the builder was opened FROM (More, or Games from an empty day's
   // "Add games"): the shell keeps state.ui.tab untouched while the builder is up.
   const cameFrom = { now: 'Now', games: 'Games', chat: 'Chat', more: 'More' }[state.ui.tab] || 'More';
@@ -976,6 +997,7 @@ function renderSetupUi(open) {
   else if (screen === 'people') renderPeopleScreen();
   else if (screen === 'campers') renderCampersScreen();
   else if (screen === 'games') renderGamesScreen();
+  else if (screen === 'wizard') renderNywScreen();
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
@@ -1022,6 +1044,7 @@ function setupUiClosed() {
   if (typeof campersWant === 'function') campersWant(false);
   if (typeof editorsHereStop === 'function') editorsHereStop();
   setupPillHide(true);
+  if (nywUi.openNow) { nywUi.openNow = false; if (typeof wizardSetOpen === 'function') wizardSetOpen(false); }
   SETUP_SHEETS.forEach((id) => { if (shell.sheets.includes(id)) shellSheetClose(id); });
 }
 
@@ -1032,7 +1055,7 @@ function setupUiOnEvent(kind) {
   if (!setupUi.wasOpen || !builderOpen()) return;
   if (kind === 'sync') { paintSetupSync(); if (setupScreen() === 'backups') paintRestoreNote(); }
   else if (kind === 'here') { paintSetupHere(); if (setupScreen() === 'hub') paintHub(); }
-  else if (kind === 'tree' || kind === 'clashes') { paintSetupSync(); if (setupScreen() === 'hub') paintHub(); else if (setupScreen() === 'people') renderPeopleScreen(); }
+  else if (kind === 'tree' || kind === 'clashes') { paintSetupSync(); if (setupScreen() === 'hub') paintHub(); else if (setupScreen() === 'people') renderPeopleScreen(); else if (setupScreen() === 'wizard') renderNywScreen(); }
   else if (kind === 'requests') { if (setupScreen() === 'hub') paintHub(); else if (setupScreen() === 'people') renderPeopleScreen(); }
   else if (kind === 'campers') campersRepaint();
   else if (kind === 'commit') { paintSetupSync(); paintSetupDock(); }
@@ -1348,6 +1371,9 @@ function renderSetupSheet(id) {
   else if (id === 'camper-add') renderCamperAddSheet();
   else if (id === 'game') { if (typeof renderGameSheet === 'function') renderGameSheet(); }
   else if (id === 'sg-day') renderGmDaySheet();
+  else if (id === 'setup-advanced') renderAdvancedSheet();
+  else if (id === 'nyw-staff') renderNywStaffSheet();
+  else if (id === 'nyw-undo') renderNywUndoSheet();
 }
 
 // Whether a setup sheet has anything to show (app.js shellSheetAllowed): the restore sheet needs a point
@@ -1367,6 +1393,9 @@ function setupSheetReady(id) {
   if (id === 'camper-add') return !!campersUi.add;
   if (id === 'game') return typeof gmSheetReady === 'function' && gmSheetReady();
   if (id === 'sg-day') return gmIsGamesDay(gmUi.dayDk);
+  if (id === 'setup-advanced') return isOwner();
+  if (id === 'nyw-staff') return isOwner() && nywUi.staffOpen;
+  if (id === 'nyw-undo') return isOwner() && !!nywUi.undo;
   return id !== 'restore' || !!setupUi.rsheet;
 }
 
@@ -1679,6 +1708,7 @@ function renderRestoreSheet() {
   const kind = rs.row && rs.row.kind;
   setHiddenIfChanged(setupEl('rp-keep-row'), !(rs.row && !rs.row.pinned && kind !== 'archive' && kind !== 'pre-wizard'));
   setHiddenIfChanged(setupEl('rp-delete-row'), !(rs.row && restoreDeletable(rs.row)));
+  paintArchiveYear(rs);
 }
 
 const RP_WHY = {
@@ -1699,6 +1729,7 @@ async function rpApply() {
   // The sheet must still be OPEN: a hold that was still down when Escape / Back / a re-render dismissed
   // the sheet would otherwise finish 1.2 s in and put the scores back after the person said no.
   if (!rs || rs.state !== 'ready' || rs.busy || !shell.sheets.includes('restore')) return;
+  if (rs.row && rs.row.kind === 'archive') return; // a past year is never put back section by section (its scores would count against this year's window)
   const picks = {};
   RP_SECTIONS.forEach((s) => { picks[s] = !!(rs.picks[s] && rs.preview.sections[s] && rs.preview.sections[s].offered); });
   if (!RP_SECTIONS.some((s) => picks[s])) { showToast(RP_WHY.nothing); return; }
@@ -4141,6 +4172,9 @@ function wireSetupUi() {
   wirePeopleScreen();
   wireCampersScreen();
   wireGamesScreen();
+  wireNyw();
+  on('#hub-door-watch', 'click', () => { if (typeof nywWatch === 'function') nywWatch(); });
+  on('#hub-door-takeover', 'click', () => { if (typeof nywTakeOver === 'function') nywTakeOver(); });
   // Camp week (§11.4): dates, the Days tick sheet, double points, the TV finale.
   on('#week-start', 'change', (e) => weekSetStart(e.target.value));
   on('#week-days', 'click', (e) => { const t = e.target.closest && e.target.closest('.wk-tick'); const row = t && t.closest('.wk-day'); if (t && row) weekTick(Number(row.dataset.dow), t.dataset.weekFollow); });
@@ -8983,3 +9017,1086 @@ function wireGameSheet() {
     if (/^gm-(lower|times|live|negative|double|tracker|timer)$/.test(t.id || '')) gmSwitch(t.id, !!t.checked);
   });
 }
+
+// ════════════════════════════════════════════════════════════════════
+// 17. THE NEW-YEAR SETUP (P2 §11.3, §7.3, §10.1, §11.16 — Step 28, build session 2)
+// ════════════════════════════════════════════════════════════════════
+// The screens of the wizard whose ENGINE is setup-sync.js §11 (claim, archive, clear, undo). OWNER ONLY: `setupScreen()` reads a
+// stored `wizard` as the hub for anyone else, every handler asks isOwner() again, and every other director reads the hub door's
+// sentence (ownerSays). The markup is index.html's `#setup-wizard` (hooks documented there); a renderer patches text, `hidden` and
+// data-*, never rebuilds a control (the tally lists are the only setHtmlIfChanged roots). Nothing here writes to the database but
+// through the engine's functions: wizardStart / wizardTakeOver / wizardSetStep / wizardAnswer / wizardArchive / wizardClear /
+// wizardUndo, and setupRestartSection for Advanced.
+//
+//   mode  me     this device drives the claim (or has just finished: step 5 from the device's own `done` record)
+//         watch  the owner's OTHER device drives and this one chose Watch: the step reads, nothing in it takes a tap
+//         other  the same, before Watch: only the claim panel
+// The step is the CLAIM's step (a reload resumes on it); the answers are the device draft (wizardAnswers()).
+
+const NYW_STEPS = 5;
+const NYW_WHY = {
+  loading: 'Still loading the week setup. Try again in a moment.',
+  denied: 'The new-year setup isn’t available yet: the database rules need updating first.',
+  schema: 'This camp’s setup was made by a newer version. Reload the page first.',
+  tab: 'This tab is view-only. Use the tab that is open for editing.',
+  offline: 'This needs a connection. Nothing was changed.',
+  refused: 'The database turned it away, so nothing was changed.',
+  failed: 'That didn’t go through, so nothing was changed.',
+  dates: 'Pick the Sunday camp starts first.',
+  teams: 'The teams aren’t set up for a clear. Ask for the team slots to be repaired first.',
+  archive: 'The last camp week isn’t saved and checked yet.',
+  busy: 'Something on this phone hasn’t finished saving. Wait a moment and try again.',
+  requests: 'Couldn’t read the people asking to join. Check your connection and try again.',
+  'not-mine': 'Another device has taken over the setup.',
+  gone: 'The setup was closed on another device.',
+  other: 'Your other device is setting up the new year.',
+  'camp-week': 'A camp week is running. The new-year setup waits for later.',
+  save: 'Couldn’t save the last camp week, so nothing was cleared.',
+  verify: 'The saved copy didn’t match, so nothing was cleared.',
+  claim: 'Couldn’t record the saved copy. Try again.',
+  step: 'That step doesn’t exist.',
+};
+
+const nywUi = {
+  openNow: false, lastStep: 0, lastMode: '', watching: false,
+  typed: '',                       // a date typed that is not a Sunday (never an answer)
+  ask: null,                       // the one inline question: { q, list?, a: {label, run}, b: {label, run, danger?} }
+  save: { state: 'idle', res: null, why: '' },   // step 3: idle | saving | saved | offline | error
+  clear: { state: 'idle', why: '', reveal: false }, // step 4: idle | saving | offline | error
+  members: null,                   // step 4's preflight read: { ok, withTeam, incomplete }
+  membersAsked: false,
+  done: null,                      // the clear's own answer (in memory: names of people it could not move)
+  doneLeft: false,
+  a1Ran: false,
+  claim: null, claimAt: 0,         // the claim an acknowledged write handed back, until the tree catches up
+  freeze: {},                      // { campRunning, overrideCampWeek }: what the owner answered
+  undo: null,                      // the Undo sheet: { rid, row, offer, body, state, why, reveal, busy }
+  staffOpen: false,
+  shown: { rows: '' },
+};
+
+// ── pure helpers ─────────────────────────────────────────────────────
+
+function newYearDue() {
+  return typeof campWeek === 'function' && campWeek().phase === 'after';
+}
+
+function nywYmdParts(ymd) {
+  const m = /^(20\d{2})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!m) return null;
+  const t = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const d = new Date(t);
+  return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3] ? { t, dow: d.getUTCDay() } : null;
+}
+
+// The Sunday nearest a typed date ('' when it isn't a date at all): Mon–Wed go back, Thu–Sat forward.
+function nywSundayNear(ymd) {
+  const p = nywYmdParts(ymd);
+  if (!p) return '';
+  const back = p.dow <= 3 ? p.dow : p.dow - 7;
+  return new Date(p.t - back * 86400000).toISOString().slice(0, 10);
+}
+
+function nywDayWords(ymd) {
+  const p = nywYmdParts(ymd);
+  return p ? new Date(p.t).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '';
+}
+
+function nywClockWords(min) {
+  const h = Math.floor(min / 60);
+  const mm = min % 60;
+  return ((h % 12) || 12) + ':' + String(mm).padStart(2, '0') + ' ' + (h < 12 ? 'AM' : 'PM');
+}
+
+// "Thursday 5:00 PM until the end of Friday"
+function nywDoubleWords(d) {
+  if (!d || !wizardDoubleOk(d)) return '';
+  const to = d.toMin === 0 ? 'the end of ' + WEEK_DOW_WORDS[(d.toDow + 6) % 7] : WEEK_DOW_WORDS[d.toDow % 7] + ' ' + nywClockWords(d.toMin);
+  return WEEK_DOW_WORDS[d.fromDow] + ' ' + nywClockWords(d.fromMin) + ' until ' + to;
+}
+
+// What "Same as last year" is: the legacy week's printed window, else the week's own.
+function nywLastDouble() {
+  return wizardDoubleValue('same', { epoch: state.meta && state.meta.epoch, double: setupTree.meta && setupTree.meta.double });
+}
+
+function nywNextYear(answers) {
+  const a = answers || wizardAnswers();
+  if (a.weekStart) return a.weekStart.slice(0, 4);
+  return String(Number(wizardOutgoingYear()) + 1);
+}
+
+// "July 2027", "July – August 2027" (a week that crosses a month).
+function nywMonthWords(ymd) {
+  const p = nywYmdParts(ymd);
+  if (!p) return 'The week';
+  const f = (t, o) => new Date(t).toLocaleDateString('en-US', Object.assign({ timeZone: 'UTC' }, o));
+  const a = f(p.t, { month: 'long' });
+  const b = f(p.t + 6 * 86400000, { month: 'long' });
+  return a === b ? a + ' ' + f(p.t, { year: 'numeric' }) : a + ' – ' + b + ' ' + f(p.t + 6 * 86400000, { year: 'numeric' });
+}
+
+const NYW_CARRY_WORDS = {
+  schedule: 'The schedule back to the one the app came with', games: 'Games back to the ones the app came with', teams: 'Team names, emoji and colours back to the app’s own',
+  counselors: 'Counselor names typed on teams', photos: 'Team photos', cleanup: 'Cleanup rota', meals: 'Meal menus', verses: 'Memory verses and theme',
+  stations: 'Elective stations', stationPeople: 'Who’s at each station',
+};
+const NYW_KEEP_WORDS = { schedule: 'the schedule', games: 'games', teams: 'team names', cleanup: 'cleanup rota', stations: 'elective stations', counselors: 'typed counselor names', photos: 'team photos', meals: 'menus', verses: 'verses', stationPeople: 'who’s at each station' };
+
+function nywTallyRow(key, n, what, sub) {
+  const num = n && typeof n === 'object' && n.mark ? '<span class="nyw-t-n" data-mark="' + esc(n.mark) + '"></span>'
+    : n && typeof n === 'object' && n.html ? '<span class="nyw-t-n">' + n.html + '</span>'
+    : '<span class="nyw-t-n">' + esc(String(n)) + '</span>';
+  return '<div class="nyw-t" data-key="' + esc(key) + '">' + num + '<span class="nyw-t-text"><span class="nyw-t-what">' + esc(what) + '</span>' +
+    (sub ? '<span class="nyw-t-sub">' + esc(sub) + '</span>' : '') + '</span></div>';
+}
+
+function nywWord(n, one, many) { return n === 1 ? one : many; }
+
+// The year's champion for the receipt: directors only (the points guard), '' team with nothing scored.
+function nywChampion() {
+  if (typeof standingsVisible !== 'function' || !standingsVisible()) return null;
+  const counts = medalCounts();
+  const ranked = rankTeamsByPoints(counts);
+  const top = ranked[0];
+  if (!top || !(counts[top.id] && counts[top.id].points > 0)) return null;
+  const n = counts[top.id].points;
+  const tied = !!(ranked[1] && counts[ranked[1].id] && counts[ranked[1].id].points === n);
+  return { id: top.id, name: String(top.name || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 60), points: n, tied };
+}
+
+// Schedule items whose label names someone (ux-R9): a label's tail after " — " with a first name the camp knows. Nothing is
+// changed by it; the sheet only lists them.
+function nywStaffItems() {
+  if (typeof setupOn !== 'function' || !setupOn('schedule') || typeof resolveDay !== 'function') return [];
+  const known = {};
+  const add = (n) => { const w = String(n || '').trim().split(/\s+/)[0].toLowerCase(); if (w.length > 1) known[w] = String(n).trim().split(/\s+/)[0]; };
+  try { (staffNames() || []).forEach(add); } catch (e) { /* none */ }
+  const dir = memberDirectory && typeof memberDirectory === 'object' ? memberDirectory : {};
+  Object.keys(dir).forEach((k) => add(dir[k] && dir[k].name));
+  const out = [];
+  const seen = {};
+  for (let dow = 0; dow < 7; dow++) {
+    resolveDay(setupTree, dow).forEach((b) => {
+      if (!b || b.skipped || b.broken || seen[b.id]) return;
+      const label = String((b.base && b.base.label) || b.label || '');
+      const tail = label.split(' — ')[1];
+      if (!tail) return;
+      const names = [];
+      tail.split(/[^A-Za-z’']+/).forEach((w) => { const f = known[w.toLowerCase()]; if (f && names.indexOf(f) === -1) names.push(f); });
+      if (!names.length) return;
+      seen[b.id] = true;
+      out.push({ id: b.id, label, emoji: b.emoji, start: b.start, names, dow });
+    });
+  }
+  return out;
+}
+
+// ── the model ────────────────────────────────────────────────────────
+
+// Which claim this screen draws: the tree's, or the one an acknowledged write handed back a moment ago (the tree catches up a
+// beat later). Returns null when there is nothing to show (the hub stands in).
+function nywModelNow() {
+  if (typeof wizardModel !== 'function') return null;
+  const wm = wizardModel();
+  const dev = wizardDeviceId();
+  const fresh = nywUi.claim && Date.now() - nywUi.claimAt < 8000 && nywUi.claim.fromEpoch === wizardCurrentEpoch() ? nywUi.claim : null;
+  if (wm.state === 'mine') {
+    const c = fresh && fresh.at >= wm.claim.at ? fresh : wm.claim;
+    return { mode: 'me', step: c.step, claim: c, wm };
+  }
+  if (fresh && fresh.dev === dev && wm.state === 'none') return { mode: 'me', step: fresh.step, claim: fresh, wm };
+  if (wm.state === 'other') return { mode: nywUi.watching ? 'watch' : 'other', step: wm.claim.step, claim: wm.claim, wm };
+  if (nywDoneOn()) return { mode: 'me', step: 5, claim: null, wm, done: true };
+  return null;
+}
+
+function nywDoneOn() {
+  if (nywUi.doneLeft) return false;
+  const d = wizardDraftRead().done;
+  return !!(d && Date.now() - Number(d.at || 0) < 3 * 86400000);
+}
+
+function nywMayShow() {
+  return typeof isOwner === 'function' && isOwner() && !!nywModelNow();
+}
+
+// The answers on screen: this device's draft; Watching, the driver's own (the claim).
+function nywAnswersFor(m) {
+  if (m && m.mode === 'watch' && m.claim) return m.claim.answers;
+  const d = wizardDraftRead();
+  // A reload that lost the device draft resumes from the claim's copy.
+  if (m && m.mode === 'me' && m.claim && !d.answers.weekStart && m.claim.answers.weekStart) { d.answers = m.claim.answers; wizardDraftWrite(); }
+  return d.answers;
+}
+
+function nywWhy(r) {
+  if (!r) return NYW_WHY.failed;
+  if (r.reason === 'owner') return r.message || 'Only the owner can do that.';
+  return NYW_WHY[r.reason] || NYW_WHY.failed;
+}
+
+// The hub door's view of a run: null when none (or a leftover from another year).
+function nywDoorView() {
+  if (typeof wizardModel !== 'function') return null;
+  const wm = wizardModel();
+  if (wm.state === 'none' || wm.state === 'stale') return null;
+  const answers = wm.claim.answers;
+  return {
+    state: wm.state, step: wm.claim.step, byName: wm.byName, idleMs: wm.idleMs, canTakeOver: !!wm.canTakeOver,
+    year: answers.weekStart ? answers.weekStart.slice(0, 4) : nywNextYear(answers),
+  };
+}
+
+// ── starting, resuming, watching ─────────────────────────────────────
+
+function nywOpenScreen() {
+  nywUi.save = { state: 'idle', res: null, why: '' };
+  nywUi.clear = { state: 'idle', why: '', reveal: false };
+  nywUi.members = null; nywUi.membersAsked = false; nywUi.ask = null; nywUi.lastStep = 0;
+  setupGo('wizard');
+}
+
+// The owner's front door (hub door, Camp week's route, ⋯ → Start the new-year setup). The freeze is asked in words; a schedule
+// that isn't edited here yet is turned on first (A1, one restore point) by the engine.
+async function nywStart() {
+  if (!requireOwner('set up the new year')) return { ok: false, reason: 'owner' };
+  const opts = Object.assign({}, nywUi.freeze);
+  for (let guard = 0; guard < 4; guard++) {
+    const needA1 = !setupOn('schedule');
+    const r = await wizardStart(opts);
+    if (r.ok) {
+      if (r.claim) { nywUi.claim = r.claim; nywUi.claimAt = Date.now(); }
+      nywUi.a1Ran = nywUi.a1Ran || needA1;
+      nywUi.freeze = {};
+      nywUi.watching = false;
+      nywOpenScreen();
+      return r;
+    }
+    if (r.reason === 'other') { nywUi.watching = false; nywOpenScreen(); return r; }
+    if (r.reason === 'ask-camp-week') {
+      const running = await askDialog({
+        title: 'Is a camp week running right now?',
+        body: 'No dates are set, so the app can’t tell. The new-year setup clears the scoreboard, so it waits until camp is over.',
+        actions: [{ label: 'Not now', value: 'cancel', cancel: true }, { label: 'No, it’s not', value: 'no', kind: 'gold' }, { label: 'Yes, it is', value: 'yes' }],
+      });
+      if (running === 'cancel' || running === null) return { ok: false, reason: 'cancelled' };
+      opts.campRunning = running === 'yes';
+      if (running === 'yes') nywUi.freeze.campRunning = true;
+      continue;
+    }
+    if (r.reason === 'camp-week') {
+      const again = await askDialog({
+        title: 'A camp week is running',
+        body: ['The new-year setup clears the scoreboard. It is meant for after camp.', 'Carry on anyway?'],
+        actions: [{ label: 'Not now', value: 'wait', cancel: true }, { label: 'Carry on anyway', value: 'go', kind: 'danger' }],
+      });
+      if (again !== 'go') return { ok: false, reason: 'cancelled' };
+      opts.overrideCampWeek = true;
+      continue;
+    }
+    if (r.reason === 'a1') { setupSay(r.a1 === 'owner' ? r.message : (TURNON_WHY[r.a1] || TURNON_WHY.failed)); return r; }
+    setupSay(nywWhy(r));
+    return r;
+  }
+  return { ok: false, reason: 'failed' };
+}
+
+function nywWatch() {
+  if (!isOwner()) return;
+  nywUi.watching = true;
+  nywOpenScreen();
+}
+
+async function nywTakeOver() {
+  if (!requireOwner('take over the new-year setup')) return;
+  const r = await wizardTakeOver();
+  if (!r.ok) { setupSay(r.reason === 'busy' ? 'That device is still being used. Take over appears once it has been idle 15 minutes.' : nywWhy(r)); return; }
+  if (r.claim) { nywUi.claim = r.claim; nywUi.claimAt = Date.now(); }
+  nywUi.watching = false;
+  nywUi.save = { state: 'idle', res: null, why: '' };
+  const inh = r.inherited;
+  if (inh && !r.already && (inh.weekStart || JSON.stringify(inh.carry) !== JSON.stringify(wizardNormAnswers({}).carry) || inh.double !== 'same')) {
+    nywUi.ask = {
+      q: 'You chose on your other device:', list: nywAnswerLines(inh),
+      a: { label: 'Use these', run: () => { nywUi.ask = null; renderAll(); } },
+      b: { label: 'Start over', run: async () => { nywUi.ask = null; await wizardStartOver(); renderAll(); } },
+    };
+  }
+  nywOpenScreen();
+  if (nywUi.ask) renderAll();
+}
+
+// What an answers object says, as plain lines.
+function nywAnswerLines(a) {
+  const out = [];
+  out.push(a.weekStart ? 'Camp starts ' + nywDayWords(a.weekStart) : 'No camp date yet');
+  out.push('Double points ' + (a.double === 'none' ? 'off' : a.double === 'same' ? 'the same as last year' : nywDoubleWords(a.double)));
+  const keep = WIZARD_ITEMS.filter((k) => a.carry[k] === 'keep' && NYW_KEEP_WORDS[k] && !(k === 'stations' || k === 'stationPeople') || (CAMP.features && CAMP.features.electives && (k === 'stations' || k === 'stationPeople') && a.carry[k] === 'keep'));
+  const clear = WIZARD_ITEMS.filter((k) => a.carry[k] === 'clear' && NYW_KEEP_WORDS[k]);
+  if (keep.length) out.push('Keep ' + hubJoin(keep.map((k) => NYW_KEEP_WORDS[k])));
+  if (clear.length) out.push('Clear ' + hubJoin(clear.map((k) => NYW_KEEP_WORDS[k])));
+  return out;
+}
+
+// ── navigation ───────────────────────────────────────────────────────
+
+async function nywGo(n) {
+  const m = nywModelNow();
+  if (!m || m.mode !== 'me' || m.step === 5) return;
+  const r = await wizardSetStep(n);
+  if (!r.ok) { setupSay(nywWhy(r)); return; }
+  if (r.claim) { nywUi.claim = r.claim; nywUi.claimAt = Date.now(); }
+  nywUi.ask = null;
+  renderAll();
+  if (typeof window.scrollTo === 'function') { try { window.scrollTo(0, 0); } catch (e) { /* fine */ } }
+}
+
+async function nywNext() {
+  const m = nywModelNow();
+  if (!m || m.mode !== 'me') return;
+  wizardTouch();
+  if (m.step === 5) { nywLeaveDone(); return; }
+  const why = nywNextWhy(m, nywAnswersFor(m));
+  if (why) { setupSay(why); return; }
+  if (m.step === 1) await wizardFlushAnswers();
+  nywGo(m.step + 1);
+}
+
+// The words on the Next button when it is the dashed well ('' when it can be pressed).
+function nywNextWhy(m, a) {
+  if (m.step === 1) {
+    if (nywUi.typed && !wizardIsSunday(nywUi.typed)) return 'Pick a Sunday: camp weeks start on one.';
+    return a.weekStart ? '' : 'Pick the Sunday camp starts';
+  }
+  if (m.step === 3) {
+    const s = nywUi.save.state;
+    if (s === 'saved') return '';
+    return s === 'offline' ? 'Needs a connection' : s === 'error' ? 'Try the copy again first' : 'Saving ' + wizardOutgoingYear() + '…';
+  }
+  return '';
+}
+
+function nywLeaveDone() {
+  const d = wizardDraftRead();
+  d.done = null;
+  d.preWizard = '';
+  wizardDraftWrite();
+  nywUi.done = null; nywUi.doneLeft = true;
+  setupGo('hub');
+}
+
+// Back on the wizard's own screen: step 1 offers to put the whole setup away; any other step just leaves it open for later
+// (the hub's door says Carry on).
+async function nywBackFromScreen() {
+  const m = nywModelNow();
+  if (!m || m.mode !== 'me' || m.step !== 1) { setupGo('hub'); return; }
+  const a = nywAnswersFor(m);
+  if (!a.weekStart) {
+    const c = await askDialog({
+      title: 'Leave the new-year setup?', body: 'Nothing has been changed yet.',
+      actions: [{ label: 'Keep it for later', value: 'later', kind: 'gold' }, { label: 'Cancel the setup', value: 'cancel', kind: 'danger' }, { label: 'Stay', value: 'stay', cancel: true }],
+    });
+    if (c === 'cancel') { await wizardRelease(); nywUi.claim = null; setupGo('hub'); return; }
+    if (c === 'later') setupGo('hub');
+    return;
+  }
+  setupGo('hub');
+}
+
+// ── answers ──────────────────────────────────────────────────────────
+
+function nywSetDate(v) {
+  const m = nywModelNow();
+  if (!m || m.mode !== 'me') return;
+  wizardTouch();
+  if (!v) { nywUi.typed = ''; renderAll(); return; }
+  if (wizardIsSunday(v)) { nywUi.typed = ''; wizardAnswer({ weekStart: v }); } else nywUi.typed = v;
+  renderAll();
+}
+
+function nywSetDouble(choice) {
+  const m = nywModelNow();
+  if (!m || m.mode !== 'me') return;
+  wizardTouch();
+  const cur = wizardAnswers().double;
+  if (choice === 'same') wizardAnswer({ double: 'same' });
+  else if (choice === 'none') wizardAnswer({ double: 'none' });
+  else if (!wizardDoubleOk(cur)) wizardAnswer({ double: setupClone(nywLastDouble() || WIZARD_DOUBLE_SAME_LEGACY) });
+  renderAll();
+}
+
+function nywDoubleFromForm() {
+  const from = Number((setupEl('nyw-double-from') || {}).value);
+  const until = Number((setupEl('nyw-double-until') || {}).value);
+  const at = String((setupEl('nyw-double-at') || {}).value || '17:00').split(':').map(Number);
+  const fromMin = (at[0] || 0) * 60 + (at[1] || 0);
+  const d = { fromDow: from, fromMin, toDow: until, toMin: 0 };
+  if (!wizardDoubleOk(d)) { setupSay('Double points have to end after they start.'); renderAll(); return; }
+  wizardAnswer({ double: d });
+  renderAll();
+}
+
+function nywPick(item, pick) {
+  const m = nywModelNow();
+  if (!m || m.mode !== 'me' || WIZARD_ITEMS.indexOf(item) === -1 || (pick !== 'keep' && pick !== 'clear')) return;
+  wizardTouch();
+  wizardAnswer({ carry: { [item]: pick } });
+  renderAll();
+}
+
+// ── step 3: save last year ───────────────────────────────────────────
+
+async function nywRunSave() {
+  if (nywUi.save.state === 'saving') return;
+  nywUi.save = { state: 'saving', res: null, why: '' };
+  if (!restoreOnline()) { nywUi.save = { state: 'offline', res: null, why: 'offline' }; renderAll(); return; }
+  renderAll();
+  let r;
+  try { r = await wizardArchive(); } catch (e) { r = { ok: false, reason: 'failed' }; }
+  const m = nywModelNow();
+  if (!m || m.step !== 3) { nywUi.save = { state: 'idle', res: null, why: '' }; return; }
+  if (r.ok) nywUi.save = { state: 'saved', res: r, why: '' };
+  else if (r.reason === 'offline') nywUi.save = { state: 'offline', res: null, why: 'offline' };
+  else nywUi.save = { state: 'error', res: null, why: r.reason === 'owner' ? (r.message || '') : r.reason };
+  renderAll();
+}
+
+async function nywDownloadCopy() {
+  if (!canEdit()) return;
+  let body = null;
+  const rid = nywUi.save.res && nywUi.save.res.rid;
+  if (rid && typeof restoreRead === 'function') { try { const r = await restoreRead(rid); if (r && r.ok) body = r.body; } catch (e) { body = null; } }
+  if (!body && typeof restoreBodyObject === 'function') body = restoreBodyObject();
+  if (!body) return;
+  downloadBlob(new Blob([JSON.stringify(body)], { type: 'application/json' }), 'camp-' + CAMP.id + '-' + wizardOutgoingYear() + '-copy-' + new Date().toISOString().slice(0, 10) + '.json');
+}
+
+// ── step 4: the clear ────────────────────────────────────────────────
+
+async function nywLoadMembers() {
+  if (nywUi.membersAsked) return;
+  nywUi.membersAsked = true;
+  const r = await wizardMembersPreflight();
+  nywUi.members = r.ok ? r : null;
+  if (!r.ok) nywUi.membersAsked = false;
+  if (setupScreen() === 'wizard') renderNywScreen();
+}
+
+async function nywRunClear() {
+  const m = nywModelNow();
+  if (!m || m.mode !== 'me' || m.step !== 4 || nywUi.clear.state === 'saving') return;
+  nywUi.ask = null;
+  nywUi.clear = { state: 'saving', why: '', reveal: false };
+  renderAll();
+  let r;
+  try { r = await wizardClear(nywUi.freeze); } catch (e) { r = { ok: false, reason: 'failed' }; }
+  if (r.ok) {
+    nywUi.done = r; nywUi.doneLeft = false; nywUi.freeze = {};
+    nywUi.clear = { state: 'idle', why: '', reveal: false };
+    nywUi.save = { state: 'idle', res: null, why: '' };
+    nywUi.claim = null;
+    renderAll();
+    return;
+  }
+  nywUi.clear = { state: r.reason === 'offline' ? 'offline' : 'error', why: r.reason, reveal: false, message: r.message || '' };
+  if (r.reason === 'ask-camp-week') {
+    nywUi.clear = { state: 'idle', why: '', reveal: false };
+    nywUi.ask = {
+      q: 'Is a camp week running right now?',
+      a: { label: 'No, it’s not', run: () => { nywUi.freeze.campRunning = false; nywUi.ask = null; nywRunClear(); } },
+      b: { label: 'Yes, it is', run: () => { nywUi.freeze.campRunning = true; nywUi.ask = null; nywRunClear(); } },
+    };
+  } else if (r.reason === 'camp-week') {
+    const wk = campWeek();
+    nywUi.clear = { state: 'idle', why: '', reveal: false };
+    nywUi.ask = {
+      q: 'Camp week is running' + (wk.start ? ' (' + hubWeekRange(wk.start).replace(/^\w+ /, '').replace(/ – \w+ /, '–') + ')' : '') + '. The new-year setup clears its scoreboard.',
+      a: { label: 'Not now', run: () => { nywUi.ask = null; renderAll(); } },
+      b: { label: 'Carry on anyway', danger: true, run: () => { nywUi.freeze.overrideCampWeek = true; nywUi.ask = null; nywRunClear(); } },
+    };
+  }
+  renderAll();
+}
+
+// ── the screen ───────────────────────────────────────────────────────
+
+function nywStepHeadline(step, out, next) {
+  return [
+    ['When is camp?', 'Pick the Sunday it starts. The rest of the week follows.'],
+    ['What carries over from ' + out + '?', 'Tick Keep or Clear for each. You can change anything after.'],
+    ['Save ' + out, 'A copy of the whole week is saved and checked before anything is cleared.'],
+    ['Clear the scoreboard', 'Hold the button to start ' + next + ' fresh.'],
+    ['Ready for ' + next, 'Here’s what was done.'],
+  ][step - 1];
+}
+
+function paintNywBars(step, animate) {
+  document.querySelectorAll('#nyw-track .nyw-bar').forEach((bar) => {
+    const n = Number(bar.dataset.nywBar);
+    const st = n < step || step === 5 ? 'done' : n === step ? 'now' : 'todo';
+    if (bar.dataset.state !== st) {
+      bar.dataset.state = st;
+      if (animate && st === 'now' && typeof JellyMotion !== 'undefined') {
+        JellyMotion.play(bar, 'glide', (x) => ({ transform: 'scaleX(' + (0.2 + 0.8 * Math.min(1, x)) + ')', transformOrigin: '0 50%' }), { calm: [{ opacity: 0.4 }, { opacity: 1 }] });
+      }
+    }
+  });
+}
+
+function renderNywScreen() {
+  const root = setupEl('setup-wizard');
+  const m = nywModelNow();
+  if (!root || !m) return;
+  const owner = isOwner();
+  const a = nywAnswersFor(m);
+  const out = wizardOutgoingYear();
+  const next = nywNextYear(a);
+  const step = m.step;
+  const stepChanged = nywUi.lastStep && (nywUi.lastStep !== step || nywUi.lastMode !== m.mode);
+  const back = nywUi.lastStep > step;
+  // The screen's two switches (the CSS reads them).
+  const drive = m.mode === 'me' ? 'me' : m.mode;
+  if (root.dataset.step !== String(step)) root.dataset.step = String(step);
+  if (root.dataset.drive !== drive) root.dataset.drive = drive;
+  setTextIfChanged(setupEl('nyw-title'), 'New-year setup · ' + CAMP.label);
+  paintNywBars(step, stepChanged);
+  setTextIfChanged(setupEl('nyw-count'), 'Step ' + step + ' of ' + NYW_STEPS);
+  const claimMode = m.mode !== 'me';
+  const head = claimMode && m.mode === 'other' ? ['You’re setting up ' + next + ' on another device', ''] : nywStepHeadline(step, out, next);
+  setTextIfChanged(setupEl('nyw-headline'), head[0]);
+  setTextIfChanged(setupEl('nyw-lede'), head[1]);
+  setHiddenIfChanged(setupEl('nyw-lede'), !head[1]);
+  // The claim panel.
+  const claim = setupEl('nyw-claim');
+  setHiddenIfChanged(claim, !claimMode);
+  if (claimMode && claim) {
+    const dv = m.mode === 'watch' ? 'watching' : 'other';
+    if (claim.dataset.claim !== dv) claim.dataset.claim = dv;
+    const ago = hubAgo(m.claim.at, typeof serverNow === 'function' ? serverNow() : Date.now());
+    setTextIfChanged(setupEl('nyw-claim-lead'), m.mode === 'watch' ? 'Watching your other device · last tap ' + ago : 'Set up on your other device · step ' + step + ' of ' + NYW_STEPS);
+    setTextIfChanged(setupEl('nyw-claim-sub'), 'Last tap there ' + ago);
+    setHiddenIfChanged(setupEl('nyw-takeover'), !m.wm.canTakeOver);
+    setHiddenIfChanged(setupEl('nyw-takeover-note'), !!m.wm.canTakeOver || m.mode === 'watch');
+    setHiddenIfChanged(setupEl('nyw-watch'), m.mode === 'watch');
+  }
+  // The one inline question.
+  const ask = nywUi.ask;
+  setHiddenIfChanged(setupEl('nyw-ask'), !ask);
+  if (ask) {
+    setTextIfChanged(setupEl('nyw-ask-q'), ask.q);
+    const list = setupEl('nyw-ask-list');
+    setHiddenIfChanged(list, !(ask.list && ask.list.length));
+    setHtmlIfChanged(list, (ask.list || []).map((t) => '<li>' + esc(t) + '</li>').join(''));
+    setTextIfChanged(setupEl('nyw-ask-a'), ask.a.label);
+    setTextIfChanged(setupEl('nyw-ask-b'), ask.b.label);
+    const bb = setupEl('nyw-ask-b');
+    if (bb) { if (!!ask.b.danger !== bb.hasAttribute('data-danger')) { if (ask.b.danger) bb.setAttribute('data-danger', ''); else bb.removeAttribute('data-danger'); } }
+  }
+  // Plain lines.
+  const dev = typeof devicesList === 'function' && canEdit() ? devicesList() : null;
+  setTextIfChanged(setupEl('nyw-older-text'), dev && dev.older ? dev.lede : '');
+  setHiddenIfChanged(setupEl('nyw-older'), !(dev && dev.older) || m.mode !== 'me');
+  setHiddenIfChanged(setupEl('nyw-a1'), !(m.mode === 'me' && step === 1 && !setupOn('schedule')));
+  const offline = m.mode === 'me' && (step === 3 || step === 4) && !restoreOnline();
+  setTextIfChanged(setupEl('nyw-offline-text'), step === 3
+    ? 'No signal. Your answers are kept on this phone; saving ' + out + ' needs a connection.'
+    : 'No signal. Clearing needs a connection. Nothing has been cleared.');
+  setHiddenIfChanged(setupEl('nyw-offline'), !offline);
+  if (step === 1) paintNywStep1(a, m);
+  else if (step === 2) paintNywStep2(a, m);
+  else if (step === 3) paintNywStep3(a, out);
+  else if (step === 4) paintNywStep4(a, out, next);
+  else paintNywStep5(out, next);
+  paintNywDock(m, a, out);
+  // Motion: a step arrives from the side it came from (calm: a fade).
+  if (stepChanged && m.mode === 'me') {
+    const el = document.querySelector('#setup-wizard [data-nyw-step="' + step + '"]');
+    if (el) setupPaneArrive(el, back);
+  }
+  // Doing what the step is for, once, when it is reached (a reload on step 3 saves again; a saved copy is simply verified).
+  if (m.mode === 'me' && step === 3) {
+    if (nywUi.save.state === 'idle' || (nywUi.save.state === 'offline' && restoreOnline())) nywRunSave();
+  } else if (nywUi.save.state !== 'idle' && nywUi.save.state !== 'saving') nywUi.save = { state: 'idle', res: null, why: '' };
+  if (m.mode === 'me' && step === 4) nywLoadMembers();
+  nywUi.lastStep = step; nywUi.lastMode = m.mode;
+}
+
+function paintNywStep1(a, m) {
+  const input = setupEl('nyw-start');
+  const shown = nywUi.typed || a.weekStart;
+  if (input && document.activeElement !== input && input.value !== shown) input.value = shown;
+  setTextIfChanged(setupEl('nyw-start-sub'), a.weekStart ? hubWeekRange(a.weekStart).replace(' – ', ' to ') : 'A Sunday');
+  const was = hubWeekStart();
+  setTextIfChanged(setupEl('nyw-start-was'), was ? wizardOutgoingYear() + ': ' + hubWeekRange(was).replace(/^\w+ /, '').replace(/ – \w+ /, '–') : '');
+  // A date that isn't a Sunday: never an error, a nudge to the nearest one.
+  const near = nywUi.typed && !wizardIsSunday(nywUi.typed) ? nywSundayNear(nywUi.typed) : '';
+  setHiddenIfChanged(setupEl('nyw-snap'), !near);
+  if (near) {
+    setTextIfChanged(setupEl('nyw-snap-q'), 'Camp weeks start on a Sunday. Did you mean ' + nywDayWords(near) + '?');
+    setTextIfChanged(setupEl('nyw-snap-use'), 'Use ' + nywDayWords(near));
+    setupEl('nyw-snap-use').dataset.sunday = near;
+  }
+  // The week it makes, as a printed calendar.
+  const ymd = a.weekStart;
+  setHiddenIfChanged(setupEl('nyw-sec-week'), !ymd);
+  if (ymd) {
+    const p = nywYmdParts(ymd);
+    setTextIfChanged(setupEl('nyw-week-month'), nywMonthWords(ymd));
+    const days = weekDays();
+    document.querySelectorAll('#nyw-days .nyw-day').forEach((li) => {
+      const dow = Number(li.dataset.dow);
+      const t = new Date(p.t + dow * 86400000);
+      const date = t.getUTCDate() === 1 && dow > 0 ? t.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : String(t.getUTCDate());
+      setTextIfChanged(li.querySelector('[data-nyw-date]'), date);
+      setTextIfChanged(li.querySelector('[data-nyw-tag]'), (days[dow] && days[dow].tag) || '');
+    });
+  }
+  // Double points.
+  const last = nywLastDouble();
+  const choice = a.double === 'none' ? 'none' : a.double === 'same' ? 'same' : 'change';
+  document.querySelectorAll('[data-nyw-double]').forEach((b) => {
+    const on = b.dataset.nywDouble === choice;
+    if (b.getAttribute('aria-checked') !== String(on)) b.setAttribute('aria-checked', String(on));
+  });
+  const lastWords = nywDoubleWords(last);
+  setTextIfChanged(setupEl('nyw-double-same-sub'), lastWords || 'No double points last year');
+  const sameLbl = document.querySelector('[data-nyw-double="same"] .nyw-opt-t');
+  setTextIfChanged(sameLbl, 'Same as ' + wizardOutgoingYear());
+  const form = setupEl('nyw-double-form');
+  setHiddenIfChanged(form, choice !== 'change');
+  if (choice === 'change') {
+    const d = a.double;
+    weekSelectOptions(setupEl('nyw-double-from'), WEEK_DOW_WORDS.map((w, i) => [i, w]), d.fromDow);
+    weekSelectOptions(setupEl('nyw-double-until'), WEEK_DOW_WORDS.map((w, i) => [i + 1, 'End of ' + w]), d.toDow);
+    const at = setupEl('nyw-double-at');
+    const hh = String(Math.floor(d.fromMin / 60)).padStart(2, '0') + ':' + String(d.fromMin % 60).padStart(2, '0');
+    if (at && document.activeElement !== at && at.value !== hh) at.value = hh;
+  }
+}
+
+function paintNywStep2(a) {
+  const electives = !!(CAMP.features && CAMP.features.electives);
+  document.querySelectorAll('#nyw-carry .nyw-item').forEach((row) => {
+    const k = row.dataset.nywItem;
+    if (row.hasAttribute('data-feature')) setHiddenIfChanged(row, !electives);
+    const v = a.carry[k];
+    if (row.dataset.choice !== v) row.dataset.choice = v;
+    row.querySelectorAll('[data-nyw-pick]').forEach((t) => {
+      const on = t.dataset.nywPick === v;
+      if (t.getAttribute('aria-checked') !== String(on)) t.setAttribute('aria-checked', String(on));
+    });
+  });
+  const items = a.carry.schedule === 'keep' ? nywStaffItems() : [];
+  setHiddenIfChanged(setupEl('nyw-staff'), !items.length);
+  if (items.length) setTextIfChanged(setupEl('nyw-staff-text'), items.length + ' ' + nywWord(items.length, 'item names', 'items name') + ' people: ' + items.slice(0, 2).map((i) => i.label.split(' — ')[0]).join(', ') + (items.length > 2 ? '…' : '') + '.');
+}
+
+function nywSaveWords(out) {
+  const s = nywUi.save;
+  if (s.state === 'saved') return ['saved', 'Saved and checked: the copy on the server matches.'];
+  if (s.state === 'offline') return ['offline', 'Needs a connection. Nothing is saved yet.'];
+  if (s.state === 'error') return ['error', s.why === 'not-mine' ? NYW_WHY['not-mine'] : s.why === 'verify' ? 'Couldn’t check the copy. Nothing will be cleared until it matches.' : 'Couldn’t save ' + out + '. Nothing will be cleared.'];
+  return ['saving', 'Saving ' + out + '…'];
+}
+
+function paintNywStep3(a, out) {
+  const [tone, text] = nywSaveWords(out);
+  const st = setupEl('nyw-save-state');
+  if (st && st.dataset.tone !== tone) st.dataset.tone = tone;
+  setTextIfChanged(setupEl('nyw-save-text'), text);
+  setHiddenIfChanged(setupEl('nyw-save-retry'), !(tone === 'error' || tone === 'offline'));
+  const res = nywUi.save.res;
+  setHiddenIfChanged(setupEl('nyw-sec-saved'), !res);
+  setTextIfChanged(setupEl('nyw-saved-label'), 'In the ' + out + ' restore point');
+  let rows = '';
+  if (res) {
+    const c = res.counts || {};
+    const ch = nywChampion();
+    if (ch) rows += '<div class="nyw-t nyw-champ" data-key="champion"><span class="nyw-t-n">' + teamMarkHtml(ch.id, { size: 34 }) + '</span><span class="nyw-t-text"><span class="nyw-t-what">' +
+      esc(ch.tied ? 'Tied for first in ' + out : ch.name + ' won ' + out) + '</span><span class="nyw-t-sub">' + esc(ch.points + ' points') + '</span></span></div>';
+    if (c.results) rows += nywTallyRow('results', c.results, nywWord(c.results, 'game result', 'game results'), '');
+    if (c.bonuses) rows += nywTallyRow('bonuses', c.bonuses, nywWord(c.bonuses, 'bonus point entry', 'bonus point entries'), '');
+    if (c.brackets) rows += nywTallyRow('brackets', c.brackets, nywWord(c.brackets, 'bracket in progress', 'brackets in progress'), '');
+    if (c.announcements) rows += nywTallyRow('announcements', c.announcements, nywWord(c.announcements, 'announcement', 'announcements'), '');
+    rows += nywTallyRow('week', { mark: 'item' }, 'The schedule, games, teams and verses', 'As they are now');
+  }
+  setHtmlIfChanged(setupEl('nyw-saved-list'), rows);
+}
+
+function nywClearRows(a) {
+  const c = wizardCounts(state);
+  const req = typeof peopleRequests === 'function' ? peopleRequests().length : 0;
+  const kids = typeof campersTotal === 'function' ? campersTotal() : 0;
+  let rows = '';
+  const add = (key, n, what, sub) => { rows += nywTallyRow(key, n, what, sub); };
+  add('results', c.results, nywWord(c.results, 'game result', 'game results'), c.results ? 'Monday to Friday' : '');
+  add('bonuses', c.bonuses, nywWord(c.bonuses, 'bonus point entry', 'bonus point entries'), '');
+  add('brackets', c.brackets, nywWord(c.brackets, 'bracket in progress', 'brackets in progress'), '');
+  add('announcements', c.announcements, nywWord(c.announcements, 'announcement', 'announcements'), '');
+  add('campers', kids, nywWord(kids, 'camper name', 'camper names'), 'Never kept between years');
+  add('requests', req, nywWord(req, 'request to join', 'requests to join'), '');
+  add('reveal', { mark: 'item' }, 'The standings reveal on the big screen', '');
+  WIZARD_ITEMS.forEach((k) => {
+    if (a.carry[k] !== 'clear' || !NYW_CARRY_WORDS[k]) return;
+    if ((k === 'stations' || k === 'stationPeople') && !(CAMP.features && CAMP.features.electives)) return;
+    if (k === 'stationPeople' && a.carry.stations === 'clear') return;
+    add('c-' + k, { mark: 'item' }, NYW_CARRY_WORDS[k], '');
+  });
+  if (c.noticePosted) add('notice', { mark: 'item' }, 'Notice board · back to a draft', '');
+  const mem = nywUi.members;
+  if (a.carry.memberTeams === 'clear' && mem && mem.withTeam.length) {
+    add('members', mem.withTeam.length, nywWord(mem.withTeam.length, 'counselor taken off their team', 'counselors taken off their teams'), 'After the clear');
+  }
+  return rows;
+}
+
+function paintNywStep4(a, out, next) {
+  setHtmlIfChanged(setupEl('nyw-clear-list'), nywClearRows(a));
+  const keep = WIZARD_ITEMS.filter((k) => a.carry[k] === 'keep' && NYW_KEEP_WORDS[k] && (!(k === 'stations' || k === 'stationPeople') || (CAMP.features && CAMP.features.electives)));
+  setTextIfChanged(setupEl('nyw-kept-text'), hubJoin(keep.map((k) => NYW_KEEP_WORDS[k]).concat(['every sign-in'])) + '.');
+  const mem = nywUi.members;
+  const bad = a.carry.memberTeams === 'clear' && mem && mem.incomplete.length ? mem.incomplete : [];
+  setHiddenIfChanged(setupEl('nyw-members-warn'), !bad.length);
+  if (bad.length) setTextIfChanged(setupEl('nyw-members-warn-text'), hubJoin(bad.slice(0, 3).map((p) => p.name)) + (bad.length > 3 ? ' and ' + (bad.length - 3) + ' more' : '') + ' ' + nywWord(bad.length, 'has an incomplete sign-in record, so they’ll stay', 'have incomplete sign-in records, so they’ll stay') + ' on their ' + nywWord(bad.length, 'team', 'teams') + '.');
+  const cs = nywUi.clear;
+  const showState = cs.state !== 'idle';
+  setHiddenIfChanged(setupEl('nyw-clear-state'), !showState);
+  if (showState) {
+    const tone = cs.state === 'saving' ? 'saving' : cs.state === 'offline' ? 'offline' : 'error';
+    const st = setupEl('nyw-clear-state');
+    if (st && st.dataset.tone !== tone) st.dataset.tone = tone;
+    setTextIfChanged(setupEl('nyw-clear-text'), cs.state === 'saving' ? 'Clearing…'
+      : cs.state === 'offline' ? 'Needs a connection. Nothing was cleared.'
+      : 'Nothing was cleared: ' + (cs.why === 'refused' ? 'the server turned it away.' : cs.why === 'busy' ? NYW_WHY.busy.toLowerCase() : nywWhy({ reason: cs.why, message: cs.message }).replace(/^./, (x) => x.toLowerCase())));
+  }
+  setHiddenIfChanged(setupEl('nyw-clear-retry'), !(cs.state === 'error' || cs.state === 'offline'));
+}
+
+function paintNywStep5(out, next) {
+  const d = nywUi.done;
+  const dd = wizardDraftRead().done || {};
+  const cleared = d ? d.members.cleared : (dd.cleared || 0);
+  let rows = '';
+  const add = (key, text, sub) => { rows += nywTallyRow(key, { mark: 'check' }, text, sub); };
+  if (nywUi.a1Ran) add('a1', 'Editing turned on for the schedule', '');
+  add('saved', out + ' saved', 'In Restore points, under Past years');
+  add('cleared', 'Scoreboard cleared', '');
+  if (cleared) add('members', cleared + ' ' + nywWord(cleared, 'counselor taken off their team', 'counselors taken off their teams'), '');
+  setHtmlIfChanged(setupEl('nyw-done-list'), rows);
+  const failed = d ? d.members.failed.concat(d.members.incomplete.filter((p) => !d.members.failed.some((f) => f.key === p.key))) : [];
+  setHiddenIfChanged(setupEl('nyw-left'), !failed.length);
+  if (failed.length) {
+    setTextIfChanged(setupEl('nyw-left-q'), 'Couldn’t take ' + failed.length + ' ' + nywWord(failed.length, 'person', 'people') + ' off their teams: their sign-in records are incomplete.');
+    setHtmlIfChanged(setupEl('nyw-left-list'), failed.map((p) => '<li>' + esc(p.name) + '</li>').join(''));
+  }
+  const skip = !!(setupTree.meta && setupTree.meta.skip && setupTree.meta.skip.campers);
+  setHiddenIfChanged(document.querySelector('[data-nyw-go="campers"]'), skip);
+  const undo = nywUndoRowNow();
+  const until = undo && undo.row ? nywUndoUntil(undo) : '';
+  setTextIfChanged(setupEl('nyw-done-undo-text'), until ? 'Changed your mind? Undo the new-year setup is in the ⋯ menu until ' + until + '.' : 'Changed your mind? Undo the new-year setup is in the ⋯ menu for ' + WIZARD_UNDO_DAYS + ' days.');
+  const check = document.querySelector('#nyw-done-list .nyw-t-n[data-mark="check"]');
+  if (check && !check.__popped && typeof JellyMotion !== 'undefined') {
+    check.__popped = true;
+    JellyMotion.play(check, 'snap', (x) => ({ opacity: Math.min(1, x * 2), transform: 'scale(' + (0.3 + 0.7 * x) + ') rotate(' + (-14 * (1 - Math.min(1, x))) + 'deg)' }), { calm: [{ opacity: 0 }, { opacity: 1 }] });
+  }
+}
+
+function nywUndoUntil(offer) {
+  const at = (state.meta && state.meta.epochAt) || offer.row.at;
+  try { return new Date(at + WIZARD_UNDO_DAYS * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: CAMP_TZ }); } catch (e) { return ''; }
+}
+
+function paintNywDock(m, a, out) {
+  const me = m.mode === 'me';
+  const step = m.step;
+  const cs = nywUi.clear;
+  const holding = me && step === 4;
+  setHiddenIfChanged(document.querySelector('.nyw-dock-pair'), holding);
+  setHiddenIfChanged(setupEl('nyw-back'), step === 1 || step === 5);
+  const nextBtn = setupEl('nyw-next');
+  const why = me ? nywNextWhy(m, a) : '';
+  const label = step === 1 ? 'Next: what carries over' : step === 2 ? 'Next: save ' + out : step === 3 ? 'Next: clear the scoreboard' : 'Go to the checklist';
+  setTextIfChanged(nextBtn, why || label);
+  if (nextBtn) { const dis = !!why; if ((nextBtn.getAttribute('aria-disabled') === 'true') !== dis) { if (dis) nextBtn.setAttribute('aria-disabled', 'true'); else nextBtn.removeAttribute('aria-disabled'); } }
+  const busy = cs.state === 'saving';
+  const hold = setupEl('nyw-hold-btn');
+  setHiddenIfChanged(hold, !(holding && !cs.reveal && !busy));
+  const holdText = 'Hold to clear ' + restoreCampWord() + '’s scoreboard';
+  setTextIfChanged(setupEl('nyw-hold-label'), holdText);
+  setTextIfChanged(setupEl('nyw-hold-fill-label'), holdText);
+  setHiddenIfChanged(setupEl('nyw-hold-confirm'), !(holding && cs.reveal && !busy));
+  setTextIfChanged(setupEl('nyw-hold-confirm'), 'Yes, clear ' + restoreCampWord() + '’s scoreboard');
+  setHiddenIfChanged(setupEl('nyw-hold-cancel'), !(holding && cs.reveal && !busy));
+  setHiddenIfChanged(setupEl('nyw-back-quiet'), !(holding && !busy));
+  setTextIfChanged(setupEl('nyw-back-quiet').lastChild, 'Back to Save ' + out);
+}
+
+// ── taps ─────────────────────────────────────────────────────────────
+
+function wireNyw() {
+  const root = setupEl('setup-wizard');
+  if (!root || root.__wired) return;
+  root.__wired = true;
+  const on = (sel, ev, fn) => { const el = document.querySelector(sel); if (el) el.addEventListener(ev, fn); };
+  on('#nyw-start', 'change', (e) => nywSetDate(e.target.value));
+  on('#nyw-snap-use', 'click', (e) => { const s = e.currentTarget.dataset.sunday; if (s) nywSetDate(s); });
+  root.addEventListener('click', (e) => {
+    const t = e.target && e.target.closest ? e.target.closest('[data-nyw-double],[data-nyw-pick],[data-nyw-go]') : null;
+    if (!t) return;
+    if (t.dataset.nywDouble) nywSetDouble(t.dataset.nywDouble);
+    else if (t.dataset.nywPick) { const row = t.closest('.nyw-item'); if (row) nywPick(row.dataset.nywItem, t.dataset.nywPick); }
+    else if (t.dataset.nywGo) nywGoNext(t.dataset.nywGo);
+  });
+  ['#nyw-double-from', '#nyw-double-at', '#nyw-double-until'].forEach((id) => on(id, 'change', nywDoubleFromForm));
+  on('#nyw-next', 'click', () => { nywNext(); });
+  on('#nyw-back', 'click', () => { const m = nywModelNow(); if (m && m.step > 1 && m.step < 4) nywGo(m.step - 1); });
+  on('#nyw-back-quiet', 'click', () => { nywUi.clear = { state: 'idle', why: '', reveal: false }; nywGo(3); });
+  on('#nyw-watch', 'click', nywWatch);
+  on('#nyw-takeover', 'click', () => { nywTakeOver(); });
+  on('#nyw-ask-a', 'click', () => { if (nywUi.ask) nywUi.ask.a.run(); });
+  on('#nyw-ask-b', 'click', () => { if (nywUi.ask) nywUi.ask.b.run(); });
+  on('#nyw-save-retry', 'click', () => { nywUi.save = { state: 'idle', res: null, why: '' }; renderAll(); });
+  on('#nyw-save-download', 'click', () => { nywDownloadCopy(); });
+  on('#nyw-clear-retry', 'click', () => { nywUi.clear = { state: 'idle', why: '', reveal: false }; renderAll(); });
+  on('#nyw-members-warn-btn', 'click', () => { peopleUi.from = ''; setupGo('people'); });
+  on('#nyw-left-btn', 'click', () => { peopleUi.from = ''; setupGo('people'); });
+  on('#nyw-staff-btn', 'click', () => { nywUi.staffOpen = true; setupSheet('nyw-staff'); });
+  // The hold (Step 14's, 1.2 s) and its two-tap alternative.
+  let armed = false;
+  on('#nyw-hold-confirm', 'pointerdown', () => { armed = true; });
+  on('#nyw-hold-confirm', 'click', (e) => { const ok = armed || e.detail === 0; armed = false; if (ok) nywRunClear(); });
+  const hold = setupEl('nyw-hold-btn');
+  const focusOn = (id) => { const b = setupEl(id); if (b && !b.hidden && typeof b.focus === 'function') { try { b.focus({ preventScroll: true }); } catch (x) { /* fine */ } } };
+  if (hold) wireHold(hold, () => { nywRunClear(); }, () => { nywUi.clear.reveal = true; renderNywScreen(); focusOn('nyw-hold-confirm'); });
+  on('#nyw-hold-cancel', 'click', () => { nywUi.clear.reveal = false; renderNywScreen(); focusOn('nyw-hold-btn'); });
+  wireNywSheets();
+}
+
+function nywGoNext(go) {
+  if (go === 'people-teams') { peopleUi.from = ''; setupGo('people'); peopleOpenTeams(); }
+  else if (go === 'teams') setupGo('teams');
+  else if (go === 'campers') setupGo('campers');
+  else setupGo('hub');
+}
+
+// ── the sheets: items that name people, Undo the new-year setup, Advanced, a past year ────────────
+
+function renderNywStaffSheet() {
+  const list = setupEl('nyw-staff-list');
+  if (!list) return;
+  const rows = nywStaffItems();
+  setHtmlIfChanged(list, rows.map((r) => '<div class="cb-row"><span class="cb-time">' + esc(typeof setupClock === 'function' ? setupClock(r.start) : '') + '</span><span class="cb-main"><span class="cb-title"><span class="sched-emo">' +
+    esc(safeEmoji(r.emoji) || '') + '</span><span>' + esc(r.label) + '</span></span><span class="cb-sub">' + esc('Names ' + hubJoin(r.names)) + '</span></span></div>').join(''));
+}
+
+function nywUndoRowNow() {
+  const rows = setupUi.restore && setupUi.restore.rows;
+  return typeof wizardUndoPick === 'function' ? wizardUndoPick(rows) : null;
+}
+
+function nywOpenUndo(opener) {
+  if (!requireOwner('undo the new-year setup')) return;
+  const offer = nywUndoRowNow();
+  if (!offer) { setupSay('There is no new-year setup to undo.'); return; }
+  nywUi.undo = { rid: offer.rid, row: offer.row, offer, body: null, state: 'loading', why: '', reveal: false, busy: false };
+  setupSheet('nyw-undo', opener);
+  (async () => {
+    let r;
+    try { r = await restoreRead(offer.rid); } catch (e) { r = { ok: false, reason: 'offline' }; }
+    const u = nywUi.undo;
+    if (!u || u.rid !== offer.rid) return;
+    if (r.ok) { u.body = r.body; u.state = 'ready'; } else { u.state = 'error'; u.why = r.reason; }
+    renderNywUndoSheet();
+  })();
+}
+
+function nywUndoYear(row) {
+  const m = /^(20\d\d)/.exec(String((row && row.label) || ''));
+  return m ? m[1] : '';
+}
+
+function renderNywUndoSheet() {
+  const u = nywUi.undo;
+  if (!u) return;
+  const year = nywUndoYear(u.row);
+  const when = u.row.at ? setupClockParts(u.row.at) : null;
+  setTextIfChanged(setupEl('nyu-sub'), when ? 'Saved ' + when.day + ', ' + when.time + ', just before the setup' : '');
+  setTextIfChanged(setupEl('nyu-lede'), restoreCampWord().replace(/^./, (x) => x.toUpperCase()) + ' goes back to the ' + (year || 'earlier') + ' week, exactly as it was saved.');
+  const b = u.body;
+  const st = b && setupIsMap(b.state) ? b.state : {};
+  const c = wizardCounts(st);
+  const meta = b && setupIsMap(b.setup) && setupIsMap(b.setup.meta) ? b.setup.meta : {};
+  let back = '';
+  if (c.results) back += nywTallyRow('results', c.results, nywWord(c.results, 'game result', 'game results'), '');
+  if (c.bonuses) back += nywTallyRow('bonuses', c.bonuses, nywWord(c.bonuses, 'bonus point entry', 'bonus point entries'), '');
+  if (c.brackets) back += nywTallyRow('brackets', c.brackets, nywWord(c.brackets, 'bracket in progress', 'brackets in progress'), '');
+  if (typeof meta.weekStart === 'string' && hubWeekRange(meta.weekStart)) back += nywTallyRow('week', { mark: 'item' }, 'Camp week · ' + hubWeekRange(meta.weekStart).replace(/^\w+ /, '').replace(/ – \w+ /, '–') + ', ' + meta.weekStart.slice(0, 4), '');
+  const dbl = wizardDoubleOk(meta.double) ? meta.double : (!(b && b.epoch) ? WIZARD_DOUBLE_SAME_LEGACY : null);
+  if (dbl) back += nywTallyRow('double', { mark: 'item' }, 'Double points · ' + nywDoubleWords(dbl), '');
+  back += nywTallyRow('week-data', { mark: 'item' }, 'The schedule, games, menus and verses as they were', '');
+  back += nywTallyRow('history', { mark: 'item' }, 'History shows ' + (year || 'that year') + ' again', '');
+  setHtmlIfChanged(setupEl('nyu-back'), u.state === 'ready' ? back : '');
+  let stay = nywTallyRow('members', { mark: 'item' }, 'Counselors’ teams', 'As they are now');
+  stay += nywTallyRow('campers', { mark: 'item' }, 'Campers', 'Not in the saved copy');
+  const edited = typeof setupEditedAt === 'function' && setupEditedAt('schedule') > ((state.meta && state.meta.epochAt) || Infinity);
+  if (edited) stay += nywTallyRow('since', { mark: 'item' }, 'Changes made since the setup', 'Kept in a restore point first');
+  setHtmlIfChanged(setupEl('nyu-stay'), stay);
+  const stEl = setupEl('nyu-state');
+  const show = u.state === 'loading' || u.state === 'error' || u.busy || !!u.msg;
+  setHiddenIfChanged(stEl, !show);
+  if (show && stEl) {
+    const tone = u.busy || u.state === 'loading' ? 'saving' : 'error';
+    if (stEl.dataset.tone !== tone) stEl.dataset.tone = tone;
+    setTextIfChanged(setupEl('nyu-state-text'), u.busy ? 'Putting ' + (year || 'last year') + ' back…' : u.state === 'loading' ? 'Reading the saved copy…' : u.msg || 'Couldn’t read the saved copy. Check your connection.');
+  }
+  const ready = u.state === 'ready' && !u.busy;
+  const holdText = 'Hold to undo ' + restoreCampWord() + '’s new-year setup';
+  setHiddenIfChanged(setupEl('nyu-hold-btn'), !(ready && !u.reveal));
+  setTextIfChanged(setupEl('nyu-hold-label'), holdText);
+  setTextIfChanged(setupEl('nyu-hold-fill-label'), holdText);
+  setHiddenIfChanged(setupEl('nyu-hold-confirm'), !(ready && u.reveal));
+  setHiddenIfChanged(setupEl('nyu-hold-cancel'), !(ready && u.reveal));
+}
+
+async function nywRunUndo() {
+  const u = nywUi.undo;
+  if (!u || u.state !== 'ready' || u.busy || !shell.sheets.includes('nyw-undo')) return;
+  if (!requireOwner('undo the new-year setup')) return;
+  u.busy = true; u.msg = ''; u.reveal = false;
+  renderNywUndoSheet();
+  let r;
+  try { r = await wizardUndo(u.rid); } catch (e) { r = { ok: false, reason: 'failed' }; }
+  u.busy = false;
+  if (!r.ok) {
+    u.msg = r.reason === 'not-newest' ? 'A newer saved year exists, so this one can’t be undone.' : r.reason === 'nothing' ? 'There is nothing to undo any more.' : r.reason === 'pre-restore' ? 'Couldn’t save today’s week first, so nothing was changed.' : nywWhy(r);
+    renderNywUndoSheet();
+    return;
+  }
+  const year = nywUndoYear(u.row);
+  nywUi.undo = null;
+  shellSheetClose('nyw-undo');
+  nywUi.done = null; nywUi.doneLeft = true;
+  const d = wizardDraftRead(); d.done = null; wizardDraftWrite();
+  showToast(restoreCampWord().replace(/^./, (x) => x.toUpperCase()) + ' is back to ' + (year || 'last year') + '. Today’s week is in Restore points.');
+  refreshRestoreIndex();
+  if (setupScreen() === 'wizard') setupGo('hub');
+}
+
+const ADV_STATE_WORDS = { schedule: 'schedule', meals: 'meals', verses: 'verses', cleanup: 'cleanup', electives: 'electives' };
+
+function advStateOf(s) {
+  const on = setupTree && setupTree.meta && setupTree.meta.on ? setupTree.meta.on[s] : undefined;
+  return on === true ? 'on' : on === false ? 'off' : 'never';
+}
+
+function renderAdvancedSheet() {
+  const electives = !!(CAMP.features && CAMP.features.electives);
+  document.querySelectorAll('#sheet-setup-advanced [data-adv-section]').forEach((row) => {
+    const s = row.dataset.advSection;
+    if (row.hasAttribute('data-feature')) setHiddenIfChanged(row, !electives);
+    const st = advStateOf(s);
+    setTextIfChanged(row.querySelector('[data-adv-state]'), st === 'on' ? 'Edited here' : st === 'off' ? 'Showing the original · your edits are kept' : 'Never turned on');
+    const dis = st === 'never';
+    if ((row.getAttribute('aria-disabled') === 'true') !== dis) { if (dis) row.setAttribute('aria-disabled', 'true'); else row.removeAttribute('aria-disabled'); }
+  });
+}
+
+// One question per section (askDialog, stack): what it is now, what starting again replaces, the choices.
+async function advAsk(section) {
+  if (!requireOwner('start a section again')) return;
+  const st = advStateOf(section);
+  if (st === 'never') { setupSay('That section was never turned on, so there is nothing to start again.'); return; }
+  const noun = setupSectionWords(section);
+  const extra = section === 'schedule' ? ' Games keep their schedule items where the item still exists.' : '';
+  const choice = await askDialog({
+    title: 'Start ' + noun + ' again?',
+    body: ['Replaces what this camp has for ' + noun + ' with the copy that came with the app.' + extra, 'A restore point is saved first.'],
+    stack: true,
+    actions: [
+      st === 'on' ? { label: 'Show the original instead', value: 'original', sub: 'Your edits are kept' } : { label: 'Use our edits again', value: 'edits', sub: 'Brings back what was edited here' },
+      { label: 'Start again from the original', value: 'again', kind: 'danger', sub: 'Replaces ' + noun },
+      { label: 'Not now', value: 'cancel', kind: 'quiet', cancel: true },
+    ],
+  });
+  if (choice === 'original') {
+    const r = setupUseOriginal([section]);
+    setupSay(r.ok ? 'Showing the original ' + noun.replace(/^the /, '') + '. Your edits are kept.' : r.reason === 'owner' ? r.message : NYW_WHY.failed);
+    return;
+  }
+  if (choice === 'edits') {
+    const r = await setupTurnOn([section], {});
+    setupSay(r.ok ? 'Your edits are back.' : (TURNON_WHY[r.reason] || r.message || TURNON_WHY.failed));
+    return;
+  }
+  if (choice !== 'again') return;
+  const opts = {};
+  for (let guard = 0; guard < 4; guard++) {
+    const r = await setupRestartSection(section, opts);
+    if (r.ok) { setupSay('Started ' + noun.replace(/^the /, '') + ' again from the original.'); return; }
+    if (r.reason === 'ask-camp-week') {
+      const running = await askDialog({ title: 'Is a camp week running right now?', body: 'No dates are set, so the app can’t tell.', actions: [{ label: 'Not now', value: 'cancel', cancel: true }, { label: 'No, it’s not', value: 'no', kind: 'gold' }, { label: 'Yes, it is', value: 'yes' }] });
+      if (running === 'cancel' || running === null) return;
+      opts.campRunning = running === 'yes';
+      continue;
+    }
+    if (r.reason === 'camp-week') {
+      const go = await askDialog({ title: 'A camp week is running', body: ['Starting this again changes what counselors see.', 'Carry on anyway?'], actions: [{ label: 'Not now', value: 'wait', cancel: true }, { label: 'Carry on anyway', value: 'go', kind: 'danger' }] });
+      if (go !== 'go') return;
+      opts.overrideCampWeek = true;
+      continue;
+    }
+    setupSay(r.reason === 'owner' ? r.message : r.reason === 'never' ? 'That section was never turned on.' : r.reason === 'restore-point' ? 'The restore point couldn’t be saved first, so nothing was changed.' : (TURNON_WHY[r.reason] || TURNON_WHY.failed));
+    return;
+  }
+}
+
+// A past year's point (restore sheet, kind archive): download it; the newest one, for the owner, undoes the setup.
+function paintArchiveYear(rs) {
+  const sheet = setupEl('sheet-restore');
+  const arch = !!(rs && rs.row && rs.row.kind === 'archive');
+  if (sheet) { const k = rs && rs.row ? rs.row.kind : ''; if (sheet.dataset.kind !== k) sheet.dataset.kind = k; }
+  setHiddenIfChanged(setupEl('rp-year'), !arch);
+  if (!arch) return;
+  const year = nywUndoYear(rs.row);
+  setTextIfChanged(setupEl('rp-year-download-title'), 'Download ' + (year || 'this year'));
+  const owner = isOwner();
+  const offer = nywUndoRowNow();
+  const newest = !!(offer && offer.rid === rs.rid);
+  setHiddenIfChanged(setupEl('rp-year-undo'), !(owner && newest));
+  setTextIfChanged(setupEl('rp-year-undo-sub'), 'Puts ' + (year || 'that year') + ' back: its scores, dates and history');
+  setHiddenIfChanged(setupEl('rp-year-owner'), owner || !newest);
+  setTextIfChanged(setupEl('rp-year-owner-text'), ownerSays('can undo the new-year setup'));
+}
+
+function nywDownloadYear() {
+  const rs = setupUi.rsheet;
+  if (!rs || !rs.body || !rs.row) return;
+  downloadBlob(new Blob([JSON.stringify(rs.body)], { type: 'application/json' }), 'camp-' + CAMP.id + '-' + (nywUndoYear(rs.row) || 'past-year') + '.json');
+}
+
+function wireNywSheets() {
+  const on = (sel, ev, fn) => { const el = document.querySelector(sel); if (el) el.addEventListener(ev, fn); };
+  on('#sheet-setup-advanced', 'click', (e) => { const r = e.target.closest && e.target.closest('[data-adv-section]'); if (r && r.getAttribute('aria-disabled') !== 'true') { shellSheetClose('setup-advanced'); advAsk(r.dataset.advSection); } else if (r) setupSay('That section was never turned on, so there is nothing to start again.'); });
+  on('#setup-advanced-open', 'click', (e) => { if (isOwner()) setupSheet('setup-advanced', e.currentTarget); });
+  on('#rp-year-download', 'click', nywDownloadYear);
+  on('#rp-year-undo', 'click', (e) => { if (isOwner()) nywOpenUndo(e.currentTarget); });
+  let armed = false;
+  on('#nyu-hold-confirm', 'pointerdown', () => { armed = true; });
+  on('#nyu-hold-confirm', 'click', (e) => { const ok = armed || e.detail === 0; armed = false; if (ok) nywRunUndo(); });
+  const hold = setupEl('nyu-hold-btn');
+  const focusOn = (id) => { const b = setupEl(id); if (b && !b.hidden && typeof b.focus === 'function') { try { b.focus({ preventScroll: true }); } catch (x) { /* fine */ } } };
+  if (hold) wireHold(hold, () => { nywRunUndo(); }, () => { if (nywUi.undo && shell.sheets.includes('nyw-undo')) { nywUi.undo.reveal = true; renderNywUndoSheet(); focusOn('nyu-hold-confirm'); } });
+  on('#nyu-hold-cancel', 'click', () => { if (nywUi.undo) { nywUi.undo.reveal = false; renderNywUndoSheet(); focusOn('nyu-hold-btn'); } });
+}
+
+// ── the doors ────────────────────────────────────────────────────────
+
+HUB_DOOR_ACTIONS['new-year'] = nywStart;
+HUB_DOOR_ACTIONS.wizard = nywStart;
+SETUP_OWNER_ACTIONS['new-year'] = { run: nywStart, why: () => (typeof campWeek === 'function' && campWeek().phase === 'during' ? 'Not during camp week' : '') };
+SETUP_OWNER_ACTIONS['undo-new-year'] = {
+  run: () => nywOpenUndo(),
+  why: () => { const o = nywUndoRowNow(); return !o ? 'Nothing to undo yet' : o.recent ? '' : 'More than ' + WIZARD_UNDO_DAYS + ' days ago: find it under Past years'; },
+};
+SETUP_OWNER_ACTIONS.advanced = { run: () => setupSheet('setup-advanced'), advanced: true };
