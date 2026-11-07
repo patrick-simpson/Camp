@@ -428,7 +428,8 @@ test('nowModel: a director sees the cleanup keys with the lock on their own team
   // a counselor, a hint-painted phone and a counselor preview get the verse and no moment
   setMemberRole('viewer');
   assert.equal(at(WED, vm).moment, null);
-  assert.equal(at(WED, vm).body.verse.ref, v.body.verse.ref);
+  if (verseSectionEmpty()) assert.equal(at(WED, vm).card.kind, 'activity', 'a camp with no real verse at all: a counselor\'s Bible study is a plain activity');
+  else assert.equal(at(WED, vm).body.verse.ref, v.body.verse.ref);
   setMemberRole('editor');
   counselorPreviewOn = true;
   assert.equal(at(WED, vm).moment, null);
@@ -1174,7 +1175,7 @@ test('nowModel: with Games, Memory verse and Meal cleanup switched off a counsel
   state.meta.hiddenCards = { cleanup: true };
   assert.equal(at(WED, gb.nb.start + 1).card.kind, 'games', 'Games is still shown');
   assert.equal(at(WED, lunch.end + 1).moment, null);
-  if (bible && verseFor(WED) && String(verseFor(WED).text || verseFor(WED).ref || '').trim()) {
+  if (bible && !verseSectionEmpty() && verseFor(WED) && String(verseFor(WED).text || verseFor(WED).ref || '').trim()) {
     state.meta.hiddenCards = { verse: true };
     assert.equal(at(WED, bible.start + 3).card.kind, 'activity');
     state.meta.hiddenCards = {};

@@ -218,7 +218,7 @@ test('a hidden Memory verse is not on a counselor\'s More, cannot be opened by a
   state.meta.hiddenCards = { verse: true };
   setMemberRole('viewer');
   assert.equal(shellSheetAllowed('verse'), false);
-  assert.equal(shellSheetAllowed('cleanup'), true, 'cleanup is not hidden');
+  assert.equal(shellSheetAllowed('cleanup'), !cleanupSectionEmpty(), 'cleanup is not hidden by the switch (a camp with no rota at all has nothing to show)');
   setMemberRole('editor');
   assert.equal(shellSheetAllowed('verse'), true, 'a director always may');
   setMemberRole('viewer');

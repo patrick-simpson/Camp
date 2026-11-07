@@ -999,6 +999,25 @@ function verseFor(dow) {
   if (sectionIsShared('verses') && typeof setupVerseFor === 'function') { const d = weekdayIndex(dow); return (d >= 0 && setupVerseFor(d)) || NO_VERSE; }
   return MEMORY_VERSES[dow] || NO_VERSE;
 }
+// Redesign §1.2 #14: a section with nothing real in it is not shown to counselors (senior's seed is all placeholders: "Verse to
+// be announced.", a rota with no team). Judged through the accessors, so it is right with each section's switch on AND off, and
+// it flips by itself the moment a director fills one day in. Directors always see the section (the hub's to-do is their prompt).
+function verseIsReal(v) {
+  const text = String((v && v.text) || '').trim();
+  return !!text && !(/\bto be announced\b/i.test(text) && !String((v && v.ref) || '').trim());
+}
+function verseSectionEmpty() {
+  for (let dow = 0; dow <= 6; dow += 1) if (verseIsReal(verseFor(dow))) return false;
+  return !verseIsReal(verseTheme());
+}
+function cleanupSectionEmpty() {
+  for (let dow = 0; dow <= 6; dow += 1) if (cleanupOnRota(dow)) return false;
+  return true;
+}
+// Is this hideable section empty (so a counselor's screen leaves it out)?
+function cardEmptyForViewers(card) {
+  return card === 'verse' ? verseSectionEmpty() : card === 'cleanup' ? cleanupSectionEmpty() : false;
+}
 
 // ── Electives
 // A day's slots, [slot → [[stationName, [names], [member keys]?], …]]; [] on a day with none. Edited here the third list is
@@ -1382,7 +1401,7 @@ function mealCleanupNote(dow, label, tagged) {
   const meal = tagged !== undefined ? tagged : legacyMealOf(label);
   if (!meal || !cleanupOnRota(dow)) return '';
   const teams = cleanupTeams(dow, meal);
-  if (!teams.length) return ` <span class="meal-cleanup-note">🧽 TBA</span>`;
+  if (!teams.length) return ''; // nothing to say until a team is on it (the hub's to-do is the directors' prompt)
   const who = teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ');
   return ` <span class="meal-cleanup-note">🧽 ${who}</span>`;
 }
@@ -1580,7 +1599,7 @@ function nowCtx(opts) {
 // the tabs and sheets).
 function nowHiddenSections() {
   const seeAll = viewRole() === 'editor';
-  return { games: !seeAll && cardHiddenFromViewers('competitions'), verse: !seeAll && cardHiddenFromViewers('verse'), cleanup: !seeAll && cardHiddenFromViewers('cleanup') };
+  return { games: !seeAll && cardHiddenFromViewers('competitions'), verse: !seeAll && (cardHiddenFromViewers('verse') || verseSectionEmpty()), cleanup: !seeAll && (cardHiddenFromViewers('cleanup') || cleanupSectionEmpty()) };
 }
 
 // ── words ────────────────────────────────────────────────────────────
@@ -2796,7 +2815,7 @@ function icsCleanupText(dow, label, tagged) {
   const meal = tagged !== undefined ? tagged : legacyMealOf(label);
   if (!meal || !cleanupOnRota(dow)) return '';
   const teams = cleanupTeams(dow, meal);
-  return 'Cleanup: ' + (teams.length ? teams.map((id) => teamEmoji(id) + ' ' + teamName(id)).join(' + ') : 'TBA');
+  return teams.length ? 'Cleanup: ' + teams.map((id) => teamEmoji(id) + ' ' + teamName(id)).join(' + ') : '';
 }
 
 function buildWeekIcs(opts) {
@@ -4061,7 +4080,7 @@ function applyCardVisibility() {
   document.documentElement.classList.toggle('standings-shown', seeStandings);
   HIDEABLE_CARDS.forEach((key) => {
     const hidden = cardHiddenFromViewers(key);
-    const hideForMe = hidden && !(SECRET_CARDS.includes(key) ? seeStandings : editor);
+    const hideForMe = (hidden && !(SECRET_CARDS.includes(key) ? seeStandings : editor)) || (!editor && cardEmptyForViewers(key));
     const card = document.querySelector(`[data-card="${key}"]`);
     if (card) {
       setHiddenIfChanged(card, hideForMe);
@@ -14376,7 +14395,7 @@ function shellSheetAllowed(id) {
   if (id === 'game') return canEdit() && typeof gmSheetReady === 'function' && gmSheetReady();
   // Set up the week's own sheets (setup-ui.js): directors only, and only while the builder is up.
   if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) return canEdit() && builderOpen() && setupSheetReady(id);
-  if (id === 'verse' || id === 'cleanup') return canEdit() || !cardHiddenFromViewers(id);
+  if (id === 'verse' || id === 'cleanup') return canEdit() || !(cardHiddenFromViewers(id) || cardEmptyForViewers(id));
   // The Games standings' two sheets (games-ui.js): quick points opens only for a team a tap named (a director's, never their
   // own team: a Forward onto a stale entry opens nothing); the copy / share / Award points sheet is a confirmed director's.
   if (id === 'quick') return typeof gamesQuickReady === 'function' && gamesQuickReady();
