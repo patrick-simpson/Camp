@@ -2754,7 +2754,13 @@ function renderSchedItemSheet() {
   setTextIfChanged(setupEl('si-wait-text'), wait ? wait.text : '');
   setHiddenIfChanged(setupEl('si-scope'), !dayScoped || !!wait);
   setHiddenIfChanged(setupEl('si-save'), dayScoped || !!wait);
-  setHiddenIfChanged(setupEl('si-tell'), true);
+  // "Tell people who follow this": only for a change to an existing day's item that today / tomorrow can feel, with phone
+  // alerts live (push.js decides; with it dormant or an older Worker the row never shows). Ticked once per open.
+  const tellDow = it.dayKey === 'typical' ? null : SETUP_DK.indexOf(it.dayKey);
+  const tellShown = !it.stage && !wait && typeof pushScheduleAlertOffered === 'function' && pushScheduleAlertOffered(tellDow);
+  setHiddenIfChanged(setupEl('si-tell'), !tellShown);
+  const tellBox = setupEl('si-tell-check');
+  if (tellShown && tellBox && !it.tellSet) { it.tellSet = true; tellBox.toggleAttribute('checked', true); }
   const setDisabled = (el, off) => { if (!el) return; if (off) el.setAttribute('aria-disabled', 'true'); else el.removeAttribute('aria-disabled'); };
   const save = setupEl('si-save');
   setTextIfChanged(save, it.mode === 'add' ? (it.stage ? 'Add for ' + (it.dayKey === schedTodayKey() ? 'today' : dayWord) : it.dayKey === 'typical' ? 'Add to the typical day' : 'Add to ' + dayWord) : 'Save');
@@ -2855,6 +2861,9 @@ async function schedSaveItem(scope) {
   const p = { kind: it.mode === 'add' ? 'add' : 'edit', dk, bid: it.bid, where: it.where, scope: it.dayKey === 'typical' ? 'typical' : (it.origin === 'new' && setupMapOf(setupMapOf(setupTree.days)[it.dayKey]).typical !== true ? 'day' : scope || 'day'),
     item: m.item, changeOwn: it.ask.own === 'change' && it.ask.ownKey === m.ownKey ? m.keep.map((k) => k.dk) : [], moves, label };
   if (it.mode === 'edit' && it.ask.rekey === 'fresh' && it.ask.rekeyKey === m.headNew) p.alertKey = setupAlertKey(m.item.label);
+  const tellBefore = typeof pushScheduleSnapshot === 'function' ? pushScheduleSnapshot() : null;
+  const tellEl = setupEl('si-tell-check');
+  const tellOn = !!(tellEl && !setupEl('si-tell').hidden && tellEl.hasAttribute('checked'));
   const r = schedCommit(p);
   if (!r.ok) {
     if (r.reason === 'unpatchable') setupSay('Just ' + SETUP_DAY_WORDS[it.dayKey] + ' can’t change the ' + r.fields + '. Use “Every day like ' + SETUP_DAY_WORDS[it.dayKey] + '”.');
@@ -2862,8 +2871,20 @@ async function schedSaveItem(scope) {
     else weekRefused(Object.assign({}, r, { byName: r.byName }));
     return;
   }
+  setupTellAfter(tellBefore, tellOn);
   setupSched.item = null;
   shellSheetClose('sched-item');
+}
+
+// After a schedule commit: publish and name what changed to the alert sender (push.js). Fire and forget: the
+// commit is done and saved whatever happens here, and a failure is one sentence, never an error on the setup.
+function setupTellAfter(before, alert) {
+  if (typeof pushScheduleTell !== 'function' || !before) return;
+  Promise.resolve(pushScheduleTell(before, alert)).then((r) => {
+    if (!alert) return;
+    const w = typeof pushScheduleTellWords === 'function' ? pushScheduleTellWords(r) : '';
+    if (w) setupSay(w);
+  }).catch(() => {});
 }
 
 // "Back to the usual": the day's patch on this item goes.
@@ -3013,7 +3034,6 @@ function wireSchedItemSheet() {
       if (!Number.isNaN(v)) { f.end = v === 0 ? 1440 : v; schedItemTouched('time'); }
     } else if (t.id === 'si-allday') { f.end = t.checked ? 1440 : Math.min(1439, f.start + 45); schedItemTouched('time'); }
     else if (t.id === 'si-showtime') { f.noTime = !t.checked; schedItemTouched('time'); }
-    else if (t.id === 'si-tell-check') { /* the alert intent: Step 26 */ }
   });
   root.addEventListener('click', (e) => {
     const f = form();
@@ -3779,9 +3799,8 @@ function renderRainDoneSheet() {
   if (vEl && vEl.dataset && vEl.dataset.tone !== tone) vEl.dataset.tone = tone;
   setHtmlIfChanged(setupEl('rain-verdict-lines'), (lines.length ? lines : ['Nothing overlaps.']).map((t) => '<p class="rain-verdict-line">' + esc(t) + '</p>').join(''));
   // "Tell people who get reminders for these": only when phone alerts are live and the day is today or later in the camp
-  // week; ticked for a time that moved or an item skipped (ux-R11). The choice is kept as an intent for the alert sender
-  // (Step 26); nothing is sent from here.
-  const tellable = typeof pushConfigured === 'function' && pushConfigured() && campWeek().phase === 'during' && dow >= campNow().dow && c.lines.some((l) => l.kind === 'time' || l.kind === 'skip');
+  // week; ticked for a time that moved or an item skipped (ux-R11). Done sends it (rainCommit → setupTellAfter).
+  const tellable = typeof pushScheduleAlertOffered === 'function' && pushScheduleAlertOffered() && dow >= campNow().dow && c.lines.some((l) => l.kind === 'time' || l.kind === 'skip');
   setHiddenIfChanged(setupEl('rain-tell'), !tellable);
   const tellBox = setupEl('rain-tell-check');
   if (tellable && tellBox && !setupRain.tellSet) { setupRain.tellSet = true; tellBox.toggleAttribute('checked', true); }
@@ -3832,6 +3851,7 @@ async function rainCommit() {
   const keepGames = rows.filter((r) => r.game && setupRain.picks[r.key] === 'theirs').map((r) => r.key.slice(5));
   const hasGames = Object.keys(plan.games).length > 0;
   const label = 'Rain plan for ' + day;
+  const tellBefore = typeof pushScheduleSnapshot === 'function' ? pushScheduleSnapshot() : null;
   const r = setupCombined(label, (d) => rainCommitMutate(d, plan, keepPaths), hasGames ? () => rainApplyGames(state.config, plan, keepGames) : null);
   if (!r.ok) {
     if (r.reason === 'config-loading') setupSay('Still loading the games list — try again in a moment.');
@@ -3839,20 +3859,10 @@ async function rainCommit() {
     return;
   }
   const tell = setupEl('rain-tell-check');
-  if (tell && !setupEl('rain-tell').hidden && tell.hasAttribute('checked')) setupAlertIntentAdd({ at: Date.now(), dk: rainDk(), label, lines: rainChanges(setupTree, plan, dow, state.config).lines.map((l) => ({ kind: l.kind, id: l.id })) });
+  setupTellAfter(tellBefore, !!(tell && !setupEl('rain-tell').hidden && tell.hasAttribute('checked')));
   const online = restoreOnline() || !restoreHasFirebase();
   rainFinish(true);
   if (!online) setupSay('Saved on your phone only. Nobody else has this yet — it goes out when you have signal.');
-}
-
-// The director's "tell people" choice, kept for the alert sender (Step 26) and wiped on sign-out.
-function setupAlertIntentAdd(entry) {
-  try {
-    const key = lsKey('campSetupAlertIntent');
-    const list = JSON.parse(localStorage.getItem(key) || '[]');
-    list.push(entry);
-    localStorage.setItem(key, JSON.stringify(list.slice(-10)));
-  } catch (e) { /* the sender is not built yet: losing the intent loses nothing else */ }
 }
 
 async function rainDiscard() {

@@ -271,6 +271,15 @@ Worker does nothing.
   `pushSchedule`, `pushAlerts`. `pushServer/schedSeen/<camp>` is the sender's
   memory of what phones were last told about each schedule block (for "the
   schedule changed" alerts); it tidies itself away a week after camp.
+- **What Step 27 changes for schedule alerts.** The Worker that is deployed today
+  does not know `POST /notify` kind `schedule` (it answers `bad-kind`), and the
+  app is not connected to it yet. Step 27 pastes this `worker.js`, adds the
+  every-minute timer, then sets `PUSH_SERVICE_URL` in `push.js` and adds the
+  Worker's address to the page's `connect-src`. Only then does the app show
+  "Tell people who follow this" on the schedule item sheet and the rain plan's
+  Done sheet. An older Worker that answers `bad-kind` makes the app hide the tick
+  by itself. The first schedule call for a camp only makes the memory
+  (`schedSeen`) and tells nobody; changes after that are alerted.
 - **Endpoints.** `GET /` status page · `GET /health` (JSON, for the app's
   director status line) · `GET /vapid-key` · `POST /notify` (Firebase ID token
   required; a chat message, a director alert, a test, or — directors only — a

@@ -483,3 +483,55 @@ test('M2 in handler calls (junior Wednesday): open, Team competitions, Swap with
     assert.deepEqual([tc2.start, tc2.end], [el1.start, el1.end]);
   } finally { rpEnd(); }
 });
+
+// ── "Tell people who get reminders for these" (Step 26): Done sends it, quietly or not ─────────────────────────────
+
+test('Done: the tell tick is hidden while phone alerts are dormant; live, it is ticked and Done tells the sender after the commit; unticked it is only a quiet baseline move; a failing sender never undoes the plan', async () => {
+  const real = { cfg: pushConfigured, week: campWeek, tell: pushScheduleTell, now: campNow };
+  const told = [];
+  rpStart();
+  try {
+    campNow = () => ({ dow: 1, minutes: 600 });
+    const box = setupEl('rain-tell-check'); let on = false; // the stub's elements keep no attributes
+    box.toggleAttribute = (n, v) => { on = v === undefined ? !on : !!v; return on; };
+    box.hasAttribute = () => on;
+    pushScheduleTell = async (before, alert) => { told.push({ before, alert }); return { ok: true, sent: 1, queued: 0 }; };
+    const stage = async () => {
+      await rainOpen('wed');
+      const tc = planForDow(3).find((b) => !b.noTime && b.type === 'games');
+      const other = planForDow(3).find((b) => b.id !== tc.id && !b.noTime && b.type !== 'games' && b.end - b.start !== tc.end - tc.start);
+      rainOpenItem(tc.id); rainAct('swap'); rainPickSwap(other.id); rainPickHow('slots');
+      rainOpenDone(); renderRainDoneSheet();
+    };
+    await stage();
+    assert.equal(setupEl('rain-tell').hidden, true, 'dormant: never shown');
+    await rainCommit();
+    assert.ok(told.every((t) => !t.alert), 'dormant: nobody is alerted');
+    rpEnd(); rpStart();
+    pushConfigured = () => true;
+    campWeek = () => ({ start: '2027-07-18', phase: 'during' });
+    await stage();
+    assert.equal(setupEl('rain-tell').hidden, false);
+    assert.equal(setupEl('rain-tell-check').hasAttribute('checked'), true);
+    await rainCommit();
+    const n0 = told.length;
+    assert.equal(told[n0 - 1].alert, true);
+    assert.equal(setupRain.plan, null, 'done');
+    // unticked
+    rpEnd(); rpStart();
+    pushConfigured = () => true;
+    campWeek = () => ({ start: '2027-07-18', phase: 'during' });
+    await stage();
+    setupEl('rain-tell-check').toggleAttribute('checked', false);
+    await rainCommit();
+    assert.equal(told[told.length - 1].alert, false);
+    // a sender that fails
+    rpEnd(); rpStart();
+    pushConfigured = () => true;
+    campWeek = () => ({ start: '2027-07-18', phase: 'during' });
+    pushScheduleTell = async () => { throw new Error('boom'); };
+    await stage();
+    await rainCommit();
+    assert.equal(setupRain.plan, null, 'the plan is committed whatever the sender does');
+  } finally { pushConfigured = real.cfg; campWeek = real.week; pushScheduleTell = real.tell; campNow = real.now; rpEnd(); }
+});

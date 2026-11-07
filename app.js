@@ -16412,7 +16412,7 @@ function clearLocalData() {
     'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY, UNDO_KEY,
     'campScoreboardRevealCache', 'campScoreboardChampion', // (reveal.js: the last real reveal as the phone held it; the crowned team's name)
     'campScoreboardTellDraft', // (tell.js: a half-typed Tell everyone message)
-    'campScoreboardSetupV1', 'campSetupRpOutbox', 'campSetupRainDraft', 'campSetupAlertIntent']; // (setup-sync.js: the setup cache, the restore-point outbox; setup-ui.js: an unfinished rain plan, the alert choice kept for Step 26)
+    'campScoreboardSetupV1', 'campSetupRpOutbox', 'campSetupRainDraft', 'campSetupAlertIntent']; // (setup-sync.js: the setup cache, the restore-point outbox; setup-ui.js: an unfinished rain plan, a leftover alert choice from before Step 26, wiped only)
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }

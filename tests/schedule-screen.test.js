@@ -390,3 +390,61 @@ test('an item sheet with edits asks before it closes by ANY route (✕, Escape, 
     assert.equal(schedItemBusy(), false, 'only while the sheet is really up');
   } finally { askDialog = realAsk; askState = null; shell.sheets.length = 0; ssSheetClose(); ssEnd(); state.ui.view = 'home'; }
 });
+
+// ── "Tell people who follow this" (Step 26): the item sheet's tick and what a save sends ─────────────────────────
+
+function ssTrackBox(id) { // the stub's elements keep no attributes: this one remembers "checked"
+  const box = setupEl(id); let on = false;
+  box.toggleAttribute = (n, v) => { on = v === undefined ? !on : !!v; return on; };
+  box.hasAttribute = () => on;
+  return box;
+}
+
+test('the tick on the item sheet: hidden while phone alerts are dormant, shown (ticked) for today with them live, and a save tells the sender; unticked it is a quiet baseline move', async () => {
+  const todayDow = campNow().dow;
+  const todayKey = SETUP_DK[todayDow];
+  const real = { cfg: pushConfigured, week: campWeek, tell: pushScheduleTell };
+  const told = [];
+  ssStart({ day: todayKey });
+  try {
+    const target = planForDow(todayDow).find((b) => !b.noTime && b.type !== 'games' && !b.meal);
+    assert.ok(target, 'a plain item today');
+    ssTrackBox('si-tell-check');
+    pushScheduleTell = async (before, alert) => { told.push({ before, alert }); return { ok: true, sent: 1, queued: 0 }; };
+    // dormant: PUSH_SERVICE_URL is blank
+    schedOpenItem({ bid: target.id });
+    setupSched.item.form.emoji = '🎉'; schedItemTouched('emoji');
+    assert.equal(setupEl('si-tell').hidden, true, 'dormant: never shown');
+    ssSheetClose(); setupSched.item = null;
+    // live, camp week running
+    pushConfigured = () => true;
+    campWeek = () => ({ start: '2027-07-18', phase: 'during' });
+    schedOpenItem({ bid: target.id });
+    setupSched.item.form.emoji = '🎉'; schedItemTouched('emoji');
+    assert.equal(setupEl('si-tell').hidden, false);
+    assert.equal(setupEl('si-tell-check').hasAttribute('checked'), true, 'ticked to start with');
+    await schedSaveItem('day');
+    assert.equal(told.length, 1);
+    assert.equal(told[0].alert, true);
+    assert.ok(told[0].before && typeof told[0].before === 'object', 'the blocks as they were before the commit');
+    // unticked: still named to the sender, so its baseline keeps up, but nobody is told
+    schedOpenItem({ bid: target.id });
+    setupSched.item.form.emoji = '🎊'; schedItemTouched('emoji');
+    setupEl('si-tell-check').toggleAttribute('checked', false);
+    await schedSaveItem('day');
+    assert.equal(told.length, 2);
+    assert.equal(told[1].alert, false);
+    // a failing sender never stops the save
+    pushScheduleTell = async () => { throw new Error('boom'); };
+    schedOpenItem({ bid: target.id });
+    setupSched.item.form.emoji = '🎈'; schedItemTouched('emoji');
+    await schedSaveItem('day');
+    assert.equal(setupSched.item, null, 'saved and closed');
+    assert.equal(planForDow(todayDow).find((b) => b.id === target.id).emoji, '🎈');
+    // an older Worker hid the tick
+    pushScheduleTell = real.tell; pushSchedAlertsOff = true;
+    schedOpenItem({ bid: target.id });
+    setupSched.item.form.emoji = '🎁'; schedItemTouched('emoji');
+    assert.equal(setupEl('si-tell').hidden, true);
+  } finally { pushSchedAlertsOff = false; pushConfigured = real.cfg; campWeek = real.week; pushScheduleTell = real.tell; ssSheetClose(); ssEnd(); }
+});

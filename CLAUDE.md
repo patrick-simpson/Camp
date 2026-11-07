@@ -2205,9 +2205,10 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
   `commitSetup`) + ONE setup commit + ONE config change + ONE undo entry "Rain plan for
   Wednesday" (`setupCombined`). Offline it says so in words. "Add something for today" is the
   item sheet in staging mode (`it.stage`): a whole one-off record staged under
-  `dayBlocks/<dk>/<id>`. The "Tell people" choice is kept as an intent in
-  `lsKey('campSetupAlertIntent')` only when phone alerts are live (nothing sends it until
-  Step 26's client session). Motion: `JellyMotion.flipKeyed` glides survivors when a staged row re-sorts (not
+  `dayBlocks/<dk>/<id>`. "Tell people who get reminders for these" (`#rain-tell`) is shown only when push.js's
+  `pushScheduleAlertOffered()` says so (phone alerts live, a director who may act, camp week running, no "unknown
+  kind" answer yet) and the day is today or later, ticked to start with; Done sends it through `setupTellAfter`
+  AFTER the commit (see "The published schedule"). Motion: `JellyMotion.flipKeyed` glides survivors when a staged row re-sorts (not
   under a thumb: `whenHandsOff`), the Changed tag pops (`press`), panes arrive from the side;
   calm is a plain replace / fade.
 - **The home schedule sheet's way in** (`renderSchedulePlan`, called from `renderSchedule`):
@@ -4012,9 +4013,22 @@ Both camps, junior and senior, run all of it.
   `pushRepublishSchedule({force})` is the hub's Publish-now seam. `pushMigrateWeekStart`
   copies the date alerts were set up with into `setup/meta/weekStart` once (retried on
   setup events), and the drawer's Save now writes the setup date before publishing.
-  The schedule-change ALERT is the Worker's (`POST /notify` kind `schedule`, see "Phone alerts"); the client half — the
-  "Tell people" choice, the intent queue, and the `{alert: false, ids: ['*']}` baseline reset when the switch or the week
-  date moves — is Step 26's second session.
+  The schedule-change ALERT is the Worker's (`POST /notify` kind `schedule`, see "Phone alerts"); **the client half is
+  push.js's "Schedule-change alerts: the client half"** and sends only block ids and a flag, never words. A director
+  commits a change (item sheet Save, rain plan Done); setup-ui.js's `setupTellAfter(before, alert)` — `before` is
+  `pushScheduleSnapshot()` taken just before the commit — calls `pushScheduleTell(before, alert)`: it names the published
+  block ids that differ (`pushScheduleChangedIds`, ≤ 200), force-republishes the schedule, then POSTs `/notify` kind
+  `schedule`. Fire and forget: the commit is already saved, a failure is one toast sentence ("The change is saved, but the
+  alert didn't go out"), never an error, never a block. An UNTICKED save is still named with `alert: false`, so the
+  Worker's baseline keeps up (and only inside the camp week: outside it nothing is sent). Every other commit (copy a day,
+  bring an item back, remove…) is settled quietly by `pushScheduleSettle` 5 s later, on the publisher's timer, from
+  `pushSchedSent` (what the sender was last told, this device's view); that is also where the `ids: ['*']` baseline reset
+  goes when the schedule switch moved (`pushSchedResetOwed`; the Worker also remakes it itself on a change of id style).
+  The tick (`#si-tell` on the item sheet, `#rain-tell` on Done) is hidden unless `pushScheduleAlertOffered(dow)`: phone
+  alerts live (`PUSH_SERVICE_URL` set — blank today), `canEdit()`, `campWeek().phase === 'during'`, a day that is today or
+  tomorrow (the Worker tells only about those), and a Worker that knows the kind: a `bad-kind` answer sets
+  `pushSchedAlertsOff` and hides it for the page's life. `campSetupAlertIntent` (the old kept intent) is gone; its key is
+  only wiped on sign-out. Tests: `push-schedule-tell.test.js` (+ senior), `schedule-screen.test.js`, `rain-plan.test.js`.
 - **The whole-week calendar file** (app.js next to `buildDayIcs`, P2 §12.4):
   `buildWeekIcs({dows, fromDow, now})` is null with no camp dates (`campWeek().start`); else
   one VEVENT per TIMED block of `planForDow` for every day of `weekDays()` — dates are
