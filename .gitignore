@@ -10,3 +10,6 @@ exports/
 # tests/push-live (opt-in live alert check): browser profiles hold a signed-in session; results are per run
 tests/push-live/profiles/
 tests/push-live/results.json
+
+# Claude Code local settings (may hold secrets from approved commands)
+.claude/settings.local.json
