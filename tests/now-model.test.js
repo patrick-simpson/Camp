@@ -428,7 +428,7 @@ test('nowModel: a director sees the cleanup keys with the lock on their own team
   // a counselor, a hint-painted phone and a counselor preview get the verse and no moment
   setMemberRole('viewer');
   assert.equal(at(WED, vm).moment, null);
-  if (verseSectionEmpty()) assert.equal(at(WED, vm).card.kind, 'activity', 'a camp with no real verse at all: a counselor\'s Bible study is a plain activity');
+  if (CAMP.id === 'senior') assert.equal(at(WED, vm).card.kind, 'activity', 'a camp with no real verse at all: a counselor\'s Bible study is a plain activity');
   else assert.equal(at(WED, vm).body.verse.ref, v.body.verse.ref);
   setMemberRole('editor');
   counselorPreviewOn = true;

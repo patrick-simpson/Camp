@@ -169,7 +169,7 @@ test('the screen paints the headline, a row per team and the weak-colour note, a
   const list = tsEl('teams-list').innerHTML;
   teamIds().forEach((id) => assert.ok(list.includes('data-team-open="' + id + '"'), id + ' has a row'));
   assert.ok(!/data-warn/.test(list), 'a fresh camp has nothing to fix');
-  assert.equal(tsEl('teams-title').textContent, 'Teams · ' + CAMP.label);
+  assert.equal(tsEl('teams-title').textContent, 'Teams · ' + campWord());
   assert.equal(tsEl('teams-headline').textContent, CAMP.teamCount + ' teams');
   assert.equal(tsEl('teams-weak').hidden, !teamsModel().weak.length, 'the note shows exactly when a colour is flagged');
   assert.ok(!/<button[^>]*data-team-open="t[0-9]"[^>]*aria-disabled/.test(list));

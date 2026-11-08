@@ -202,7 +202,7 @@ test('Edit the week here: only the owner, a question first, then the camp-week f
     assert.equal(r1.ok, true);
     assert.deepEqual(titles.map((t) => /week here\?$/.test(t) ? 'edit' : t), ['edit', 'Is a camp week running right now?']);
     assert.deepEqual(optsSeen, [{}, { campRunning: false }]);
-    assert.equal(toasts[toasts.length - 1], 'Editing is on for ' + CAMP.label + '. 22 games put on the schedule.');
+    assert.equal(toasts[toasts.length - 1], 'Editing is on for ' + campWord() + '. 22 games put on the schedule.');
     // A running week: the freeze, then the owner may say they know
     const ans2 = ['go', 'go'];
     const seq2 = [{ ok: false, reason: 'camp-week' }, { ok: true, turnedOn: ['schedule'], attach: null }];

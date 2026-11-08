@@ -1772,9 +1772,9 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   row whose screen exists is a `<button>` with a chevron** (games, teams,
   people, notice, restore at Step 14; week and schedule at Step 15, which always
   open their screen — a read-only preview with the owner's Edit the week here
-  while the schedule isn't edited here); **one whose screen comes later is a
-  `<div>`** (alerts): never a dead button — the step that brings the
-  screen turns the div into a button (Step 19 did it for meals, verses, cleanup and electives, Step 25 for teams, people and campers). Electives starts hidden (junior only). At
+  while the schedule isn't edited here); **a row whose screen does not exist would be a
+  `<div>`**, never a dead button (none is left: Phone alerts is a judged button that opens the Alerts
+  drawer, or Camp week while there are no camp dates). Electives starts hidden (junior only). At
   ~130%+ text the mark drops under the summary (a container query on
   `.hub-list`, in em, so it follows the phone's text size) and the chevron stays
   centred on the whole row at its right edge, as on More.
@@ -1878,8 +1878,7 @@ into it from app.js / settings.js is typeof-guarded.
   place: it counts games and people and names no score.
 - **The checklist** (`hubStatus(section, view)`, Appendix B): pure — `hubView()` builds the
   plain `view` from the page and tests hand one in. Marks `ok | warn | todo | skip | info`
-  plus `soon` (this step's: the section's screen is still to come, so the row says "Editing
-  comes next" and a plain summary — "The original menu" — and claims nothing). Evaluated
+  (`soon` and its "Editing comes next" word, `HUB_SOON_WORD`, are unused now that every row has its screen). Evaluated
   today: **Games** (a game on no day, a day with no games, a tournament with no bracket for
   the camp's team count, "N games still say TBA"), **Teams** (wrong count / bad id →
   "Ask Patrick to repair team slots", an unnamed team; Step 25 adds "Foxes has no short
@@ -1889,10 +1888,10 @@ into it from app.js / settings.js is typeof-guarded.
   accounts, an incomplete member record — the owner row is exempt, people with no sign-in
   yet for a week), **Notice board** and **Restore points** (info; denied restore nodes warn).
   Step 19 judges **Meals, Memory verses, Cleanup rota and Electives** (`hubSectionStatus`, from
-  `hubSecView()`: see "Meals, verses, cleanup, electives: the screens"); not yet (their data
-  arrives with their step): phone alerts. (Step 25 judges **Campers** — counts only, see "Campers" below — People's waiting requests and Teams'
+  `hubSecView()`: see "Meals, verses, cleanup, electives: the screens"); Phone alerts is judged too
+  (Step 29). (Step 25 judges **Campers** — counts only, see "Campers" below — People's waiting requests and Teams'
   short name, emoji and colour.) `hubModel`:
-  "N of M ready" counts only rows that can be judged (`soon` and `skip` are left out), "Next:
+  "N of M ready" counts only rows that can be judged (`skip` is left out), "Next:
   Teams" names the first warning. `HUB_OPENS` is the table of rows that open something
   (a row whose screen exists is a `<button>`, otherwise a `<div>`: `checklist.test.js`
   checks `index.html` against it). **Step 15** gave Camp week and Schedule their screens:

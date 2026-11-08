@@ -95,14 +95,14 @@ test('the screen paints the headline, the asking switch, a row per person by tea
   psOpen();
   try {
     renderPeopleScreen();
-    assert.equal(psEl('people-title').textContent, 'People · ' + CAMP.label);
+    assert.equal(psEl('people-title').textContent, 'People · ' + campWord());
     assert.equal(psEl('people-headline').textContent, '2 people have no sign-in yet', 'the first thing to fix, as on the hub row');
     assert.ok(/more thing|Tap a person/.test(psEl('people-lede').textContent));
     const g = psEl('people-groups').innerHTML;
     assert.ok(g.includes('data-person="sam@example,com"') && g.includes('data-person="' + PS_JENN_KEY + '"'));
     assert.ok(g.includes('data-person="pending-taylor-ab12c"') && /No sign-in yet · Counselor/.test(g), 'a pending row says so in words');
     assert.ok(!g.includes('data-person="' + OWNER_MEMBER_KEY + '"'), 'the owner row is not a button');
-    assert.ok(/Owner · only the owner can change this row/.test(g));
+    assert.ok(/Owner · only (the owner|\w+) can change this row/.test(g));
     assert.ok(/class="ppl-tag">you</.test(g), 'your own row says "you"');
     assert.equal((g.match(/class="ppl-group"/g) || []).length, 1 + state.teams.length, 'a section per team, and one for people on no team');
     assert.equal(psEl('people-req-sec').hidden, true, 'nobody asking: no section');

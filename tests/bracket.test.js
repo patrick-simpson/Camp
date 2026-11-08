@@ -134,19 +134,19 @@ test('Start Bracket writes a fresh bracket, clears the game\'s live tally, and s
   });
 });
 
-test('the step bar names the five steps and marks where the bracket is', () => {
+// On purpose (Step 29): the steps are ONE quiet line naming the current step, like the four-team bracket's.
+test('the step line says which of the five steps the bracket is at', () => {
   const g = tournament();
   state.brackets[g.id] = freshBracket();
   withWizard(g, (w) => {
     w.render();
-    ['Round 1', 'Bye', 'Championship', 'Final', 'Results'].forEach((s) => assert.ok(w.html().indexOf('>' + s + '<') !== -1, s));
-    assert.ok(/wizard-step active">Round 1</.test(w.html()));
+    assert.ok(/Step 1 of 5 · <span[^>]*wizard-step active[^>]*>Round 1</.test(w.html()));
     state.brackets[g.id].phase = 'semifinal';
     state.brackets[g.id].byeTeamId = 't2';
     state.brackets[g.id].semifinal = { a: 't0', b: 't1', winner: null, loser: null };
     w.render();
-    assert.ok(/wizard-step done">Round 1</.test(w.html()) && /wizard-step done">Bye</.test(w.html()));
-    assert.ok(/wizard-step active">Championship</.test(w.html()));
+    assert.ok(/Step 3 of 5 · <span[^>]*wizard-step active[^>]*>Championship</.test(w.html()));
+    assert.notOk(/>Bye</.test(w.html()), 'no row of pills any more');
   });
 });
 
@@ -266,7 +266,7 @@ test('fixed order: the preset pairs are walked in order, shown up front, and a t
   state.brackets[g.id] = freshBracket();
   withWizard(g, (w) => {
     w.render();
-    assert.ok(/Match order/.test(w.html()) && /mo-current/.test(w.html()) && /NOW/.test(w.html()));
+    assert.ok(/Match order/.test(w.html()) && /mo-current/.test(w.html()) && /mo-now">Now</.test(w.html()));
     assert.deepEqual(w.winners().sort(), ['t0', 't3'], 'the first preset pair is up');
     assert.deepEqual(currentMatchupOf(g, w.b()), ['t0', 't3']);
     assert.deepEqual(nextMatchupOf(g, w.b()), ['t1', 't4'], 'the on-deck pair is known');
@@ -453,7 +453,7 @@ test('a messtival game pays double, in the summary chips and in medalCounts', ()
     w.winner('t1');
     assert.ok(new RegExp('\\(\\+' + MEDAL_POINTS.bronze * 2 + ' pts\\)').test(w.html()), 'the bronze note doubles');
     w.winner('t2');
-    assert.ok(w.html().indexOf('+' + MEDAL_POINTS.gold * 2 + ' pts') !== -1, 'the summary chips double');
+    assert.ok(w.html().indexOf('gres-pts">+' + MEDAL_POINTS.gold * 2 + '<') !== -1, 'the summary list doubles');
     w.press('save-bracket-btn');
     const c = medalCounts();
     assert.equal(c.t2.points, MEDAL_POINTS.gold * 2);
@@ -475,8 +475,9 @@ test('the points chips are directors\' only: a screen without confirmed points s
     state.brackets[g.id].phase = 'summary';
     state.brackets[g.id].championship = { a: 't2', b: 't1', winner: 't2', loser: 't1' };
     w.render();
-    assert.ok(/🥇/.test(w.html()));
-    assert.notOk(/medal-points|\+\d+ pts/.test(w.html()));
+    // On purpose (Step 29): the summary is the saved result's list (a place disc and the medal in words), no medal emoji.
+    assert.ok(/gres-r" data-place="1"/.test(w.html()) && /Gold/i.test(w.html()));
+    assert.notOk(/gres-pts|medal-points|\+\d+ pts/.test(w.html()));
   });
 });
 

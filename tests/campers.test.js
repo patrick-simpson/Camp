@@ -359,7 +359,7 @@ test('the screen: a headline with the count, a chip per camper, a dashed Add chi
     assert.equal(cmEl('campers-groups').innerHTML, '', 'no names yet');
     await cmListen();
     renderCampersScreen();
-    assert.equal(cmEl('campers-title').textContent, 'Campers · ' + CAMP.label);
+    assert.equal(cmEl('campers-title').textContent, 'Campers · ' + campWord());
     assert.equal(cmEl('campers-headline').textContent, '6 campers');
     assert.ok(/Only directors can see camper names\. Counselors never see this list, and it isn’t saved on any phone\./.test(CM_HTML), 'the lede is the spec\'s sentence, in the markup');
     const g = cmEl('campers-groups').innerHTML;

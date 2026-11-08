@@ -359,7 +359,7 @@ test('the screen draws a day: items as headings with their games under them, "Ad
     renderGamesScreen();
     const m = gmDayModel(dk);
     assert.equal(setupEl('sg-headline').textContent, SETUP_DAY_WORDS[dk]);
-    assert.equal(setupEl('sg-title').textContent, 'Games · ' + CAMP.label);
+    assert.equal(setupEl('sg-title').textContent, 'Games · ' + campWord());
     assert.equal(setupEl('sg-lede').textContent, m.lede);
     const html = setupEl('sg-items').innerHTML;
     m.groups.forEach((g) => {

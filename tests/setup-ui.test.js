@@ -65,7 +65,8 @@ test('hub rows open their screens: Camp week, Schedule, Games and Teams → thei
     hubOpen('campers');
     assert.equal(state.ui.builderScreen, 'campers', 'Step 25 (session 3): Campers has its own screen now (Phone alerts opens the Alerts drawer instead)');
     hubOpen('alerts');
-    assert.equal(state.ui.builderScreen, 'campers', 'Phone alerts opens its drawer over the builder, not a screen of its own');
+    // On purpose (Step 29): with no camp dates there is nothing to remind about, so the row opens Camp week.
+    assert.equal(state.ui.builderScreen, 'week', 'Phone alerts opens Camp week while there are no camp dates');
     hubOpen('week');
     assert.equal(state.ui.builderScreen, 'week');
     hubOpen('schedule');
@@ -498,7 +499,7 @@ test('paintHub writes each row\'s summary, first problem and mark into the stati
     assert.equal(document.querySelector('[data-hub-row="campers"]').querySelector('[data-hub-summary]').textContent, 'Needs the camp database', 'this test has no sync configured (campers.test.js has the "Loading…" case)');
     assert.equal(document.querySelector('[data-hub-row="meals"]').querySelector('[data-hub-mark]').dataset.mark, 'info', 'Meals has its screen now (step 19): the original, said plainly');
     assert.ok(/^\d+ of \d+ ready$/.test(setupEl('hub-headline').textContent));
-    assert.equal(setupEl('hub-title').textContent, 'Set up the week · ' + CAMP.label);
+    assert.equal(setupEl('hub-title').textContent, 'Set up the week · ' + campWord());
     assert.equal(setupEl('hub-door').dataset.door, 'original');
     assert.equal(setupEl('hub-door').hidden, false);
     const el = document.querySelector('[data-hub-row="electives"]');
