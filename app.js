@@ -1273,11 +1273,15 @@ let weatherData = null;
 
 // Today's date in camp time as 'YYYY-MM-DD' (en-CA renders ISO order), used to
 // tell whether a cached forecast is still keyed to the right "today".
+let _campDateFormatter = null;
 function campDateStr() {
   try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date());
+    if (!_campDateFormatter) {
+      _campDateFormatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      });
+    }
+    return _campDateFormatter.format(new Date());
   } catch (e) { return ''; }
 }
 
@@ -1515,13 +1519,17 @@ function campNowOverride() {
   const t = m[2].padStart(4, '0');
   return { dow: +m[1], minutes: +t.slice(0, 2) * 60 + +t.slice(2) };
 }
+let _campNowFormatter = null;
 function campNow() {
   const over = campNowOverride();
   if (over) return over;
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
-    }).formatToParts(new Date());
+    if (!_campNowFormatter) {
+      _campNowFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+      });
+    }
+    const parts = _campNowFormatter.formatToParts(new Date());
     const get = (type) => (parts.find((p) => p.type === type) || {}).value;
     const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
     const hour = parseInt(get('hour'), 10) % 24; // hour12:false renders midnight as "24"
@@ -1661,11 +1669,15 @@ function nowSpanText(mins) {
   return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
 }
 // 'YYYY-MM-DD' → "Sunday, June 21" (the date as written, no time zone to get wrong).
+let _nowDateLongFormatter = null;
 function nowDateLong(str) {
   const p = String(str || '').split('-').map(Number);
   if (p.length !== 3 || p.some((x) => !Number.isFinite(x))) return '';
   try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(Date.UTC(p[0], p[1] - 1, p[2])));
+    if (!_nowDateLongFormatter) {
+      _nowDateLongFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' });
+    }
+    return _nowDateLongFormatter.format(new Date(Date.UTC(p[0], p[1] - 1, p[2])));
   } catch (e) { return ''; }
 }
 
@@ -2823,10 +2835,14 @@ function icsWeekLabel(weekStart) {
   return range + ', ' + b.getUTCFullYear();
 }
 // "Tue 9:40 AM" and "0720-0940" for the moment of the download, in camp time.
+let _icsSavedStampFormatter = null;
 function icsSavedStamp(now) {
   const at = now || new Date();
   try {
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit', hour12: false }).formatToParts(at);
+    if (!_icsSavedStampFormatter) {
+      _icsSavedStampFormatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit', hour12: false });
+    }
+    const parts = _icsSavedStampFormatter.formatToParts(at);
     const get = (t) => (parts.find((p) => p.type === t) || {}).value || '';
     const h = String(parseInt(get('hour'), 10) % 24).padStart(2, '0');
     const mi = get('minute');
@@ -3785,15 +3801,23 @@ function wireHistory() {
 // Formats an ISO timestamp as camp time, e.g. "Jul 19, 8:47pm ET" —
 // same convention as the schedule banner, so the footer always reads in
 // camp time regardless of which timezone a visiting parent's phone is in.
+let _formatEasternStampFormatter = null;
 function formatEasternStamp(iso) {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
-  }).formatToParts(d);
-  const get = (type) => (parts.find((p) => p.type === type) || {}).value;
-  return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
+  try {
+    if (!_formatEasternStampFormatter) {
+      _formatEasternStampFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+      });
+    }
+    const parts = _formatEasternStampFormatter.formatToParts(d);
+    const get = (type) => (parts.find((p) => p.type === type) || {}).value;
+    return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
+  } catch (e) {
+    return null;
+  }
 }
 
 // The footer line (version · data stamp · phones online) is More's footer now
@@ -8377,8 +8401,15 @@ function bindMatchupCopy(body, g, stage, aId, bId) {
   if (btn) btn.addEventListener('click', () => copyTextToClipboard(matchupText(g, stage, aId, bId), btn));
 }
 
+let _standingsSummaryTextFormatter = null;
 function standingsSummaryText() {
-  const campDate = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
+  let campDate = '';
+  try {
+    if (!_standingsSummaryTextFormatter) {
+      _standingsSummaryTextFormatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    campDate = _standingsSummaryTextFormatter.format(new Date());
+  } catch (e) {}
   const lines = ['🏅 Camp — ' + campDate];
   // Points and places are directors' eyes only (see "Standings secrecy"): the
   // table is built only for them, so a viewer who reaches Copy / Share — the
@@ -9747,11 +9778,18 @@ function gameResultState(gid) {
 }
 
 // The words of the line above the winners ("Saved 10:52 AM · everyone's phone has it"), camp time.
+let _gameSavedWordsFormatter = null;
 function gameSavedWords(state_, savedAt) {
   const d = savedAt ? new Date(savedAt) : null;
-  const at = d && !Number.isNaN(d.getTime())
-    ? ' ' + new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
-    : '';
+  let at = '';
+  if (d && !Number.isNaN(d.getTime())) {
+    try {
+      if (!_gameSavedWordsFormatter) {
+        _gameSavedWordsFormatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+      }
+      at = ' ' + _gameSavedWordsFormatter.format(d);
+    } catch (e) {}
+  }
   if (state_ === 'saved') return 'Saved' + at + ' · everyone’s phone has it';
   if (state_ === 'saving') return 'Saving…';
   if (state_ === 'refused') return 'Not saved yet · the server turned it away. Use Retry in the bar at the top.';
@@ -12972,9 +13010,17 @@ function dismissChange(id) {
 const QUIET_START_HOUR = 21; // 9pm — pause the timer
 const QUIET_END_HOUR = 7;    // 7am — resume the timer (first notice rolls in at 7am)
 
+let _campHourFormatter = null;
 function campHour(ms) {
-  const h = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false }).format(new Date(ms));
-  return parseInt(h, 10) % 24; // some engines format midnight as "24"
+  try {
+    if (!_campHourFormatter) {
+      _campHourFormatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false });
+    }
+    const h = _campHourFormatter.format(new Date(ms));
+    return parseInt(h, 10) % 24; // some engines format midnight as "24"
+  } catch (e) {
+    return new Date(ms).getHours(); // fallback
+  }
 }
 
 function isAwakeHours(ms) {
@@ -13169,16 +13215,23 @@ function activeAnnouncements() {
 // A time of day in camp time ("4:52 PM"); with the weekday ahead of it when it
 // was not today ("Tue 4:52 PM") unless `timeOnly`. Never the phone's own zone, and never the narrow
 // no-break space newer engines put before PM.
+let _messageClockTimeFormatter = null;
+let _messageClockDayFormatter = null;
+let _messageClockFullFormatter = null;
 function messageClock(iso, timeOnly) {
   const d = new Date(iso);
   if (!iso || Number.isNaN(d.getTime())) return '';
   try {
-    const fmt = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: CAMP_TZ }, o)).formatToParts(d);
-    const t = fmt({ hour: 'numeric', minute: '2-digit', hour12: true });
+    if (!_messageClockTimeFormatter) {
+      _messageClockTimeFormatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+      _messageClockDayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric', month: 'numeric', day: 'numeric' });
+      _messageClockFullFormatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short' });
+    }
+    const t = _messageClockTimeFormatter.formatToParts(d);
     const get = (parts, type) => ((parts.find((p) => p.type === type) || {}).value || '').replace(/[  ]/g, ' ');
     const clock = get(t, 'hour') + ':' + get(t, 'minute') + ' ' + get(t, 'dayPeriod').toUpperCase();
-    const day = (x) => new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric', month: 'numeric', day: 'numeric' }).format(x);
-    return timeOnly || day(d) === day(new Date()) ? clock : get(fmt({ weekday: 'short' }), 'weekday') + ' ' + clock;
+    const day = (x) => _messageClockDayFormatter.format(x);
+    return timeOnly || day(d) === day(new Date()) ? clock : get(_messageClockFullFormatter.formatToParts(d), 'weekday') + ' ' + clock;
   } catch (e) { return ''; }
 }
 
