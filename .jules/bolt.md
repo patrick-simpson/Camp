@@ -1,0 +1,3 @@
+## 2024-05-18 - Intl.DateTimeFormat instantiation bottleneck
+**Learning:** Instantiating `Intl.DateTimeFormat` inside synchronous render loops and frequently called getter functions creates a severe performance bottleneck.
+**Action:** Always cache and reuse `Intl.DateTimeFormat` instances. Initialize them lazily and store them in closures outside of the hot path, and ensure they are wrapped in a `try...catch` block to handle environment errors.
