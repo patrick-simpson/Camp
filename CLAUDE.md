@@ -726,9 +726,12 @@ never rebuilds a segmented control under a finger.
   no More row, no sheet, Bible study is a plain activity card, and the schedule / calendar say no "TBA" cleanup line (`mealCleanupNote`,
   `icsCleanupText` say nothing for a meal with no team). Directors always see both; the hub's to-do is their prompt. Pinned by
   `empty-sections.test.js` (+ senior, in the seeded passes). Senior's seed is the case today; junior is unaffected unless EVERY day is empty.
-  `campWord()` is the one way to write the camp's name in the frame ("Junior camp"; the calendar's `X-WR-CALNAME` keeps the label).
-  The hub's **Phone alerts** row is judged (`hubAlertsView`: sender off / no dates / sending / "Schedule sent to phones", never a warning) and opens
-  the Alerts drawer over the builder.
+  What counselors see says so: a switch that is on over an empty section reads **Empty**, its line "Shows once a day has a verse" / "Shows
+  once a team is on the rota" (`CARD_EMPTY_SUBS`, `applyCardVisibility`).
+  `campWord(camp?)` (camps.js, so the big screen shares it) is the ONE way to write a camp's name on screen ("Junior camp"): every Set up the
+  week kicker, the sign-in and the TV page; only the calendar's `X-WR-CALNAME` keeps the label.
+  The hub's **Phone alerts** row is judged (`hubAlertsView`: sender off / no dates / sending / "Schedule sent to phones", never a warning); with no
+  camp dates it opens Camp week (where they are set), else the Alerts drawer over the builder.
 - **The Games tab** is built (Step 18, "The Games tab"): the Competitions, Current standings and Quick points cards are gone. The home cards no
   longer fold open: **the accordion, `jelly-collapsible` cards, `applyCardDefaults`,
   the 5-minute idle collapse and the `.card-opening` rise are gone**, and the
@@ -767,16 +770,29 @@ never rebuilds a segmented control under a finger.
   body's `hidden` made body a scroll container that never scrolls, and the
   app header (and anything else `position: sticky`) scrolled away with the
   page — v197 shipped that way. Don't put `hidden` back on its own.
-- **The older surfaces wear the one language** (Step 29's design pass; styles.css's block "STEP 29: THE OLDER
-  SURFACES IN THE ONE LANGUAGE", restyles of the renderers' own classes, nothing re-created): the full schedule
-  sheet (`#schedule-overlay`, titled "Full schedule") is the run sheet's hairline rows with the ink "Now" tag and a
-  segmented day well that wraps at large text; the Memory verse / Meal cleanup sheets' `jelly-chip.pts-btn` follow
-  Award points' key rule (chosen = ink, a chosen 0 only outlined: `[data-pts="0"][selected]`); in the game takeover
-  score entry is one sheet of rows, the bracket call-up has no gold tint, the Big Board no team wash, `… won` keys are
-  ink and Save is gold (camp blue is never a button fill); fifteen older labels lost their letter-spaced capitals.
-  The sign-in's logo is the big screen's camp mark; its words are `.lock-logo-name`. What the renderers still draw
-  the old way (team emoji in place of `teamMarkHtml`, "🔴 LIVE", jelly-buttons where `.btn` belongs) is the build
-  sessions' punch list, not CSS.
+- **The older surfaces wear the one language** (Step 29; styles.css's block "STEP 29: THE OLDER SURFACES IN THE ONE
+  LANGUAGE"). The full schedule sheet (`#schedule-overlay`, "Full schedule") is the run sheet's hairline rows with the ink
+  "Now" tag; its day picker `#schedule-days` is the app's day strip (`.daypick`: ONE row that scrolls sideways at large
+  text, fading at the edge it continues past and keeping the chosen day in view — setup-ui.js's `paintStripOverflow` /
+  `stripRevealChip`, typeof-guarded), still `jelly-chip`s (each as wide as its label, never under 44px, the wobble canvas
+  clipped so it is not overflow), today the link-blue ring (`data-today`, an outline: the component paints over its own
+  box); a meal's cleanup is a line of words ("Cleanup: Foxes"), a played game wears the Done tag. The Memory verse and
+  Meal cleanup sheets have no explanation paragraph; their day picker is `.daypick` buttons (`sheetDaysHtml`), and a
+  confirmed director's rows are Award points' own (`awardVerseRows` / `awardCleanupRows`: the team's mark — senior's flags
+  keep their shape — and the `.aw-pt` keys, one delegated listener, `wireSheetPoints`, the same writers); the list's
+  `pts-btns` class is the sheet's hook; without award.js the sheets are the verse and rota only. A counselor's rota is a
+  hairline list of meals with each team's mark; a placeholder verse is a plain line ("No verse yet for Wednesday"), never
+  scripture. In the game takeover: the sub line names the schedule item the game is on (`gameBlockWord`, the session
+  only with the printed week) and its separators hang and clip (`.tk-sub`), never starting a line; score entry is one
+  sheet of rows with a hairline ranking and the medals as hairline rows over full-width picks that wrap a long name;
+  the counter keys are one well colour; the six-team wizard's steps are the four-team bracket's one line ("Step 1 of 5 ·
+  Round 1"), Match order a hairline list with marks and the ink "Now" tag, the summary the saved result's `.gres` list;
+  a counselor's live game is the four-team view's language ("Live now · 3 of 6 teams in" over Now's own board, `.lb`, in
+  roster order; "Live now · Final" over the Big Board; no gold box, no "updates automatically" note); the Big Board
+  rings the followed team's column (`data-mine`, the team's colour for the theme, ink without one). The sign-in's logo
+  is the big screen's camp mark; its words are `.lock-logo-name` ("Senior camp" on senior). **Still to move into the
+  dock** (Step 29 design review, a test driver change): the six-team summary's and score entry's Save, which sit in the
+  body (`bracket.test.js` and `game-view.test.js` drive them there).
 
 ## The Now tab (Step 17 — `nowModel()` in app.js, painted by now-ui.js)
 

@@ -1217,6 +1217,24 @@ body.kb-open .takeover {
 .tk-sub:empty {
   display: none;
 }
+/* "Slip and Slide · Team competitions · Scores": its parts wrap whole, and a separator never starts a line (each part hangs
+   its dot in a 1.1em slot left of itself; the line is pulled 1.1em left and clips that strip — the reveal strip's way). */
+.tk-sub {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -1.1em;
+  clip-path: inset(0 0 0 1.1em);
+}
+.tk-sub > span {
+  padding-left: 1.1em;
+}
+.tk-sub > span + span::before {
+  content: '·';
+  display: inline-block;
+  width: 1.1em;
+  margin-left: -1.1em;
+  text-align: center;
+}
 /* The takeover's own home for the header's Retry / Discard bar and status pill
    (the takeover covers the header and #app is inert under it). In flow between
    the head and the body, so it never floats over a score field; gone unless a
@@ -18697,17 +18715,6 @@ button.gs-row:focus-visible {
   background: var(--well);
   color: var(--ink);
 }
-/* The day chips share one row while they fit and wrap onto a second at large text (seven fixed
-   columns squeezed "SunMonTue" into each other at 200 % on a 360px phone). */
-.schedule-days {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-jelly-chip.sched-day-chip {
-  flex: 1 1 0;
-  min-width: max-content;
-}
 .sched-day-title {
   margin: 0 0 4px;
   font: var(--t-row);
@@ -18772,7 +18779,10 @@ jelly-chip.sched-day-chip {
 .sched-emoji {
   font-size: 1em;
 }
+/* Who is on cleanup is its own line under the meal, in words ("Cleanup: Runaway John Deersz"), the names kept whole. */
 .meal-cleanup-note {
+  display: block;
+  margin: 2px 0 0;
   font: var(--t-meta);
   color: var(--ink-2);
 }
@@ -18847,42 +18857,146 @@ jelly-chip.sched-day-chip {
   color: var(--ink-2);
 }
 
-/* Its day picker is the shell's segmented well (the Memory verse and Meal cleanup sheets' own look): a
-   fourth picker style of solid blue pills is gone. Tokens on the chips, which the component draws. */
+/* Its day picker is the app's day strip (.daypick, the class it also wears: Award points and the Schedule
+   screen have the same one): ONE row in the well, the days sharing the width while they fit, and scrolling
+   sideways at large text, fading at the edge it continues past (paintStripOverflow) with the chosen day kept
+   in view (stripRevealChip). A wrap left Saturday alone on a second row stretched into a bar, and a later
+   min-width squeezed the labels into 47px chips ("SunMonTue"). Each chip is as wide as its label, never
+   narrower than a finger: the row's width is shared out on top of that. Tokens on the chips (the component
+   draws them); today is the strip's link-blue ring, an outline because the component paints over its own box. */
 .schedule-days {
+  display: flex;
+  flex-wrap: nowrap;
   gap: 2px;
   padding: 2px;
   border-radius: var(--r-btn);
   background: var(--well);
 }
 jelly-chip.sched-day-chip {
-  height: var(--target);
+  flex: 1 0 auto; /* as wide as its label, sharing out what is left */
   min-width: var(--target);
+  height: var(--target);
+  scroll-snap-align: start;
   --jelly-fill: var(--well);
   --jelly-on: var(--lift);
   --jelly-label: var(--ink-2);
   --jelly-label-on: var(--ink);
   --jelly-chip-radius: 10px;
 }
+/* The label keeps a little room each side (the old rule took it all away, so at large text "SunMonTue" ran
+   together once the row scrolled), and the chip's wobble canvas, wider than the chip, is clipped to it: in a
+   scrolling row it counted as overflow, so a week that fit still faded out at its end. */
+jelly-chip.sched-day-chip::part(main) {
+  padding-inline: 7px;
+}
+jelly-chip.sched-day-chip {
+  overflow: clip;
+}
 jelly-chip.sched-day-chip[selected] {
   --jelly-ring: var(--seg-ring);
 }
-
-/* ── The Memory verse / Meal cleanup sheets' point keys (More → Camp) ──
-   Award points' rule (§7.3): the chosen key is filled ink; a chosen 0 is only outlined in the well, so
-   a team that got nothing never looks awarded. They were filled camp blue, 0 included. */
-:is(#sheet-verse, #sheet-cleanup) jelly-chip.pts-btn {
-  --jelly-fill: var(--well);
-  --jelly-on: var(--ink);
-  --jelly-label: var(--ink);
-  --jelly-label-on: var(--paper);
-  --jelly-chip-radius: 10px;
-}
-:is(#sheet-verse, #sheet-cleanup) jelly-chip.pts-btn[data-pts="0"][selected] {
-  --jelly-on: var(--well);
-  --jelly-label-on: var(--ink);
+jelly-chip.sched-day-chip[data-today] {
+  --jelly-label: var(--link-well);
   border-radius: 10px;
-  box-shadow: inset 0 0 0 2px var(--ink-3); /* the host's own outline: the component draws no ring at rest */
+  outline: 2px solid var(--link-well);
+  outline-offset: -2px;
+}
+jelly-chip.sched-day-chip[data-today][selected] {
+  --jelly-label-on: var(--ink);
+}
+
+/* ── The Memory verse / Meal cleanup sheets (More → Camp) ──
+   Their day strip is the app's one (.daypick, the markup wears it: one row, scrolling at large text, today the link-blue
+   ring), and a director's rows are Award points' own (.aw-row: the team's mark, so senior's flags keep their shape, its
+   name and the chunky keys). A counselor's rota is a hairline list: the meal and its time over each team's mark and name. */
+:is(#sheet-verse, #sheet-cleanup) .verse-day-row {
+  margin: 0 0 var(--s-4);
+}
+:is(#sheet-verse, #sheet-cleanup) .verse-day-row .daypick-btn {
+  flex: 1 0 auto;
+  min-height: var(--target);
+}
+#sheet-verse .verse-theme + .verse-day-row {
+  margin-top: var(--s-4);
+}
+/* A day with no verse yet is a plain line, never set as scripture in quote marks. */
+.verse-day-none {
+  margin: 4px 0 0;
+  font: 650 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+.verse-video-link,
+.verse-video-link:hover {
+  min-height: var(--target);
+  margin-top: 4px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--link);
+  font: 750 0.9375rem/1.3 var(--font-ui);
+}
+.verse-video-link .ico {
+  width: 1.25em;
+  height: 1.25em;
+}
+.sheet-pts-head {
+  margin-top: var(--s-5, 20px);
+}
+:is(#sheet-verse, #sheet-cleanup) .aw-list {
+  margin-bottom: var(--s-2);
+}
+#sheet-verse .award-double {
+  margin: 0 2px var(--s-3);
+}
+.cleanup-rota {
+  display: block;
+  gap: 0;
+  margin: 0;
+}
+.cleanup-meal-row {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px 13px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+.cleanup-meal-row:first-child {
+  border-top: 0;
+}
+.cleanup-meal-name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-width: 0;
+  font: 800 0.96875rem/1.25 var(--font-ui);
+}
+.cleanup-meal-name small {
+  font: 650 0.84375rem/1.25 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.cleanup-meal-team {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font: 700 1rem/1.3 var(--font-ui);
+}
+.cleanup-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.cleanup-team .tm {
+  flex: none;
+}
+.cleanup-tba {
+  font: 600 0.9375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
 }
 
 /* ── The game takeover's older entry surfaces (the Big Board, the bracket call-up, score entry) ── */
@@ -18926,9 +19040,15 @@ jelly-chip.sched-day-chip[selected] {
   --jelly-fill: var(--gold);
   --jelly-label: var(--gold-ink);
 }
-#takeover-game jelly-button.counter-btn.plus {
+/* Both counter keys, −1 and +1 / +10, are the same well-coloured key with ink words (−1 was Jelly's platinum and so a different
+   fill from its neighbours in dark), and their small words are ink-2, never faded (§8.1 rule 6). */
+#takeover-game jelly-button.counter-btn {
   --jelly-fill: var(--well);
   --jelly-label: var(--ink);
+}
+#takeover-game jelly-button.counter-btn .counter-btn-sub {
+  opacity: 1;
+  color: var(--ink-2);
 }
 /* Score entry: one sheet of team rows divided by hairlines (§8.1 rule 2), not a stack of bordered boxes. */
 .score-input-grid {
@@ -18983,6 +19103,289 @@ jelly-chip.sched-day-chip[selected] {
 .score-input-row input:focus {
   border-color: var(--ink);
   box-shadow: var(--focus-ring);
+}
+
+/* ── The six-team bracket (renderTournament's wizard) in the four-team bracket's language ──
+   The steps are one quiet line (.four-steps), Match order is a hairline list on the sheet (a mark per team, the match under
+   way carrying the ink "Now" tag, a played one ink-2 words with a check), and the summary is the saved result's hairline list
+   (.gres) — no camp-blue fill, no tinted current row, no medal-tinted boxes (§8.1 rule 7, §8.3, §8.8). */
+.bracket-steps {
+  display: block;
+  margin: 0;
+}
+.matchup-order {
+  margin: 4px 0 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.matchup-order-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+}
+.matchup-order-item,
+.matchup-order-item.mo-current,
+.matchup-order-item.mo-done {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-height: var(--target);
+  padding: 9px 14px 9px 2.4rem;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  opacity: 1;
+  font: 650 0.9375rem/1.3 var(--font-ui);
+}
+.matchup-order-item:first-child {
+  border-top: 0;
+}
+.matchup-order-item::before {
+  left: 14px;
+  font: 800 0.8125rem/1 var(--font-ui);
+  color: var(--ink-2);
+}
+.matchup-order-item.mo-current .mo-teams {
+  font-weight: 800;
+}
+.matchup-order-item.mo-done .mo-teams {
+  color: var(--ink-2);
+}
+.mo-teams {
+  flex: 1 1 12em;
+  font-weight: 650;
+}
+.mo-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mo-vs {
+  color: var(--ink-2);
+}
+.mo-now {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font: var(--t-tag);
+  letter-spacing: 0;
+}
+.mo-result {
+  display: block;
+  flex: 1 1 100%; /* its own line under the teams, wrapping a long name at large text */
+  min-width: 0;
+  font: 650 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.mo-result .ico {
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 4px;
+  vertical-align: -0.2em;
+}
+
+/* The Big Board's head at large text: the period stepper ("− Inning 1 of 3 +") goes under the Live tag instead of running
+   off the board's right edge (it took the + with it at 200 % on a 360px phone). */
+.board-head {
+  flex-wrap: wrap;
+}
+.board-period {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* ── A counselor's live game (renderLiveWatch / renderLiveTallyWatch) ──
+   The four-team view's language for every game: no gold-tinted, centred box (gold is the cleanup moment's tint alone, §8.1
+   rule 7), the "Live now · …" head in ink-2 sentence case, a tally as Now's own live board on the sheet with a hairline edge
+   (Now's paper well vanishes on paper, as on the Games tab), and the matches played so far as a hairline list of marks. */
+.live-watch {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+.live-watch-label,
+.live-watch-four .live-watch-label {
+  margin: 4px 0 8px;
+  font: var(--t-label);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.gv-lb .lb {
+  margin-top: 0;
+  background: var(--sheet);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.live-watch .live-watch-ondeck {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 10px 0 0;
+  font: 650 0.9375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.live-watch-done {
+  margin-top: var(--s-4, 16px);
+  padding-top: 0;
+  border-top: 0;
+}
+.live-watch-done ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 600 0.9375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.live-watch-done li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 2.5rem;
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+.live-watch-done li:first-child {
+  border-top: 0;
+}
+.live-watch-done li b {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+/* ── Score entry's ranking and medals (renderTally) ──
+   The live ranking is a hairline list on the sheet (place, mark, name, score: Now's live board's rows), the tie note a plain line
+   with the gold "!", and the medals one sheet of hairline rows: the medal in words (and, for a director, what it is worth) over a
+   full-width pick, so a long team name has the row's width. No medal-tinted boxes, no outlined pills (§8.8). */
+.live-ranking {
+  display: block;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+}
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 2.5rem;
+  padding: 6px 14px;
+  border-top: 1px solid var(--line);
+  font: 650 0.9375rem/1.25 var(--font-ui);
+}
+.rank-row:first-child {
+  border-top: 0;
+}
+.rank-n {
+  flex: none;
+  min-width: 1em;
+  text-align: right;
+  font: 800 0.8125rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.rank-nm {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.rank-v {
+  flex: none;
+  font: 850 1.0625rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.tie-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 2px 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font: 650 0.875rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+.medal-picker-heading {
+  margin: 20px 2px 2px;
+}
+.medal-picker-note {
+  margin: 0 2px 8px;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+.medal-picker {
+  gap: 0;
+  margin: 8px 0 14px;
+  overflow: hidden;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+}
+.medal-slot,
+.medal-slot-gold,
+.medal-slot-silver,
+.medal-slot-bronze {
+  display: grid;
+  justify-content: stretch; /* the old flex row's space-between kept the one track from filling the row */
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+}
+.medal-slot:first-child {
+  border-top: 0;
+}
+.medal-slot-word {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  font: 800 0.96875rem/1.25 var(--font-ui);
+}
+.medal-slot-word small {
+  font: 650 0.84375rem/1.25 var(--font-ui);
+  color: var(--ink-2);
+}
+.medal-slot,
+.medal-slot-gold,
+.medal-slot-silver,
+.medal-slot-bronze {
+  grid-template-columns: minmax(0, 1fr); /* the pick's own width never pushes the row past the screen */
+}
+.medal-slot jelly-select {
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+  height: auto;
+  min-height: var(--target);
+}
+/* A long team name wraps inside the pick instead of being cut to "Particularly Peril…" (large text). */
+.medal-slot jelly-select::part(trigger) {
+  height: auto;
+  min-height: var(--target);
+  padding-block: 8px;
+}
+.medal-slot jelly-select::part(value) {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: break-word;
+  text-align: left;
 }
 
 /* ── Sentence case, everywhere (§8.2: never letter-spaced capitals) ──
@@ -19046,11 +19449,24 @@ jelly-chip.sched-day-chip[selected] {
   font: 850 1.5rem/1.1 var(--font-ui);
   letter-spacing: var(--track-tight);
 }
+/* The sign-in button's words grow with the phone's text size like everything round them (the component's own size is px). */
+#google-signin-btn {
+  --jelly-button-font-size: 1.0625rem;
+}
 
 /* Your team on a Big Board (§8.1 rule 5: team colour outlines your team in a live board, the way Now's live
-   board and the saved result mark it). A hook for the build session: liveTrackerHTML / liveBoardHTML put
-   data-mine on the followed team's .board-col; nothing sets it yet. */
+   board and the saved result mark it): liveTrackerHTML / liveBoardHTML put data-mine on the followed team's .board-col. */
+/* The house "Your team" mark: the team's colour for the theme in force, ink when a team has none (never the camp blue). */
 .board-col[data-mine] {
+  --mine-ring: var(--team-accent-l, var(--ink));
   border-radius: 12px;
-  box-shadow: inset 0 0 0 2px var(--team-accent, var(--color-primary));
+  box-shadow: inset 0 0 0 2px var(--mine-ring);
+}
+:root[data-jelly-mode="dark"] .board-col[data-mine] {
+  --mine-ring: var(--team-accent-d, var(--team-accent-l, var(--ink)));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-jelly-mode="light"]) .board-col[data-mine] {
+    --mine-ring: var(--team-accent-d, var(--team-accent-l, var(--ink)));
+  }
 }

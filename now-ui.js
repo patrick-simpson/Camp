@@ -221,7 +221,8 @@ function nowNotesHtml(notes) {
   return (notes || []).map((n) => {
     if (n.kind === 'double') return `<p class="nw-note" data-note="double">${nowIcon('i-bolt')}<span>${esc(n.text)}</span></p>`;
     if (n.kind === 'rain') return `<p class="nw-note" data-note="rain">${nowIcon('i-rain')}<span>${esc(n.text)}</span></p>`;
-    if (n.kind === 'hold') return `<p class="nw-note" data-note="hold">${nowIcon('i-clock')}<span>${esc(n.text)}</span></p>`;
+    // All four matches played (the four-team bracket waiting to be saved) wears a check: the clock means a result being checked.
+    if (n.kind === 'hold') return `<p class="nw-note" data-note="${n.played ? 'played' : 'hold'}">${nowIcon(n.played ? 'i-check' : 'i-clock')}<span>${esc(n.text)}</span></p>`;
     if (n.kind === 'team' && n.team) {
       return `<p class="nw-note" data-note="team" data-team="${esc(n.team)}"${nowAccent(n.team)}${n.mine ? ' data-mine' : ''}><span class="nw-note-mark">${nowMark(n.team, 22)}</span>` +
         `<span><b>${esc(n.lead)}</b>${esc(n.rest)}</span></p>`;

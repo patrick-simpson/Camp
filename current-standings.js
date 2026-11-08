@@ -784,8 +784,8 @@
 
   // ── Go ─────────────────────────────────────────────────────────
   // The tab and the page say which camp this is (two camps, one page).
-  document.title = 'Current standings — ' + String(CAMP.label).replace(/\bCamp\b/, 'camp');
-  setText($('wait-camp'), String(CAMP.label).replace(/\bCamp\b/, 'camp') + ' · Standings');
+  document.title = 'Current standings — ' + campWord(); // camps.js: the one way the camp's name is written
+  setText($('wait-camp'), campWord() + ' · Standings');
   var waitShields = $('wait-shields');
   campTeamIds().forEach(function (id) { waitShields.appendChild(teamMark(id, 'wait-crest')); });
   startFeed();

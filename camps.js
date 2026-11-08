@@ -724,5 +724,8 @@ function otherCampId() { return CAMP.id === 'senior' ? 'junior' : 'senior'; }
 // Every Firebase path and per-camp localStorage key goes through these two.
 // For junior both are identity-preserving (dbRoot is the original literal,
 // suffix is '') — pinned by tests/camps.test.js.
+// ONE way to write a camp's name on screen (redesign §8.2, sentence case): "Junior camp", "Senior camp" — the app's kickers,
+// the sign-in, the sheets and the big screen all say it the same way. The calendar file's X-WR-CALNAME keeps the plain label.
+function campWord(camp) { return String(((camp || CAMP) && (camp || CAMP).label) || 'Camp').replace(/\bCamp\b/, 'camp'); }
 function dbPath(sub) { return CAMP.dbRoot + '/' + sub; }
 function lsKey(base) { return base + CAMP.storageSuffix; }

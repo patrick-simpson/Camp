@@ -1014,6 +1014,11 @@ function cleanupSectionEmpty() {
   for (let dow = 0; dow <= 6; dow += 1) if (cleanupOnRota(dow)) return false;
   return true;
 }
+// What counselors see: a switch's line, [as usual, while the section has nothing to show yet].
+const CARD_EMPTY_SUBS = {
+  verse: ['Each day’s verse', 'Shows once a day has a verse'],
+  cleanup: ['Who is on cleanup, and when', 'Shows once a team is on the rota'],
+};
 // Is this hideable section empty (so a counselor's screen leaves it out)?
 function cardEmptyForViewers(card) {
   return card === 'verse' ? verseSectionEmpty() : card === 'cleanup' ? cleanupSectionEmpty() : false;
@@ -1392,9 +1397,9 @@ function decorateMealBlock(dow, block) {
   });
 }
 
-// A "🧽 <team>" note naming who's on cleanup for the meal a block represents,
-// shown next to the meal wherever it appears. '' when the block isn't a meal or
-// the day isn't on the cleanup rota; "TBA" for a tracked day not yet assigned.
+// A "Cleanup: <team>" note naming who's on cleanup for the meal a block represents, shown under the meal wherever it appears:
+// words, never a sponge emoji whose meaning a reader has to guess. '' when the block isn't a meal, the day isn't on the
+// cleanup rota, or no team is on it yet.
 function mealCleanupNote(dow, label, tagged) {
   // `tagged` is blockMeal() of the item the label came from (its Meal tag once the schedule is edited here); without it
   // the label says.
@@ -1402,8 +1407,8 @@ function mealCleanupNote(dow, label, tagged) {
   if (!meal || !cleanupOnRota(dow)) return '';
   const teams = cleanupTeams(dow, meal);
   if (!teams.length) return ''; // nothing to say until a team is on it (the hub's to-do is the directors' prompt)
-  const who = teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ');
-  return ` <span class="meal-cleanup-note">🧽 ${who}</span>`;
+  const who = teams.map((id) => `<span class="meal-cleanup-team">${esc(teamName(id))}</span>`).join(' and ');
+  return ` <span class="meal-cleanup-note">Cleanup: ${who}</span>`;
 }
 
 // ── Notice board (big, top-of-page, editor-composed) ─────────────
@@ -2340,7 +2345,7 @@ function nowBlockCard(ctx, blocks, nb, held) {
   if (kind === 'games' && body.bracket4 && body.bracket4.note) card.notes.push(Object.assign({ kind: 'team' }, body.bracket4.note));
   // A result being checked: said in the slot the team's line sits in, so the cells are never left to explain themselves.
   else if (kind === 'games' && body.bracket4 && body.bracket4.hold) card.notes.push({ kind: 'hold', text: FOUR_HOLD_NOTE });
-  else if (kind === 'games' && body.bracket4 && body.bracket4.played) card.notes.push({ kind: 'hold', text: FOUR_PLAYED_NOTE });
+  else if (kind === 'games' && body.bracket4 && body.bracket4.played) card.notes.push({ kind: 'hold', played: true, text: FOUR_PLAYED_NOTE }); // played: the check, not the hold's clock (now-ui.js)
   if (kind === 'meal') {
     body.duty.forEach((d) => card.notes.push({ kind: 'team', team: d.team, mine: d.mine, lead: d.mine ? 'Your team' : teamName(d.team), rest: (d.mine ? ' is' : '') + ' on cleanup after ' + nb.meal.toLowerCase() }));
   }
@@ -2491,6 +2496,8 @@ function openSchedule() {
   const app = document.getElementById('app');
   if (app) app.inert = true; // background isn't reachable by tab/AT while the sheet is up
   shellSheetOpen('schedule'); // the shell files a history entry: phone Back closes the sheet
+  const days = document.getElementById('schedule-days');
+  if (days) days.__revealOnce = true; // today's chip into view at open (the strip scrolls at large text)
   renderSchedule();
   // Land the reader on "now" (today only — other days start at the top).
   requestAnimationFrame(() => {
@@ -2546,17 +2553,16 @@ function renderScheduleDays() {
   // tapped with a fresh, already-selected chip, so its own select animation
   // never played. The markup deliberately carries no `selected`; it is applied
   // below. It's rebuilt only when it changes (the today-dot moves at midnight).
+  // Today wears the app's one today mark, the day strip's link-blue ring (data-today, styles.css), never a dot on the label.
   const html = weekDays().map((d) => `
-    <jelly-chip class="sched-day-chip" selectable size="small" data-dow="${d.dow}">
-      ${d.short}${d.dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}
-    </jelly-chip>`).join('');
+    <jelly-chip class="sched-day-chip" selectable size="small" data-dow="${d.dow}"${d.dow === todayDow ? ' data-today title="Today"' : ''}>${d.short}</jelly-chip>`).join('');
   if (wrap.__daysHtml !== html || !wrap.querySelector('.sched-day-chip')) {
     wrap.innerHTML = html;
     wrap.__daysHtml = html;
     wrap.querySelectorAll('.sched-day-chip').forEach((btn) => {
       btn.addEventListener('click', () => {
         scheduleDay = parseInt(btn.dataset.dow, 10);
-        syncScheduleDaySelection(); // a selectable chip toggles ITSELF on tap — re-assert the truth
+        syncScheduleDaySelection(true); // a selectable chip toggles ITSELF on tap — re-assert the truth
         renderScheduleBody();
         const body = document.getElementById('schedule-body');
         if (body) body.scrollTop = 0;
@@ -2564,16 +2570,30 @@ function renderScheduleDays() {
       });
     });
   }
+  // One row that scrolls sideways at large text (a .daypick): the edge it continues past fades, and the chosen day is kept
+  // whole in view. A wrap left Saturday alone on a second row, stretched into a bar (setup-ui.js's strip helpers).
+  if (!wrap.__stripWired && typeof wrap.addEventListener === 'function') {
+    wrap.__stripWired = true;
+    wrap.addEventListener('scroll', () => { if (typeof paintStripOverflow === 'function') paintStripOverflow(wrap); }, { passive: true });
+  }
   syncScheduleDaySelection();
 }
 
 // Mark the chip for the shown day, and only that one, in place.
-function syncScheduleDaySelection() {
+function syncScheduleDaySelection(smooth) {
   const wrap = document.getElementById('schedule-days');
   if (!wrap) return;
+  let chosen = null;
   wrap.querySelectorAll('.sched-day-chip').forEach((c) => {
-    c.toggleAttribute('selected', parseInt(c.dataset.dow, 10) === scheduleDay);
+    const on = parseInt(c.dataset.dow, 10) === scheduleDay;
+    c.toggleAttribute('selected', on);
+    if (on) chosen = c;
   });
+  // Brought into view on a tap and when the sheet opens, never by a background repaint (a reader who scrolled the strip
+  // to look at Saturday is not pulled back).
+  if (chosen && (smooth || wrap.__revealOnce) && typeof stripRevealChip === 'function') stripRevealChip(wrap, chosen, !!smooth);
+  wrap.__revealOnce = false;
+  if (typeof paintStripOverflow === 'function') paintStripOverflow(wrap);
 }
 
 function renderScheduleBody() {
@@ -2599,7 +2619,8 @@ function renderScheduleBody() {
     const games = hid.games ? [] : gamesForBlock(dow, raw);
     if (games.length) {
       extra = `<div class="sched-games">${games.map((g) =>
-        `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${esc(g.emoji)} ${esc(g.name)}</span>`).join('')}</div>`;
+        // A played game wears the Games rows' own Done tag, so a counselor can tell what is finished at a glance.
+        `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${esc(g.emoji)} ${esc(g.name)}${state.results[g.id] ? ' <span class="gr-tag" data-tag="done">Done</span>' : ''}</span>`).join('')}</div>`;
     }
     if (raw.type === 'elective') {
       labelBadge = electiveWxHtml(dow, raw.slot);
@@ -3089,11 +3110,13 @@ function renderHistoryRows(rows) {
     const delta = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
     const cls = r.delta > 0 ? 'cl-pos' : 'cl-neg';
     const who = (r.byKey || r.by) ? ` · ${esc(String(historyAuthorName(r)))}` : '';
-    const emoji = r.teamId ? teamEmoji(r.teamId) : '';
+    // The team's mark (senior's flags keep their shape: red and green are told apart without colour); the drawer is rebuilt
+    // whole, so a shield camp keeps its emoji (bracketMarkHtml: an <img> re-created on every paint blinks).
+    const mark = r.teamId && teamIds().includes(r.teamId) ? bracketMarkHtml(r.teamId, 20) : '';
     html += `
       <div class="cl-entry">
         <div class="cl-entry-top">
-          <span class="cl-team">${emoji ? emoji + ' ' : ''}${esc(String(r.team || r.teamId || '?'))}</span>
+          <span class="cl-team">${mark ? mark + ' ' : ''}${esc(String(r.team || r.teamId || '?'))}</span>
           <span class="cl-delta ${cls}">${esc(delta)} pts</span>
         </div>
         <div class="cl-entry-sub">${esc(String(r.reason || 'Points updated'))} · ${esc(String(r.before))}→${esc(String(r.after))}</div>
@@ -3364,7 +3387,7 @@ function renderMemberList(body, lists) {
         ${accessHTML}
         ${teamHTML}
       </div>`}
-      ${owner ? '<p class="muted member-self-note member-owner-note">👑 Owner · only the owner can change this row</p>'
+      ${owner ? '<p class="muted member-self-note member-owner-note">Owner · only the owner can change this row</p>'
         : self ? '<p class="muted member-self-note">That\'s you — another editor has to change or remove your access.</p>' : ''}
     </div>`;
   }).join('');
@@ -4086,7 +4109,11 @@ function applyCardVisibility() {
     // ON = counselors see it (the data is still "hidden from viewers").
     const sw = document.querySelector(`.hide-card-toggle[data-hide-card="${key}"]`);
     if (sw && sw.hasAttribute('checked') === hidden) sw.toggleAttribute('checked', !hidden);
-    setTextIfChanged(document.querySelector(`[data-hide-state="${key}"]`), hidden ? 'Hidden' : 'Shown');
+    // A section the switch shows but that has nothing in it yet (senior's placeholder verses, a rota with no team) is left off a
+    // counselor's phone (cardEmptyForViewers), so the switch says so instead of a "Shown" no counselor would see.
+    const empty = !hidden && CARD_EMPTY_SUBS[key] && cardEmptyForViewers(key);
+    setTextIfChanged(document.querySelector(`[data-hide-state="${key}"]`), hidden ? 'Hidden' : empty ? 'Empty' : 'Shown');
+    if (CARD_EMPTY_SUBS[key]) setTextIfChanged(document.querySelector(`[data-hide-row="${key}"] .gl-sub`), CARD_EMPTY_SUBS[key][empty ? 1 : 0]);
   });
   // The Games tab says why it is empty for a counselor the directors turned it off for.
   setHiddenIfChanged(document.getElementById('games-off'), !(!editor && cardHiddenFromViewers('competitions')));
@@ -4098,8 +4125,7 @@ function applyCardVisibility() {
   }
 }
 
-// ONE way to write the camp's name in the frame (§8.2, sentence case): "Junior camp". The calendar's X-WR-CALNAME keeps the plain label.
-function campWord() { return String(CAMP.label || 'Camp').replace(/\bCamp\b/, 'camp'); }
+// campWord() — the ONE way to write the camp's name on screen — lives in camps.js (the big screen uses it too).
 
 // ── Cloud sync (Firebase Realtime Database) ──────────────────────
 // Optional. If window.FIREBASE_CONFIG is filled in (firebase-config.js)
@@ -8889,7 +8915,7 @@ function renderTeamPickerOptions() {
   if (!wrap) return;
   wrap.innerHTML = state.teams.map((t) =>
     `<button class="team-picker-option ${state.followTeam === t.id ? 'selected' : ''}" data-team-id="${esc(t.id)}">
-      <span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}
+      <span class="chip-emoji">${teamMarkHtml(t.id, { size: 24 })}</span> ${esc(t.name)}
     </button>`
   ).join('') + `<button class="team-picker-option team-picker-neutral ${state.followTeam === null ? 'selected' : ''}" data-team-id="">🙅 Neutral / no team</button>`;
   wrap.querySelectorAll('.team-picker-option').forEach((btn) => {
@@ -8951,7 +8977,7 @@ function renderIdentityOptions() {
   const names = staff.length ? staff : teamRoster(pickerTeamId);
   wrap.innerHTML = names.map((n) =>
     `<button class="team-picker-option ${state.identity === n ? 'selected' : ''}" data-counselor="${esc(n)}">
-      <span class="chip-emoji">${teamEmoji(pickerTeamId)}</span> ${esc(n)}
+      <span class="chip-emoji">${teamMarkHtml(pickerTeamId, { size: 24 })}</span> ${esc(n)}
     </button>`
   ).join('') + `<button class="team-picker-option team-picker-neutral ${state.identity === null ? 'selected' : ''}" data-counselor="">🙌 Skip — I'm just cheering</button>`;
   wrap.querySelectorAll('.team-picker-option').forEach((btn) => {
@@ -9113,110 +9139,104 @@ function versePointsByDay() {
   return map;
 }
 
-// Set a card's one-line description only when it changed (these run on every render).
-function setCardDesc(id, text) {
-  const el = document.getElementById(id);
-  if (el && el.textContent !== text) el.textContent = text;
+// The day strip of the Memory verse and Meal cleanup sheets: the app's one day strip (.daypick, as in Award points), ONE row that
+// scrolls sideways at large text, today the link-blue ring. `attr` names the day on each button (data-verse-day / data-cleanup-day).
+function sheetDaysHtml(attr, chosen) {
+  const today = campNow().dow;
+  return `<div class="daypick verse-day-row" role="tablist" aria-label="Day">${competitionDows().map((dow) =>
+    `<button type="button" class="daypick-btn" role="tab" aria-selected="${dow === chosen}" ${attr}="${dow}"${dow === today ? ' data-today title="Today"' : ''}>${esc(dayLabel(dow).slice(0, 3))}</button>`).join('')}</div>`;
+}
+// After a write: the strip fades at the edge it continues past and keeps the chosen day in view (setup-ui.js's helpers).
+function sheetDaysSettle(wrap, smooth) {
+  const track = wrap && wrap.querySelector ? wrap.querySelector('.verse-day-row') : null;
+  if (!track) return;
+  if (typeof track.addEventListener === 'function') track.addEventListener('scroll', () => { if (typeof paintStripOverflow === 'function') paintStripOverflow(track); }, { passive: true });
+  const chip = track.querySelector('[aria-selected="true"]');
+  if (chip && typeof stripRevealChip === 'function') stripRevealChip(track, chip, smooth);
+  if (typeof paintStripOverflow === 'function') paintStripOverflow(track);
+}
+// A director's taps on either sheet, ONE delegated listener on its body (the body is rewritten through setHtmlIfChanged, so a
+// listener on a key would be lost). The keys are Award points' own (award.js awardRowHtml), so a key looks and taps the same in
+// both places and writes through the same writer; a tap is bounded by the section (verse 0–5, cleanup 0–3) and focus goes back
+// onto the key it was on once the body repaints.
+function wireSheetPoints(wrap, kind) {
+  if (!wrap || wrap.__ptsWired || typeof wrap.addEventListener !== 'function') return;
+  wrap.__ptsWired = true;
+  wrap.addEventListener('click', (e) => {
+    const t = e.target && e.target.closest ? e.target : null;
+    if (!t) return;
+    const day = t.closest('[data-verse-day], [data-cleanup-day]');
+    if (day) {
+      const had = focusWas(day);
+      if (kind === 'verse') { verseDay = parseInt(day.dataset.verseDay, 10); renderMemoryVerse(); } else { cleanupDay = parseInt(day.dataset.cleanupDay, 10); renderMealCleanup(); }
+      sheetDaysSettle(wrap, true);
+      focusBack(had, wrap.querySelector('.verse-day-row [aria-selected="true"]'));
+      joyStagger(wrap.querySelector('.aw-list'));
+      return;
+    }
+    const key = t.closest('.aw-pt');
+    const row = key && key.closest('.aw-row');
+    if (!row || !standingsVisible()) return;
+    const pts = parseInt(key.dataset.pts, 10);
+    if (!(pts >= 0 && pts <= (kind === 'verse' ? 5 : 3))) return;
+    const had = focusWas(key);
+    const rowKey = row.dataset.key;
+    if (kind === 'verse') setVersePoints(row.dataset.team, verseDay, pts);
+    else setCleanupPoints(row.dataset.team, cleanupDay, row.dataset.meal, pts);
+    focusBack(had, wrap.querySelector('[data-key="' + rowKey + '"] .aw-pt[data-pts="' + pts + '"]'));
+  });
 }
 
 function renderMemoryVerse() {
   const wrap = document.getElementById('verse-body');
   if (!wrap) return;
-  // The points grid is a CONFIRMED director's: a hint-painted device (no member
-  // answer yet) reads the verse like a counselor, so it reads no points either.
-  const editing = standingsVisible();
-  // index.html ships the counselor wording (fail closed); directors get the one
-  // that talks about points.
-  setCardDesc('verse-desc', editing
-    ? "Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total in Current Standings."
-    : "Each day's memory verse — pick a day to read it.");
-  // Default to today's verse (Mon–Fri); fall back to Monday on the weekend.
+  // The points are a CONFIRMED director's: a hint-painted device (no member answer yet) reads the verse like a counselor, so it
+  // reads no points either. The keys come from award.js; without it the sheet is the verse alone, for everyone.
+  const editing = standingsVisible() && typeof awardVerseRows === 'function';
+  // Default to today (Mon–Fri); fall back to Monday on the weekend.
   if (verseDay == null) {
     const dow = campNow().dow;
     verseDay = competitionDows().includes(dow) ? dow : competitionDows()[0];
   }
   const verse = verseFor(verseDay);
   const theme = verseTheme();
-  const todayDow = campNow().dow;
+  const dayName = dayLabel(verseDay);
 
-  // Edited here, a week with no theme verse yet shows none (the day's verse still reads).
-  const themeHTML = !theme.text ? '' : `
+  // A theme or a day still saying "to be announced" is a plain line, never set as scripture (Now's rule); a theme titled with the
+  // camp's own name ("Senior Camp") names nothing, so it is left out.
+  const tTitle = String(theme.title || '').trim();
+  const titled = tTitle && tTitle.toLowerCase() !== String(CAMP.label || '').trim().toLowerCase();
+  const themeHTML = !verseIsReal(theme) ? '' : `
     <div class="verse-theme">
-      <span class="verse-theme-label"><svg class="ico" aria-hidden="true"><use href="#i-book"/></svg>Theme verse${theme.title ? ' · ' + esc(theme.title) : ''}</span>
+      <span class="verse-theme-label"><svg class="ico" aria-hidden="true"><use href="#i-book"/></svg>Theme verse${titled ? ' · ' + esc(tTitle) : ''}</span>
       <p class="verse-theme-text">“${esc(theme.text)}”</p>
       <p class="verse-theme-ref">${esc(theme.ref)}</p>
     </div>`;
 
-  const dayChips = `<div class="verse-day-row">${competitionDows().map((dow) =>
-    `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === verseDay ? 'selected' : ''} data-verse-day="${dow}">${dayLabel(dow).slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
-
   const verseVideo = verse.video
-    ? `<a class="verse-video-link" href="${esc(verse.video)}" target="_blank" rel="noopener noreferrer">▶️ Watch the video</a>`
+    ? `<a class="verse-video-link" href="${esc(verse.video)}" target="_blank" rel="noopener noreferrer"><svg class="ico" aria-hidden="true"><use href="#i-play"/></svg>Watch the video</a>`
     : '';
   const verseBox = `
     <div class="verse-day-card">
-      <span class="verse-day-name">${esc(dayLabel(verseDay))}</span>
-      ${verse.text ? `<p class="verse-day-text">“${esc(verse.text)}”</p>
-      <p class="verse-day-ref">${esc(verse.ref)}</p>` : '<p class="verse-day-text muted">No verse for this day yet.</p>'}
-      ${verseVideo}
+      <span class="verse-day-name">${esc(dayName)}</span>
+      ${verseIsReal(verse) ? `<p class="verse-day-text">“${esc(verse.text)}”</p>
+      <p class="verse-day-ref">${esc(verse.ref)}</p>${verseVideo}` : `<p class="verse-day-none">No verse yet for ${esc(dayName)}</p>`}
     </div>`;
 
-  // One row per team: the day's verse points, shown exactly once. Editors
-  // set a team's points by tapping 0–5 directly (0 clears); no separate
-  // pick-teams-then-type flow, no duplicate summary chips + ledger.
-  //
-  // The stored/tapped scale always stays 0–5 raw (setVersePoints, the
-  // selected-chip check, and data-pts below all use the raw number) —
-  // bonusCountsDouble() is what actually doubles it in the standings, keyed
-  // off each entry's own timestamp. On screen: tap-button labels show what a
-  // tap made RIGHT NOW is worth (new entries are stamped "now", so during
-  // the window a perfect recitation reads "10", not a "5" that quietly
-  // becomes 10 elsewhere), while each team's shown total is the per-entry
-  // effective value — a Monday entry viewed on Friday stays single, exactly
-  // as the standings count it.
-  // Counselors read the verse and nothing more: the per-team points (the rows
-  // and their "+N" totals) are directors' eyes only, so the ledger is not even
-  // read for anyone else.
-  const earned = (editing && versePointsByDay()[verseDay]) || { raw: {}, effective: {} };
-  const doubling = inDoubleBonusWindow();
-  const displayMult = doubling ? 2 : 1;
-  const hint = editing
-    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(dayLabel(verseDay))}'s verse — 0 clears them.${doubling ? ' Double points are on — the tap values already show the doubled worth.' : ''}</p>`
+  // A director's rows: Award points' own (a team's mark — senior's flags keep their shape — its name and the 0–5 keys, which show
+  // what a tap is worth NOW: doubled in the window; the stored value stays 0–5). Counselors read the verse and nothing more: the
+  // rows and their totals are a director's eyes only, so the ledger is not even read for anyone else. The list's `pts-btns` class
+  // is this sheet's hook for its points buttons.
+  const doubling = editing && inDoubleBonusWindow();
+  const head = `<div class="dt-h-row sheet-pts-head"><h3 class="dt-h">Points for ${esc(dayName)}’s verse</h3>` +
+    `<p class="dt-h-note">${doubling ? 'Counts twice now' : '0–5 per team'} · tap 0 to clear</p></div>`;
+  const rowsHTML = editing ? `${head}<div class="gl aw-list pts-btns">${awardVerseRows(verseDay)}</div>` : '';
+  const doubleNote = doubling
+    ? '<p class="setup-note award-double"><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span>Double points until the end of Friday</span></p>'
     : '';
-  const rowsHTML = `<div class="pts-grid">${state.teams.map((t) => {
-    const pts = earned.raw[t.id] || 0; // raw stored value (0–5)
-    const displayPts = earned.effective[t.id] || 0; // what it's actually worth in the standings
-    // The own-team guard: a team's own verse points are that team's "round".
-    const btns = editing && canScoreRound(t.id)
-      ? `<div class="pts-btn-row" data-team-id="${esc(t.id)}" role="group" aria-label="${esc(t.name)} verse points">
-          ${[0, 1, 2, 3, 4, 5].map((n) =>
-            `<jelly-chip class="pts-btn" selectable shape="square" ${pts === n ? 'selected' : ''} data-pts="${n}">${n * displayMult}</jelly-chip>`).join('')}
-        </div>`
-      : '';
-    return `<div class="pts-row">
-      <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${displayPts > 5 ? ` <span class="pts-row-total">+${displayPts}</span>` : ((!editing || !canScoreRound(t.id)) && displayPts > 0 ? ` <span class="pts-row-total">+${displayPts}</span>` : '')}</span>
-      ${btns}${editing && blockedByOwnTeam(t.id) ? '<span class="pts-row-locked">🛡️ your team</span>' : ''}
-    </div>`;
-  }).join('')}</div>`;
-
-  const doubleNote = inDoubleBonusWindow()
-    ? `<div class="messtival-banner">⚡ Double points until the end of Friday</div>`
-    : '';
-  if (!setHtmlIfChanged(wrap, doubleNote + themeHTML + dayChips + verseBox + hint + (editing ? rowsHTML : ''))) return;
-
-  wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      verseDay = parseInt(btn.dataset.verseDay, 10);
-      renderMemoryVerse();
-      joyStagger(document.querySelector('#verse-body .pts-grid'));
-    });
-  });
-  wrap.querySelectorAll('.pts-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const teamId = btn.closest('.pts-btn-row').dataset.teamId;
-      setVersePoints(teamId, verseDay, parseInt(btn.dataset.pts, 10));
-    });
-  });
+  wireSheetPoints(wrap, 'verse');
+  if (!setHtmlIfChanged(wrap, doubleNote + themeHTML + sheetDaysHtml('data-verse-day', verseDay) + verseBox + rowsHTML)) return;
+  sheetDaysSettle(wrap, false);
 }
 
 // Sets a team's verse points for a day to exactly `pts` — replaces any
@@ -9281,124 +9301,33 @@ function cleanupMealPoints(day, meal) {
 function renderMealCleanup() {
   const wrap = document.getElementById('cleanup-body');
   if (!wrap) return;
-  setCardDesc('cleanup-desc', canEdit()
-    ? "Each meal a team is on cleanup — pick a day to see the rota and award points. Cleanup points count toward each team's total in Current Standings."
-    : 'Each meal a team is on cleanup — pick a day to see the rota.');
   // Default to today (Mon–Fri, else Monday).
   if (cleanupDay == null) {
     const dow = campNow().dow;
     cleanupDay = competitionDows().includes(dow) ? dow : competitionDows()[0];
   }
-  const todayDow = campNow().dow;
-
-  const dayChips = `<div class="verse-day-row">${competitionDows().map((dow) =>
-    `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === cleanupDay ? 'selected' : ''} data-cleanup-day="${dow}">${dayLabel(dow).slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
-
-  const rotaHTML = `<div class="cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
+  // The rota IS the interface: a heading per meal (its name and time), the team(s) on it. A confirmed director gets Award points'
+  // own rows on it (the team's mark, its name and the 0–3 keys; a team with points for a meal it is not on the rota for keeps a
+  // row, tagged, so it stays clearable): award.js's awardCleanupRows. Everyone else reads the rota only, each team by its mark
+  // (senior's flags keep their shape, so red and green are told apart without colour) — no "+N", no ledger. The list's `pts-btns`
+  // class is this sheet's hook for its points buttons.
+  const editing = standingsVisible() && typeof awardCleanupRows === 'function';
+  const rotaHTML = `<div class="gl cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
     const teams = cleanupTeams(cleanupDay, meal);
-    const teamStr = teams.length > 0
-      ? teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ')
-      : '<span class="cleanup-tba">TBA</span>';
+    const time = mealStart(cleanupDay, meal);
+    const clock = typeof time === 'number' && Number.isFinite(time) ? schedClock(time) + (time % 1440 < 720 ? ' AM' : ' PM') : '';
+    const teamStr = teams.length
+      ? teams.map((id) => `<span class="cleanup-team">${teamMarkHtml(id, { size: 22 })}<span>${esc(teamName(id))}</span></span>`).join('')
+      : '<span class="cleanup-tba">No team yet</span>';
     return `<div class="cleanup-meal-row">
-      <span class="cleanup-meal-name">${MEAL_ICONS[meal]} ${esc(meal)}</span>
+      <span class="cleanup-meal-name">${esc(meal)}${clock ? `<small>${esc(clock)}</small>` : ''}</span>
       <span class="cleanup-meal-team">${teamStr}</span>
     </div>`;
   }).join('')}</div>`;
-
-  // The rota IS the interface: one block per meal showing the assigned team,
-  // and (for editors) the 0–3 point buttons right on it — no separate meal
-  // chips or repeated team list. Viewers see the rota ONLY: no "+N" badges, no
-  // ledger (see "Standings secrecy").
-  const editing = canEdit();
-  const earnedFor = (meal) => {
-    const out = {};
-    Object.values(state.bonuses || {}).forEach((b) => {
-      if (b && b.category === 'cleanup' && (Number(b.day) || 0) === cleanupDay && (b.meal || 'Breakfast') === meal) {
-        out[b.teamId] = (out[b.teamId] || 0) + (Number(b.points) || 0);
-      }
-    });
-    return out;
-  };
-
-  let entryHTML = '';
-  if (editing) {
-    entryHTML = MEAL_CLEANUP_MEALS.map((meal) => {
-      const assigned = cleanupTeams(cleanupDay, meal);
-      const earned = earnedFor(meal);
-      // Rota team(s) first; then any team that somehow has points for this
-      // meal without being on the rota (rota edits, old data) so it stays
-      // clearable rather than invisible.
-      const rows = assigned.concat(teamIds().filter((id) => earned[id] && !assigned.includes(id)));
-      const body = rows.length
-        ? rows.map((id) => {
-            const pts = earned[id] || 0;
-            // The own-team guard: a team's own cleanup score is its round.
-            const locked = blockedByOwnTeam(id);
-            return `<div class="pts-row">
-              <span class="pts-row-team">${teamEmoji(id)} ${esc(teamName(id))}${assigned.includes(id) ? '' : ' <span class="pts-row-total">not on rota</span>'}${pts > 3 || locked ? ` <span class="pts-row-total">+${pts}</span>` : ''}</span>
-              ${locked ? '<span class="pts-row-locked">🛡️ your team</span>' : `<div class="pts-btn-row" data-team-id="${esc(id)}" data-meal="${esc(meal)}" role="group" aria-label="${esc(teamName(id))} ${esc(meal)} cleanup points">
-                ${[0, 1, 2, 3].map((n) =>
-                  `<jelly-chip class="pts-btn" selectable shape="square" ${pts === n ? 'selected' : ''} data-pts="${n}">${n}</jelly-chip>`).join('')}
-              </div>`}
-            </div>`;
-          }).join('')
-        : '<p class="muted bonus-empty">No team on the rota yet.</p>';
-      return `<div class="cleanup-meal-block">
-        <span class="cleanup-meal-name">${MEAL_ICONS[meal]} ${esc(meal)}</span>
-        ${body}
-      </div>`;
-    }).join('');
-  }
-
-  // Legacy cleanup entries with no day (from the old Bonus card) — surface them
-  // so their points aren't invisible even though they still count in totals.
-  const legacy = !editing ? [] : Object.entries(state.bonuses || {})
-    .filter(([, b]) => b.category === 'cleanup' && !(Number(b.day) >= 1 && Number(b.day) <= 5))
-    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
-  const legacyHTML = legacy.length
-    ? `<p class="bonus-entry-hint muted">Earlier cleanup points (no day set):</p>
-       <ul class="bonus-ledger">${legacy.map(([id, b]) => {
-        const pts = Number(b.points) || 0;
-        return `<li class="bonus-item">
-          <span class="bonus-item-main">
-            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
-            <span class="bonus-item-label">🧽 ${esc(b.label || 'Cleanup')}</span>
-          </span>
-          <span class="bonus-item-pts">+${esc(String(pts))}</span>
-          ${canEdit() ? `<jelly-icon-button class="bonus-remove-btn" variant="rose" label="Remove this cleanup point" data-bonus-id="${esc(id)}">✕</jelly-icon-button>` : ''}
-        </li>`;
-      }).join('')}</ul>`
-    : '';
-
-  // Editors get the interactive rota (entryHTML); viewers the read-only one.
-  if (!setHtmlIfChanged(wrap, dayChips + (editing ? entryHTML : rotaHTML) + legacyHTML)) return;
-
-  wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      cleanupDay = parseInt(btn.dataset.cleanupDay, 10);
-      renderMealCleanup();
-      joyStagger(document.querySelector('#cleanup-body .cleanup-rota, #cleanup-body .pts-grid'));
-    });
-  });
-  wrap.querySelectorAll('.pts-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const row = btn.closest('.pts-btn-row');
-      setCleanupPoints(row.dataset.teamId, cleanupDay, row.dataset.meal, parseInt(btn.dataset.pts, 10));
-    });
-  });
-  wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.bonusId;
-      const b = state.bonuses[id];
-      if (!b) return;
-      const pts = Number(b.points) || 0;
-      if (!confirm(`Remove +${pts} cleanup point${pts === 1 ? '' : 's'} for ${teamName(b.teamId)}?`)) return;
-      delete state.bonuses[id];
-      touchData();
-      saveState();
-      renderAll();
-    });
-  });
+  const rowsHTML = editing ? `<div class="gl aw-list pts-btns">${awardCleanupRows(cleanupDay)}</div>` : '';
+  wireSheetPoints(wrap, 'cleanup');
+  if (!setHtmlIfChanged(wrap, sheetDaysHtml('data-cleanup-day', cleanupDay) + (editing ? rowsHTML : rotaHTML))) return;
+  sheetDaysSettle(wrap, false);
 }
 
 // Sets a team's cleanup points for a day+meal to exactly `pts` — replaces
@@ -10024,7 +9953,15 @@ function renderGameView() {
   };
   // Plain words (§8.6: no emoji in a heading or a status line; mockup 14).
   setText('takeover-game-title', g.name);
-  setText('takeover-game-sub', [nowPlaceWord(g.location), g.session, badge.label].filter(Boolean).join(' · '));
+  // Each part its own span (styles.css .tk-sub): the separator hangs in a slot left of its part and is clipped at the start
+  // of a line, so a wrapped line never begins with "·". The schedule item the game is on names when it is, the session
+  // ("Morning") only while the printed week is in use.
+  // An item named like the game itself (senior's "Legacy Game") would only repeat the title, so it says nothing.
+  const bw = gameBlockWord(g);
+  const when = bw ? (bw.toLowerCase() === String(g.name || '').trim().toLowerCase() ? '' : bw) : g.session;
+  const sub = [nowPlaceWord(g.location), when, badge.label].filter(Boolean).map((x) => '<span>' + esc(x) + '</span>').join('');
+  const subEl = document.getElementById('takeover-game-sub');
+  if (subEl && subEl.__html !== sub) { subEl.innerHTML = sub; subEl.__html = sub; }
   const backLabel = shellGameBackLabel(g);
   setText('takeover-game-back-label', backLabel);
   const backBtn = tk.querySelector('[data-takeover-back]');
@@ -10165,32 +10102,21 @@ function nextMatchupOf(g, b) {
 function renderLiveTallyWatch(container, g) {
   const ranked = tallyRankLive(g);
   if (!ranked.length) {
-    setLiveHtmlIfChanged(container, `<div class="live-watch">
-      <p class="live-watch-label">🔴 ${esc(g.name)}</p>
-      <p class="muted">Live rankings will appear here as the ref enters scores — no refresh needed.</p>
-    </div>`, [g]);
+    // One plain line with a line icon (§8.6, §8.8), the takeover's other waiting lines' look.
+    setLiveHtmlIfChanged(container, '<p class="nw-note gv-wait"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>' +
+      '<span>No scores yet. They show here as a director enters them.</span></p>', [g]);
     return;
   }
-  // The places, the podium and "Suggested: gold, silver, bronze" are directors'
-  // only: a counselor sees the roster in its fixed order with the live scores and
-  // no numerals (the scores themselves stay public). The suggested medals showed
-  // the winners before a director saved the result.
-  const seeOrder = standingsVisible();
-  const complete = ranked.length >= state.teams.length && seeOrder;
-  const medals = ['🥇', '🥈', '🥉'];
-  const rows = ranked.map((e, i) => `
-    <li class="lw-rank-row${seeOrder && i < 3 ? ' lw-podium' : ''}">
-      <span class="lw-rank">${!seeOrder ? '' : complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
-      <span class="lw-rank-team">${teamEmoji(e.id)} ${esc(teamName(e.id))}</span>
-      <span class="lw-rank-score">${esc(formatScore(g, e.v))}</span>
-    </li>`).join('');
-  setLiveHtmlIfChanged(container, `<div class="live-watch live-watch-board">
-    <p class="live-watch-label">🔴 Live now · ${esc(g.name)}</p>
-    <p class="live-watch-board-sub">${g.lowerWins ? 'Fastest total time' : 'Team totals'} · ${ranked.length}/${state.teams.length} teams in</p>
-    <ol class="lw-rank-list">${rows}</ol>
-    ${complete
-      ? `<p class="live-watch-suggest">🏅 Suggested: 🥇 ${esc(teamName(ranked[0].id))} · 🥈 ${esc(teamName(ranked[1].id))} · 🥉 ${esc(teamName(ranked[2].id))}</p>`
-      : '<p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p>'}
+  // Now's own live board (now-ui.js nowBoardHtml over nowLiveBoard), so a counselor reads the game the same way on Now and here:
+  // the Live tag and how many teams are in, then the teams in ROSTER order with their scores. No place, no podium, no
+  // "Suggested" winners: those are a director's (nowCtx carries no points for anyone else, §4.12 rows 11–12). Left-aligned on
+  // the sheet, never the old gold-tinted, centred box. The head is the four-team view's ("Live now · …", sentence case, no
+  // emoji). (`lw-rank-list` stays the board's hook.)
+  const board = typeof nowBoardHtml === 'function' ? nowBoardHtml(nowLiveBoard(nowCtx(), g)) : `<ol class="lw-rank-rows">${ranked.map((e) =>
+    `<li class="lw-rank-row"><span class="lw-rank-team">${esc(teamName(e.id))}</span><span class="lw-rank-score">${esc(formatScore(g, e.v))}</span></li>`).join('')}</ol>`;
+  setLiveHtmlIfChanged(container, `<div class="gv-live">
+    <p class="live-watch-label">Live now · ${ranked.length} of ${state.teams.length} teams in</p>
+    <div class="gv-lb lw-rank-list">${board}</div>
   </div>`, [g]);
 }
 
@@ -10221,14 +10147,14 @@ function renderLiveWatch(container, g) {
   const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
   const pair = currentMatchupOf(g, b);
 
+  // The matches played so far: a hairline list, each team by its mark (bracketMarkHtml: this view is rebuilt on every render).
   const done = (b.matches || []).map((m) =>
-    `<li>${teamEmoji(m.winner)} ${esc(teamName(m.winner))} def. ${esc(teamName(m.loser))}</li>`).join('');
-  const doneHTML = done ? `<div class="live-watch-done"><p class="muted">Completed:</p><ul>${done}</ul></div>` : '';
+    `<li>${bracketMarkHtml(m.winner, 20)}<span><b>${esc(teamName(m.winner))}</b> def. ${esc(teamName(m.loser))}</span></li>`).join('');
+  const doneHTML = done ? `<div class="live-watch-done"><p class="live-watch-label">Completed:</p><ul>${done}</ul></div>` : '';
 
   if (!pair) {
     setLiveHtmlIfChanged(container, `<div class="live-watch">
-      <p class="live-watch-label">🔴 ${esc(g.name)} — ${phaseLabel} in progress</p>
-      <p class="muted">Waiting for the next matchup…</p>
+      <p class="nw-note gv-wait"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span>${esc(phaseLabel)} · waiting for the next match</span></p>
       ${doneHTML}
     </div>`, [g]);
     return;
@@ -10240,15 +10166,16 @@ function renderLiveWatch(container, g) {
 
   const nxt = nextMatchupOf(g, b);
   const onDeckHTML = nxt
-    ? `<p class="live-watch-ondeck">⏭️ Up next: ${teamEmoji(nxt[0])} ${esc(teamName(nxt[0]))} vs ${teamEmoji(nxt[1])} ${esc(teamName(nxt[1]))}</p>`
+    ? `<p class="live-watch-ondeck">Up next: ${bracketMarkHtml(nxt[0], 20)} ${esc(teamName(nxt[0]))} <span class="four-vs">vs</span> ${bracketMarkHtml(nxt[1], 20)} ${esc(teamName(nxt[1]))}</p>`
     : '';
 
+  // "Live now" and the round in words, the four-team view's head (the takeover's title already names the game); no "updates
+  // automatically" note: a live board that changes says so by changing.
   setLiveHtmlIfChanged(container, `
     <div class="live-watch">
-      ${g.liveTracker ? '' : `<p class="live-watch-label">🔴 Live now · ${phaseLabel}</p>`}
+      ${g.liveTracker ? '' : `<p class="live-watch-label">Live now · ${esc(phaseLabel)}</p>`}
       ${scoreHTML}
       ${onDeckHTML}
-      <p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p>
       ${doneHTML}
     </div>`, [g]);
 
@@ -10278,7 +10205,8 @@ function renderLiveWatchFour(container, g) {
   let line = '';
   if (b4.hold) line = clock(FOUR_HOLD_NOTE);
   else if (b4.note) line = `<p class="gv-b4-note" data-team="${esc(b4.note.team)}">${typeof nowMark === 'function' ? nowMark(b4.note.team, 22) : ''}<span><b>${esc(b4.note.lead)}</b>${esc(b4.note.rest)}</span></p>`;
-  if (!f && !b4.hold) line += clock('All four matches are played. A director saves the result next.');
+  // Every match played: a check, not the hold's clock (the clock means "a director is double-checking a result").
+  if (!f && !b4.hold) line += '<p class="nw-note gv-b4-hold" data-note="played"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>All four matches are played. A director saves the result next.</span></p>';
   const head = f ? `<p class="live-watch-label">Live now · ${esc(FOUR_NAMES[f.key])}</p>` : '';
   const board = f ? liveBoardHTML(g, f.pair[0], f.pair[1]) : '';
   const onDeck = f && f.next
@@ -10344,16 +10272,18 @@ function renderResult(container, g, result) {
 function medalPickerHTML(picks, game) {
   const mult = game && game.messtival ? 2 : 1; // Messtival doubles the points
   // The worth of each medal is points text: shown to directors only.
-  const worth = (n) => (standingsVisible() ? ` · ${n} pts` : '');
+  const worth = (n) => (standingsVisible() ? `<small>${n} points</small>` : '');
   const slots = [
     { key: 'gold', label: `Gold${worth(MEDAL_POINTS.gold * mult)}` },
     { key: 'silver', label: `Silver${worth(MEDAL_POINTS.silver * mult)}` },
     { key: 'bronze', label: `Bronze${worth(MEDAL_POINTS.bronze * mult)}` },
   ];
+  // One sheet of hairline rows (the podium picker's rows' look): the medal in words over a full-width pick, so a long team name
+  // is not cut to "Particularly Peril…" — never medal-tinted boxes (§8.8).
   return `<div class="medal-picker">
     ${slots.map((s) => `
       <div class="medal-slot medal-slot-${s.key}">
-        <span>${s.label}</span>
+        <span class="medal-slot-word">${s.label}</span>
         <jelly-select data-medal="${s.key}" placeholder="— pick team —" ${picks[s.key] ? `value="${esc(picks[s.key])}"` : ''} label="${s.key} medal team">
           ${state.teams.map((t) =>
             `<jelly-option value="${esc(t.id)}">${esc(t.name)}</jelly-option>`
@@ -10415,12 +10345,12 @@ function renderTally(container, g) {
         return `
         <div class="score-input-row ${steps && !locked ? 'with-counter' : ''}${locked ? ' score-row-locked' : ''}">
           <div class="score-row-top">
-            <span class="score-team"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}<span class="chip-sub">${locked ? 'your team — another director scores this' : esc(counselorName(t.id))}</span></span>
+            <span class="score-team"><span class="chip-emoji">${teamMarkHtml(t.id, { size: 24 })}</span> ${esc(t.name)}<span class="chip-sub">${locked ? 'your team — another director scores this' : esc(counselorName(t.id))}</span></span>
             <input type="text" inputmode="${g.timeInput ? 'numeric' : 'decimal'}" placeholder="${g.timeInput ? 'm:ss' : '0'}"
               data-team-id="${esc(t.id)}" value="${esc(draft.scores[t.id] || '')}" ${locked ? 'readonly disabled' : ''} />
           </div>
           ${steps && !locked ? `<div class="counter-btn-row" data-team-id="${esc(t.id)}">
-            <jelly-button class="counter-btn minus" shape="square" variant="platinum" block data-delta="${-steps[0]}">−${steps[0]}</jelly-button>
+            <jelly-button class="counter-btn minus" shape="square" block data-delta="${-steps[0]}">−${steps[0]}</jelly-button>
             ${steps.map((s) => {
               const lbl = g.counterStepLabels && g.counterStepLabels[s] ? `<span class="counter-btn-sub">${esc(g.counterStepLabels[s])}</span>` : '';
               return `<jelly-button class="counter-btn plus" shape="square" block data-delta="${s}">+${s}${lbl}</jelly-button>`;
@@ -10557,11 +10487,11 @@ function updateTallyMedals(g) {
   // Tie warning: a team just outside the podium with the same score as one on it.
   let tieNote = '';
   if (ranked.length >= 4 && ranked[3].v === ranked[2].v) {
-    tieNote = '<p class="tie-note">⚠️ Tie at the bronze line — adjust the medals below if needed.</p>';
+    tieNote = '<p class="tie-note"><span class="dt-mark" aria-hidden="true">!</span><span>Tie at the bronze line. Change the medals below if needed.</span></p>';
   } else if (ranked.length >= 2 && ranked[0].v === ranked[1].v) {
-    tieNote = '<p class="tie-note">⚠️ Tie at the top — adjust the medals below if needed.</p>';
+    tieNote = '<p class="tie-note"><span class="dt-mark" aria-hidden="true">!</span><span>Tie at the top. Change the medals below if needed.</span></p>';
   } else if (ranked.length >= 3 && ranked[1].v === ranked[2].v) {
-    tieNote = '<p class="tie-note">⚠️ Tie for silver/bronze — adjust the medals below if needed.</p>';
+    tieNote = '<p class="tie-note"><span class="dt-mark" aria-hidden="true">!</span><span>Tie for silver and bronze. Change the medals below if needed.</span></p>';
   }
 
   // Written in parts. The ranking pills carry the scores, so they change on
@@ -10573,12 +10503,15 @@ function updateTallyMedals(g) {
   if (!wrap.querySelector('#tally-picker')) {
     wrap.innerHTML = '<div id="tally-ranking"></div><div id="tally-heading"></div><div id="tally-picker"></div>';
   }
+  // The ranking is a hairline list (place, the team's mark, its name, its score), Now's live board's language, never a stack
+  // of outlined pills. Rewritten on every score change, so a team is marked by bracketMarkHtml (a shield camp keeps its emoji:
+  // an <img> re-created on each keystroke blinks).
   setHtmlIfChanged(wrap.querySelector('#tally-ranking'), `
-    ${ranked.length ? `<div class="live-ranking">${ranked.map((e, i) =>
-      `<span class="rank-pill">${i + 1}. ${teamEmoji(e.id)} ${esc(teamName(e.id))} · ${formatScore(g, e.v)}</span>`).join('')}</div>` : ''}
+    ${ranked.length ? `<ol class="live-ranking">${ranked.map((e, i) =>
+      `<li class="rank-row"><span class="rank-n">${i + 1}</span>${bracketMarkHtml(e.id, 20)}<span class="rank-nm">${esc(teamName(e.id))}</span><b class="rank-v">${esc(formatScore(g, e.v))}</b></li>`).join('')}</ol>` : ''}
     ${tieNote}`);
   setHtmlIfChanged(wrap.querySelector('#tally-heading'),
-    `<h3 class="medal-picker-heading">Medals ${ranked.length >= 3 ? '<span class="unit-tag">(auto-filled from scores)</span>' : ''}</h3>`);
+    `<h3 class="medal-picker-heading">Medals</h3>${ranked.length >= 3 ? '<p class="medal-picker-note">Filled in from the scores. Change one if you need to.</p>' : ''}`);
   const picker = wrap.querySelector('#tally-picker');
   const shape = medalPickerHTML({}, g); // everything but which team is picked
   if (picker.__shape === shape && picker.querySelector('[data-medal]')) {
@@ -11456,6 +11389,14 @@ function normalizeSyncedState() {
   });
 }
 
+// The schedule item a game is on, by its own words ("Team competitions"), once the schedule is edited here; '' otherwise.
+function gameBlockWord(g) {
+  if (!g || !g.blockId || !scheduleIsShared()) return '';
+  const d = dayById(g.dayId);
+  const b = d ? planForDow(d.dow).find((x) => x && x.id === g.blockId) : null;
+  return b ? String(b.label || '').split(' — ')[0].trim() : '';
+}
+
 function renderTournament(container, g) {
   // Four teams (senior) play the four-team bracket, which has its own node and its own screens (below).
   if (bracketKindFor(teamIds().length) === 'four') { renderBracketFour(container, g); return; }
@@ -11482,7 +11423,7 @@ function renderTournament(container, g) {
     if (setLiveHtmlIfChanged(container, `
       <h3>Run the bracket</h3>
       <p class="muted">Three first-round matches, then the medal round. The bye goes to the Round&nbsp;1 winner with the fewest points this week — the app suggests who, using the live standings.</p>
-      <jelly-button id="start-bracket-btn" class="primary-btn" block>Start Bracket</jelly-button>
+      <jelly-button id="start-bracket-btn" class="primary-btn" block>Start the bracket</jelly-button>
     `, [g])) {
       document.getElementById('start-bracket-btn').addEventListener('click', () => {
         state.brackets[g.id] = freshBracket();
@@ -11500,14 +11441,12 @@ function renderTournament(container, g) {
   // describes is about to be replaced under it.
   container.__liveKey = null;
   const b = normalizeBracket(state.brackets[g.id]);
-  let html = `<div class="bracket-steps">
-    ${['round1', 'bye', 'semifinal', 'championship', 'summary'].map((p, i) => {
-      const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship', championship: 'Final', summary: 'Results' };
-      const order = ['round1', 'bye', 'semifinal', 'championship', 'summary'];
-      const cls = p === b.phase ? 'active' : order.indexOf(p) < order.indexOf(b.phase) ? 'done' : '';
-      return `<span class="wizard-step ${cls}">${labels[p]}</span>${i < 4 ? '<span class="wizard-step-arrow">→</span>' : ''}`;
-    }).join('')}
-  </div><div id="bracket-body"></div>
+  // Where the bracket is, as ONE quiet line (the four-team bracket's: "Step 1 of 5 · Round 1"), never a row of pills and arrows.
+  const order = ['round1', 'bye', 'semifinal', 'championship', 'summary'];
+  const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship', championship: 'Final', summary: 'Results' };
+  const at = order.indexOf(b.phase);
+  let html = `<div class="bracket-steps">${at === -1 ? '' : `<p class="four-steps" data-six-step="${esc(b.phase)}">Step ${at + 1} of ${order.length} · ` +
+    `<span aria-current="step" class="wizard-step active">${labels[b.phase]}</span></p>`}</div><div id="bracket-body"></div>
   <div class="wizard-footer"><button id="cancel-bracket-btn" class="link-btn danger-link">Cancel this bracket</button></div>`;
   container.innerHTML = html;
 
@@ -11852,7 +11791,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
   const remaining = clock ? clockRemaining(clock) : 0;
 
   const col = (id) => `
-    <div class="board-col" data-board-col="${esc(id)}"${teamAccentAttr(id)}>
+    <div class="board-col" data-board-col="${esc(id)}"${teamAccentAttr(id)}${id === state.followTeam ? ' data-mine' : ''}>
       <span class="board-emoji">${bracketMarkHtml(id, viewer ? 52 : 40)}</span>
       <span class="board-name">${esc(teamName(id))}</span>
       <span class="board-score" data-hr-team="${esc(id)}">${l.hr[id] || 0}</span>
@@ -11935,7 +11874,7 @@ function liveBoardHTML(g, aId, bId) {
     sub = w ? `${esc(teamName(w))} reached ${target}` : `First to exactly ${target}`;
   }
   const col = (id, score) => `
-    <div class="board-col"${teamAccentAttr(id)}>
+    <div class="board-col"${teamAccentAttr(id)}${id === state.followTeam ? ' data-mine' : ''}>
       <span class="board-emoji">${bracketMarkHtml(id, 52)}</span>
       <span class="board-name">${esc(teamName(id))}</span>
       ${score != null ? `<span class="board-score">${score}</span>` : ''}
@@ -12295,13 +12234,14 @@ function renderBracketRound1Fixed(body, g, b, preset) {
         if (i < currentIndex) {
           status = 'done';
           const m = b.matches[i];
-          if (m) detail = `<span class="mo-result">✓ ${esc(teamName(m.winner))} won</span>`;
+          if (m) detail = `<span class="mo-result"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>${esc(teamName(m.winner))} won</span>`;
         } else if (i === currentIndex) {
           status = 'current';
-          detail = '<span class="mo-now">NOW</span>';
+          detail = '<span class="mo-now">Now</span>'; // the ink tag the run sheet and the Games tab's block heads use
         }
+        // A hairline row per match, each team by its mark (bracketMarkHtml: this view is rebuilt on every render).
         return `<li class="matchup-order-item mo-${status}">
-          <span class="mo-teams">${teamEmoji(x)} ${esc(teamName(x))} <span class="mo-vs">vs</span> ${teamEmoji(y)} ${esc(teamName(y))}</span>
+          <span class="mo-teams"><span class="mo-team">${bracketMarkHtml(x, 20)}${esc(teamName(x))}</span> <span class="mo-vs">vs</span> <span class="mo-team">${bracketMarkHtml(y, 20)}${esc(teamName(y))}</span></span>
           ${detail}
         </li>`;
       }).join('')}
@@ -12487,14 +12427,16 @@ function renderBracketSummary(body, g, b) {
   const eliminated = b.matches.map((m) => m.loser);
   const mult = g.messtival ? 2 : 1; // match medalCounts()'s weighting
 
+  // The four-team summary's own look: the saved result's hairline list (games-ui.js gamesResultHtml — a place disc, the team's
+  // mark and name, "+7" a director's word), never medal-tinted boxes with medal emoji (§8.8).
+  const list = typeof gamesResultHtml === 'function'
+    ? gamesResultHtml(Object.assign(gamesResultModel(g, { medals: { gold: goldId, silver: silverId, bronze: bronzeId } }), { saved: null, scores: null, change: false }))
+    : `<div class="medal-summary">${[goldId, silverId, bronzeId].map((id, i) => `<p class="medal-row">${i + 1}. <strong>${esc(teamName(id))}</strong>${medalWorthChip(MEDAL_POINTS[PODIUM_MEDALS[i]] * mult)}</p>`).join('')}</div>`;
   body.innerHTML = `
     <h3>Game results</h3>
-    <div class="medal-summary">
-      <div class="medal-row gold-row">🥇 ${teamEmoji(goldId)} <strong>${esc(teamName(goldId))}</strong>${medalWorthChip(MEDAL_POINTS.gold * mult)}</div>
-      <div class="medal-row silver-row">🥈 ${teamEmoji(silverId)} <strong>${esc(teamName(silverId))}</strong>${medalWorthChip(MEDAL_POINTS.silver * mult)}</div>
-      <div class="medal-row bronze-row">🥉 ${teamEmoji(bronzeId)} <strong>${esc(teamName(bronzeId))}</strong>${medalWorthChip(MEDAL_POINTS.bronze * mult)}</div>
-    </div>
-    <p class="muted">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
+    <p class="four-meta">Check the winners, then save the result for everyone.</p>
+    ${list}
+    <p class="four-meta">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
     <jelly-button id="save-bracket-btn" class="primary-btn" block>Save result</jelly-button>
     ${sixUndoHtml('undo-final-btn', 'Undo the final', [b.championship.a, b.championship.b])}
   `;
@@ -15004,7 +14946,8 @@ function renderMoreTeamRow() {
   if (link) {
     const label = CAMP.features.electives ? (me ? 'Not you? Change' : 'Which counselor are you?') : 'Not you? Sign out';
     setTextIfChanged(link, label);
-    setHiddenIfChanged(link, !team || (!CAMP.features.electives && !me));
+    // "Which counselor are you?" is a counselor's question: a director with no name picked is not asked it.
+    setHiddenIfChanged(link, !team || (!CAMP.features.electives && !me) || (!me && viewRole() !== 'viewer'));
   }
 }
 
@@ -16589,10 +16532,10 @@ function boot() {
   // Name the page after the active camp so a phone with both camps open in
   // two tabs can tell them apart. Junior keeps the plain "Camp" it always had.
   if (CAMP.id === 'senior') {
-    document.title = 'Camp · Senior';
+    document.title = campWord(); // "Senior camp": the one way the camp's name is written (camps.js)
     const logo = document.querySelector('.lock-logo');
     const nm = logo && logo.querySelector('.lock-logo-name');
-    if (nm) nm.textContent = 'Camp · Senior'; // the big screen's camp mark stays; only its words change
+    if (nm) nm.textContent = campWord(); // the big screen's camp mark stays; only its words change
   }
   wireAuthScreen();
   // A device that was approved last time paints the app immediately from

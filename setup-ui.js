@@ -464,7 +464,7 @@ function hubView() {
   const doorActions = {};
   Object.keys(HUB_DOOR_ACTIONS).forEach((k) => { doorActions[k] = !!HUB_DOOR_ACTIONS[k]; });
   return {
-    campLabel: CAMP.label, teamCount: CAMP.teamCount, electives: !!(CAMP.features && CAMP.features.electives),
+    campLabel: campWord(), teamCount: CAMP.teamCount, electives: !!(CAMP.features && CAMP.features.electives),
     isOwner: typeof isOwner === 'function' && isOwner(), ownerName: typeof ownerName === 'function' ? ownerName() : 'the owner',
     now: typeof serverNow === 'function' ? serverNow() : Date.now(),
     teams: state.teams || [], teamInfo: teamsInfoView(), days: (state.config && state.config.days) || [], games: (state.config && state.config.games) || [],
@@ -974,7 +974,13 @@ function paintHubDoor(door) {
 function hubOpen(key) {
   const o = HUB_OPENS[key];
   if (!o) return;
-  if (o.drawer === 'alerts') { if (typeof openPushDrawer === 'function') openPushDrawer(); return; }
+  // Phone alerts: with no camp dates the row says reminders wait for them, so the tap goes where the dates are set (Camp
+  // week); once there are dates it opens this phone's Alerts drawer.
+  if (o.drawer === 'alerts') {
+    if (!(campWeek() && campWeek().start)) { setupGo('week'); return; }
+    if (typeof openPushDrawer === 'function') openPushDrawer();
+    return;
+  }
   if (o.drawer === 'members') { if (typeof openMembers === 'function') openMembers(); return; }
   if (o.screen === 'people') peopleUi.from = ''; // from the hub, Back is the hub
   if (o.screen === 'backups') { setupGo('backups'); refreshRestoreIndex(); return; }
@@ -1492,10 +1498,6 @@ const RP_KIND_WORDS = {
 const RP_SECTION_WORDS = { schedule: 'the schedule and week', games: 'the games', teams: 'the teams', notice: 'the notice board', scores: 'the scores' };
 const RP_HOLD_MS = 1200;
 
-function restoreCampWord() {
-  return String(CAMP.label || 'this camp').replace(/\bCamp\b/, 'camp');
-}
-
 // Reads the point list once (never a listener) and repaints what shows it.
 async function refreshRestoreIndex() {
   const r = setupUi.restore;
@@ -1559,7 +1561,7 @@ function rpRowHtml(row) {
 function renderBackups() {
   const r = setupUi.restore;
   // The screen's name small, the answer big (§8.1 rule 1), one lede line.
-  setTextIfChanged(setupEl('backups-title'), 'Restore points · ' + CAMP.label);
+  setTextIfChanged(setupEl('backups-title'), 'Restore points · ' + campWord());
   setTextIfChanged(setupEl('backups-headline'), hubStatus('restore', { restore: { status: r.status, newestAt: r.rows.length ? r.rows[0].at : 0, count: r.rows.length }, now: typeof serverNow === 'function' ? serverNow() : Date.now() }).summary);
   setTextIfChanged(setupEl('backups-lede'), 'One is saved for you before every big change.');
   paintRestoreNote();
@@ -1721,12 +1723,12 @@ function renderRestoreSheet() {
   // Revealed, the hold button steps aside for the filled "Yes" and a Cancel back to it: two identical red
   // buttons stacked left a director guessing which one commits.
   setHiddenIfChanged(setupEl('rp-hold-btn'), !(scores && ready && !rs.reveal));
-  const holdText = 'Hold to put back ' + restoreCampWord() + '’s scores';
+  const holdText = 'Hold to put back ' + campWord() + '’s scores';
   setTextIfChanged(setupEl('rp-hold-label'), holdText);
   setTextIfChanged(setupEl('rp-hold-fill-label'), holdText);
   const conf = setupEl('rp-hold-confirm');
   setHiddenIfChanged(conf, !(scores && ready && rs.reveal));
-  setTextIfChanged(conf, 'Yes, put back ' + restoreCampWord() + '’s scores');
+  setTextIfChanged(conf, 'Yes, put back ' + campWord() + '’s scores');
   setHiddenIfChanged(setupEl('rp-hold-cancel'), !(scores && ready && rs.reveal));
   // Keep / delete (the row's own actions, §7.2): a kept point can't be deleted from the app.
   const manage = setupEl('rp-manage');
@@ -1864,9 +1866,9 @@ async function rpRestoreFile(file) {
     const res = restoreParseBody(text);
     if (res.ok) { openRestoreSheetForFile(res.body, file.name); return; }
     if (res.reason === 'other-camp') {
-      const them = CAMPS[res.camp] ? CAMPS[res.camp].label : 'another camp';
+      const them = CAMPS[res.camp] ? campWord(CAMPS[res.camp]) : 'another camp';
       const choice = await askDialog({
-        title: 'That backup is from ' + them, body: 'Copy its schedule, games and teams into ' + CAMP.label + '? Its scores and everything else are left out.',
+        title: 'That backup is from ' + them, body: 'Copy its schedule, games and teams into ' + campWord() + '? Its scores and everything else are left out.',
         actions: [{ label: 'Cancel', value: 'no', cancel: true }, { label: 'Copy them', value: 'copy', kind: 'gold' }],
       });
       // Asked once, here: tryImport must not ask again with a native confirm.
@@ -1922,7 +1924,7 @@ function setupSay(text) {
 // override the freeze only by saying so.
 async function setupEditTheWeek() {
   if (!requireOwner('turn on editing')) return { ok: false, reason: 'owner' };
-  const camp = CAMP.label;
+  const camp = campWord();
   const go = await askDialog({
     title: 'Edit the ' + camp + ' week here?',
     body: ['Turning this on changes nothing anyone can see until someone edits something.', 'The first time, a restore point is saved first. “Use the original week again” in the ⋯ menu puts it all back.'],
@@ -2051,7 +2053,7 @@ function renderWeekScreen() {
   const preview = !scheduleIsShared();
   const ymd = (typeof campWeek === 'function' && campWeek().start) || '';
   const range = hubWeekRange(ymd);
-  setTextIfChanged(setupEl('week-title'), 'Camp week · ' + CAMP.label);
+  setTextIfChanged(setupEl('week-title'), 'Camp week · ' + campWord());
   setTextIfChanged(setupEl('week-headline'), ymd ? weekHeadline(ymd) : 'No dates yet');
   const tree = schedViewTree();
   const follow = SETUP_DK.filter((dk, i) => i >= 1 && i <= 5 && setupMapOf(setupMapOf(tree.days)[dk]).typical === true);
@@ -2524,7 +2526,7 @@ function renderScheduleScreen() {
   const ctx = { dayKey, dow, shared, editable: shared && canEdit(), blocks };
   renderSchedStrip(dayKey, shared);
   // Head
-  setTextIfChanged(setupEl('sched-title'), 'Schedule · ' + CAMP.label);
+  setTextIfChanged(setupEl('sched-title'), 'Schedule · ' + campWord());
   setTextIfChanged(setupEl('sched-headline'), dayKey === 'typical' ? 'The typical day' : SETUP_DAY_WORDS[dayKey]);
   const dayRec = dow >= 0 ? setupMapOf(setupMapOf(tree.days)[dayKey]) : {};
   const follows = dow >= 0 && dayRec.typical === true;
@@ -4565,7 +4567,7 @@ function renderMealsScreen() {
   const dow = SETUP_DK.indexOf(dk);
   const items = secMealItems(dow);
   const dishes = items.filter((it) => setupMealRecord(tree, dk, it.meal)).length;
-  setTextIfChanged(setupEl('meals-title'), 'Meals · ' + CAMP.label);
+  setTextIfChanged(setupEl('meals-title'), 'Meals · ' + campWord());
   setTextIfChanged(setupEl('meals-headline'), SETUP_DAY_WORDS[dk]);
   // An item that reads like a meal but has no Meal tag never gets a row here: say so, so a missing row isn't a mystery.
   const loose = secLooseMeals(planForDow(dow));
@@ -4734,7 +4736,7 @@ function renderVersesScreen() {
   const missing = days.filter((dk) => !setupVerseDay(tree, dk)).length;
   const tba = recs.filter((r) => secVerseIsTba(r[1])).length;
   const noRef = recs.filter((r) => r[1] && !secVerseIsTba(r[1]) && !r[1].ref).length;
-  setTextIfChanged(setupEl('verses-title'), 'Memory verses · ' + CAMP.label);
+  setTextIfChanged(setupEl('verses-title'), 'Memory verses · ' + campWord());
   // The answer is the headline: the week's theme by name.
   setTextIfChanged(setupEl('verses-headline'), theme && theme.title && !secVerseIsTba(theme) ? theme.title : theme ? 'Theme to be announced' : 'No theme yet');
   const bits = [];
@@ -4877,7 +4879,7 @@ function renderCleanupScreen() {
   const items = secMealItems(dow);
   const ids = items.map((it) => setupCleanupIds(tree, dk, it.meal));
   const placed = ids.filter((x) => x.length).length;
-  setTextIfChanged(setupEl('cleanup-title'), 'Cleanup rota · ' + CAMP.label);
+  setTextIfChanged(setupEl('cleanup-title'), 'Cleanup rota · ' + campWord());
   setTextIfChanged(setupEl('cleanup-headline'), SETUP_DAY_WORDS[dk]);
   setTextIfChanged(setupEl('cleanup-lede'), !items.length ? 'No meals on this day'
     : placed === items.length ? 'Every meal has a team' : placed ? placed + ' of ' + items.length + ' meals have a team' : 'No teams yet');
@@ -5015,7 +5017,7 @@ function renderElectivesScreen() {
   const dow = SETUP_DK.indexOf(dk);
   const slot = secSlotNow();
   const rows = setupElectiveRows(tree, dk, slot);
-  setTextIfChanged(setupEl('electives-title'), 'Electives · ' + CAMP.label);
+  setTextIfChanged(setupEl('electives-title'), 'Electives · ' + campWord());
   setTextIfChanged(setupEl('electives-headline'), SETUP_DAY_WORDS[dk]);
   setTextIfChanged(setupEl('electives-lede'), rows.length
     ? hubPlural(rows.length, 'station', 'stations') + ' · ' + hubPlural(rows.reduce((n, r) => n + r.people.length, 0), 'person', 'people')
@@ -5494,7 +5496,7 @@ function teamRowHtml(r) {
 function renderTeamsScreen() {
   const m = teamsModel();
   const st = m.status;
-  setTextIfChanged(setupEl('teams-title'), 'Teams · ' + CAMP.label);
+  setTextIfChanged(setupEl('teams-title'), 'Teams · ' + campWord());
   setTextIfChanged(setupEl('teams-headline'), st.problems.length ? st.problems[0] : st.summary);
   setTextIfChanged(setupEl('teams-lede'), st.problems.length > 1 ? hubPlural(st.problems.length - 1, 'more thing', 'more things') + ' to check' : st.problems.length ? 'Tap a team to fix it.' : 'Tap a team to change its name, colour or photo.');
   secPaintList(setupEl('teams-list'), m.rows.map(teamRowHtml).join(''), 'teams', { pulse: '.cb-sub' });
@@ -6157,7 +6159,7 @@ function peopleRowOf(key) { return peopleRowsNow().find((r) => r.key === key) ||
 
 // "Signed in · Counselor", "No sign-in yet · Director", "Owner · only the owner can change this row": words, never a mark alone.
 function peopleStatusWords(r) {
-  if (r.owner) return 'Owner · only the owner can change this row';
+  if (r.owner) return 'Owner · only ' + (typeof ownerName === 'function' ? ownerName() : 'the owner') + ' can change this row'; // a name another director knows
   return (r.pending ? 'No sign-in yet' : 'Signed in') + ' · ' + peopleRoleWord(r.role);
 }
 
@@ -6258,7 +6260,7 @@ function renderPeopleScreen() {
   peopleCleanSheets();
   const st = peopleStatus();
   const join = peopleJoinView();
-  setTextIfChanged(setupEl('people-title'), 'People · ' + CAMP.label);
+  setTextIfChanged(setupEl('people-title'), 'People · ' + campWord());
   setTextIfChanged(setupEl('people-headline'), st.problems.length ? st.problems[0] : st.summary);
   // The lede names the NEXT problem, as the hub's "Next:" line does (a bare "5 more things to check" pointed at nothing on the list).
   const rest = st.problems.length - 2;
@@ -6274,6 +6276,15 @@ function renderPeopleScreen() {
   const note = !memberDirectoryLoaded ? 'Loading the list…' : !fbRef ? 'Needs a connection: the list can’t be reached right now.' : pplReq.denied ? 'Asking to join isn’t available yet — the database rules need updating.' : '';
   setTextIfChanged(setupEl('people-state-text'), note);
   setHiddenIfChanged(setupEl('people-state'), !note);
+  // Its icon says what kind of note it is: the clock while loading, the lock only for the rules; no signal has no icon (a lock
+  // read as "not allowed").
+  const stateEl = setupEl('people-state');
+  const ico = stateEl && stateEl.querySelector ? stateEl.querySelector('svg') : null;
+  const icoName = !memberDirectoryLoaded ? 'i-clock' : !fbRef ? '' : 'i-lock';
+  if (ico && typeof setAttrIfChanged === 'function') {
+    setAttrIfChanged(ico, 'display', icoName ? null : 'none'); // an <svg> has no `hidden` property
+    if (icoName) setAttrIfChanged(ico.querySelector('use'), 'href', '#' + icoName);
+  }
   // the people asking, newest first
   const now = typeof serverNow === 'function' ? serverNow() : Date.now();
   const reqs = peopleRequests();
@@ -6434,7 +6445,7 @@ async function peopleRemovePerson() {
   if (!peopleOnline()) { setupSay(peopleWhy({ reason: 'offline' })); return; }
   const v = await askDialog({
     title: 'Remove ' + r.name + ' from ' + campWord() + '?',
-    body: r.pending ? 'This takes their name off the list.' : 'They lose access to ' + CAMP.label + ' the moment this saves. Access changes can’t be undone with Undo — add them back here if you change your mind.',
+    body: r.pending ? 'This takes their name off the list.' : 'They lose access to ' + campWord() + ' the moment this saves. Access changes can’t be undone with Undo — add them back here if you change your mind.',
     actions: [{ label: 'Keep ' + r.name, value: 'keep', cancel: true }, { label: 'Remove', value: 'remove', kind: 'danger' }],
   });
   if (v !== 'remove' || peopleUi.person !== p) return;
@@ -7056,7 +7067,7 @@ function renderCampersScreen() {
   const status = campersStatus();
   const total = campersTotal();
   const ok = status === 'ok';
-  setTextIfChanged(setupEl('campers-title'), 'Campers · ' + CAMP.label);
+  setTextIfChanged(setupEl('campers-title'), 'Campers · ' + campWord());
   setTextIfChanged(setupEl('campers-headline'), ok ? (total ? hubPlural(total, 'camper', 'campers') : 'No campers yet') : status === 'loading' ? 'Loading…' : 'The lists aren’t available');
   const note = status === 'nosync' ? 'Needs a connection: the camper lists can’t be reached right now.' : status === 'denied' ? 'The camper lists aren’t available yet — the database rules need updating.' : '';
   setTextIfChanged(setupEl('campers-state-text'), note);
@@ -7909,7 +7920,7 @@ function renderGamesScreen() {
   const word = SETUP_DAY_WORDS[dk];
   const editable = canEdit();
   renderGmStrip(dk);
-  setTextIfChanged(setupEl('sg-title'), 'Games · ' + CAMP.label);
+  setTextIfChanged(setupEl('sg-title'), 'Games · ' + campWord());
   setTextIfChanged(setupEl('sg-headline'), m.headline);
   setTextIfChanged(setupEl('sg-lede'), m.lede);
   setHiddenIfChanged(setupEl('sg-day-btn'), !(m.isDay && editable));
@@ -9622,7 +9633,7 @@ function renderNywScreen() {
     const inert = m.mode === 'watch';
     if (el.hasAttribute('inert') !== inert) el.toggleAttribute('inert', inert);
   });
-  setTextIfChanged(setupEl('nyw-title'), 'New-year setup · ' + CAMP.label);
+  setTextIfChanged(setupEl('nyw-title'), 'New-year setup · ' + campWord());
   paintNywBars(step, stepChanged);
   setTextIfChanged(setupEl('nyw-count'), 'Step ' + step + ' of ' + NYW_STEPS);
   const claimMode = m.mode !== 'me';
@@ -9917,11 +9928,11 @@ function paintNywDock(m, a, out) {
   const hold = setupEl('nyw-hold-btn');
   setHiddenIfChanged(setupEl('nyw-hold-wait'), !(holding && !cs.reveal && !busy && !online));
   setHiddenIfChanged(hold, !(holding && !cs.reveal && !busy && online));
-  const holdText = 'Hold to clear ' + restoreCampWord() + '’s scoreboard';
+  const holdText = 'Hold to clear ' + campWord() + '’s scoreboard';
   setTextIfChanged(setupEl('nyw-hold-label'), holdText);
   setTextIfChanged(setupEl('nyw-hold-fill-label'), holdText);
   setHiddenIfChanged(setupEl('nyw-hold-confirm'), !(holding && cs.reveal && !busy));
-  setTextIfChanged(setupEl('nyw-hold-confirm'), 'Yes, clear ' + restoreCampWord() + '’s scoreboard');
+  setTextIfChanged(setupEl('nyw-hold-confirm'), 'Yes, clear ' + campWord() + '’s scoreboard');
   setHiddenIfChanged(setupEl('nyw-hold-cancel'), !(holding && cs.reveal && !busy));
   // While the two-tap confirm is up, Cancel is the way out: Back beside it read as a second one.
   setHiddenIfChanged(setupEl('nyw-back-quiet'), !(holding && !busy && !cs.reveal));
@@ -10019,7 +10030,7 @@ function renderNywUndoSheet() {
   const year = nywUndoYear(u.row);
   const when = u.row.at ? setupClockParts(u.row.at) : null;
   setTextIfChanged(setupEl('nyu-sub'), when ? 'Saved ' + when.day + ', ' + when.time + ', just before the setup' : '');
-  setTextIfChanged(setupEl('nyu-lede'), restoreCampWord().replace(/^./, (x) => x.toUpperCase()) + ' goes back to the ' + (year || 'earlier') + ' week, exactly as it was saved.');
+  setTextIfChanged(setupEl('nyu-lede'), campWord().replace(/^./, (x) => x.toUpperCase()) + ' goes back to the ' + (year || 'earlier') + ' week, exactly as it was saved.');
   const b = u.body;
   const st = b && setupIsMap(b.state) ? b.state : {};
   const c = wizardCounts(st);
@@ -10081,7 +10092,7 @@ async function nywRunUndo() {
   shellSheetClose('nyw-undo');
   nywUi.done = null; nywUi.doneLeft = true;
   const d = wizardDraftRead(); d.done = null; wizardDraftWrite();
-  showToast(restoreCampWord().replace(/^./, (x) => x.toUpperCase()) + ' is back to ' + (year || 'last year') + '. Today’s week is in Restore points.');
+  showToast(campWord().replace(/^./, (x) => x.toUpperCase()) + ' is back to ' + (year || 'last year') + '. Today’s week is in Restore points.');
   refreshRestoreIndex();
   if (setupScreen() === 'wizard') setupGo('hub');
 }
