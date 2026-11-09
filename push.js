@@ -302,7 +302,7 @@ function pushWeekLabel(weekStart) {
   const [y, mo, d] = weekStart.split('-').map(Number);
   const start = new Date(Date.UTC(y, mo - 1, d));
   const end = new Date(Date.UTC(y, mo - 1, d + 6));
-  const mon = (dt) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' }).format(dt);
+  const mon = (dt) => { if (!_fmtPushMonCache) { try { _fmtPushMonCache = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' }); } catch(e){} } return _fmtPushMonCache ? _fmtPushMonCache.format(dt) : ''; };
   return mon(start) === mon(end)
     ? `${mon(start)} ${start.getUTCDate()}–${end.getUTCDate()}`
     : `${mon(start)} ${start.getUTCDate()} – ${mon(end)} ${end.getUTCDate()}`;
@@ -1759,12 +1759,13 @@ function pushLoadRecentAlerts() {
     .then(renderPushRecent);
 }
 
+let _fmtPushStart = null;
 function pushAlertTime(at) {
   const n = Number(at);
   if (!Number.isFinite(n) || n <= 0) return '';
   try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true })
-      .format(new Date(Math.min(n, 8.64e15)));
+    if (!_fmtPushStart) _fmtPushStart = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+    return _fmtPushStart.format(new Date(Math.min(n, 8.64e15)));
   } catch (e) { return ''; }
 }
 

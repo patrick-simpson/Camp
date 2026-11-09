@@ -59,10 +59,13 @@ function revealUiAttr(el, name, v) {
 
 // A time of day in camp time: "7:31" or, with `period`, "7:31 PM". Never the device's own zone, and never the
 // narrow no-break space newer engines put before PM.
+let _fmtTimeCache = null;
 function revealUiClock(ms, period) {
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
   try {
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true }).formatToParts(new Date(ms));
+    if (!_fmtTimeCache) { try { _fmtTimeCache = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true }); } catch (e) {} }
+    if (!_fmtTimeCache) return '';
+    const parts = _fmtTimeCache.formatToParts(new Date(ms));
     const get = (t) => ((parts.find((p) => p.type === t) || {}).value || '').replace(/[  ]/g, ' ');
     return get('hour') + ':' + get('minute') + (period ? ' ' + get('dayPeriod').toUpperCase() : '');
   } catch (e) { return ''; }
