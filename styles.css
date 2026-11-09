@@ -4527,8 +4527,11 @@ label.gl-row:active {
 .setup .gl-head {
   flex-wrap: wrap;
 }
+/* Never shrunk beside its note (the note wraps under it first), but a label
+   that is longer than the line by itself wraps instead of running off the
+   screen at 200% text ("On a Pumpkins counselor's phone"). */
 .setup .gl-head .gl-label {
-  flex: none;
+  flex: 0 1 auto;
 }
 .setup .gl-head .gl-note {
   flex: 1 1 auto;
