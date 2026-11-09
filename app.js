@@ -7812,12 +7812,21 @@ function copyTextToClipboard(text, btn) {
     if (!btn) return;
     // A button with a label span (the bracket's copy line) swaps only the words, so its icon stays and it is never disabled
     // (a disabled control drops the keyboard focus).
+    // The word is plain "Copied" (§8.7: an exclamation mark is the champion's alone); the line's icon turns into the check for the
+    // same 1.5 s instead of a glyph typed into the words.
     const label = btn.querySelector && btn.querySelector('.copy-t');
+    const icon = label && btn.querySelector('use');
     const target = label || btn;
     const orig = target.textContent;
-    target.textContent = '✓ Copied!';
+    const origIcon = icon ? icon.getAttribute('href') : null;
+    target.textContent = 'Copied';
+    if (icon) icon.setAttribute('href', '#i-check');
     if (!label) btn.setAttribute('disabled', '');
-    setTimeout(() => { target.textContent = orig; if (!label) btn.removeAttribute('disabled'); }, 1500);
+    setTimeout(() => {
+      target.textContent = orig;
+      if (icon && origIcon) icon.setAttribute('href', origIcon);
+      if (!label) btn.removeAttribute('disabled');
+    }, 1500);
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(done).catch(() => legacyCopy(text, done));
@@ -9667,14 +9676,21 @@ function renderLiveWatch(container, g) {
   const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
   const pair = currentMatchupOf(g, b);
 
-  // The matches played so far: a hairline list, each team by its mark (bracketMarkHtml: this view is rebuilt on every render).
-  const done = (b.matches || []).map((m) =>
-    `<li>${bracketMarkHtml(m.winner, 20)}<span><b>${esc(teamName(m.winner))}</b> def. ${esc(teamName(m.loser))}</span></li>`).join('');
+  // The matches played so far: a hairline list, each team by its mark (bracketMarkHtml: this view is rebuilt on every render), Round 1
+  // then the championship game and the final once they are played (medal winners are public, §4.12; the four-team view shows every cell).
+  // The round's separator is glued to the word before it, so it never starts a line.
+  const played = (b.matches || []).map((m) => ({ m, round: '' }));
+  if (b.semifinal && b.semifinal.winner && b.semifinal.loser) played.push({ m: b.semifinal, round: 'Championship game' });
+  if (b.championship && b.championship.winner && b.championship.loser) played.push({ m: b.championship, round: 'Final' });
+  const done = played.map(({ m, round }) =>
+    `<li>${bracketMarkHtml(m.winner, 20)}<span><b>${esc(teamName(m.winner))}</b> def. ${esc(teamName(m.loser))}${round ? `<small class="live-watch-round">&nbsp;· ${round}</small>` : ''}</span></li>`).join('');
   const doneHTML = done ? `<div class="live-watch-done"><p class="live-watch-label">Completed:</p><ul>${done}</ul></div>` : '';
 
   if (!pair) {
+    // Every match is played at Results: the line says what is happening (a director saving), never "waiting for the next match".
+    const line = b.phase === 'summary' ? 'All matches played · a director is saving the result' : esc(phaseLabel) + ' · waiting for the next match';
     setLiveHtmlIfChanged(container, `<div class="live-watch">
-      <p class="nw-note gv-wait"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span>${esc(phaseLabel)} · waiting for the next match</span></p>
+      <p class="nw-note gv-wait"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span>${line}</span></p>
       ${doneHTML}
     </div>`, [g]);
     return;
@@ -10993,8 +11009,8 @@ function renderTournament(container, g) {
     }
     if (setLiveHtmlIfChanged(container, `
       <h3>Run the bracket</h3>
-      <p class="muted">Three first-round matches, then the medal round. The bye goes to the Round&nbsp;1 winner with the fewest points this week — the app suggests who, using the live standings.</p>
-      <jelly-button id="start-bracket-btn" class="primary-btn" block>Start the bracket</jelly-button>
+      <p class="four-meta">Three first-round matches, then the medal round. The bye goes to the Round&nbsp;1 winner with the fewest points.</p>
+      <button type="button" id="start-bracket-btn" class="btn btn-big btn-block btn-gold bracket-go" data-joy>Start the bracket</button>
     `, [g])) {
       document.getElementById('start-bracket-btn').addEventListener('click', () => {
         state.brackets[g.id] = freshBracket();
@@ -12099,7 +12115,7 @@ function fourPairsListHtml(label, pairs) {
 }
 
 // No bracket yet: the three ways a game's Matchups setting starts one. One meta line says how it runs (§8.8: no paragraph above
-// the content); the main action is the one blue Start.
+// the content); the main action is the one gold Start, the app's chunky key (the dock's Saves are the same shape).
 function fourStartHtml(g) {
   const ids = teamIds();
   const plan = fourSeedPlan(g);
@@ -12107,11 +12123,11 @@ function fourStartHtml(g) {
   const head = '<h3 class="four-h">Run the bracket</h3><p class="four-meta">Two semifinals, then the 3rd place match and the final.</p>';
   if (plan.mode === 'fixed' && plan.pairs) {
     return `${head}${fourPairsListHtml('The semifinals for this game', plan.pairs)}
-      <jelly-button class="primary-btn four-go" block data-four="start-plan">Start the bracket</jelly-button>`;
+      <button type="button" class="btn btn-big btn-block btn-gold bracket-go four-go" data-four="start-plan" data-joy>Start the bracket</button>`;
   }
   if (plan.mode === 'standings' && plan.pairs && !choosing) {
     return `${head}${fourPairsListHtml('Suggested by the points right now', plan.pairs)}
-      <jelly-button class="primary-btn four-go" block data-four="start-plan">Start with these</jelly-button>
+      <button type="button" class="btn btn-big btn-block btn-gold bracket-go four-go" data-four="start-plan" data-joy>Start with these</button>
       <p class="four-alt"><button type="button" class="link-btn" data-four="choose">Choose different</button></p>`;
   }
   // A pick (the game's own setting, or Choose different, or "by the standings" on a phone with no confirmed points to judge by).
@@ -12138,7 +12154,7 @@ function fourStartHtml(g) {
         <li class="four-pair"><span class="four-pair-k">Semifinal 2</span><span class="four-pair-t">${slot(2)}<span class="four-vs">vs</span>${slot(3)}</span></li>
       </ol>
     </div>
-    ${pairs ? '<jelly-button class="primary-btn four-go" block data-four="start-pick">Start the bracket</jelly-button>' : ''}
+    ${pairs ? '<button type="button" class="btn btn-big btn-block btn-gold bracket-go four-go" data-four="start-pick" data-joy>Start the bracket</button>' : ''}
     ${plan.pairs ? '<p class="four-alt"><button type="button" class="link-btn" data-four="unchoose">Back to the suggestion</button></p>' : ''}`;
 }
 

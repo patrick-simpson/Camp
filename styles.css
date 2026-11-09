@@ -19383,3 +19383,40 @@ button.copy-matchup-btn .ico {
   min-width: 0;
   overflow-wrap: break-word;
 }
+
+/* ── The bracket's Start: the app's chunky gold key (both brackets' Start card), capped as the dock's gold buttons are so the label
+   stays two lines at most at 200%. The one meta line above it says how the bracket runs. */
+.btn.bracket-go {
+  margin-top: 12px;
+  font: 900 min(1.3125rem, 25px)/1.1 var(--font-ui);
+}
+/* The bye and bronze notes are the takeover's plain note line now that their emoji are gone: no padded box (it read as a stray
+   paragraph indented from the heading above), level with the heading's left edge. */
+.bye-note,
+.bronze-note {
+  margin: 4px 0 10px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font: 650 0.9375rem/1.38 var(--font-ui);
+  color: var(--ink-2);
+}
+.bye-note strong,
+.bronze-note strong {
+  color: var(--ink);
+}
+/* The call-up's winner keys: the label is capped (as the dock's buttons are), so at 200% both answers and Copy still fit under the
+   call-up instead of two 100–180px keys a director scrolls between. */
+button.winner-btn {
+  font: 800 min(1.0625rem, 24px)/1.2 var(--font-ui);
+}
+/* The dock's small line ("3 of 6 teams have a score") is capped too: at 200% it wrapped to two lines and the dock took a quarter of
+   the screen away from the score boxes being typed into. */
+.gd-left {
+  font-size: min(0.875rem, 18px);
+}
+/* The counselor's "played so far" list names the round of the championship game and the final after the result line. */
+.live-watch-round {
+  font: inherit;
+  color: var(--ink-2);
+}

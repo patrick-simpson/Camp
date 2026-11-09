@@ -3334,7 +3334,7 @@ rules**; the client code only shapes the UI.
   as the rules' `$memberKey != '…'` in BOTH roots; `tests/owner-row.test.js`
   pins they agree). Every client write to that key is refused, so the People
   screen renders it with no access switches, no team select and no Remove — just
-  "👑 Owner · managed in the Firebase console" — for the owner and for every
+  "Owner · only Patrick can change this row" (the owner's first name, `ownerName()`) — for the owner and for every
   other editor alike; the add form and the pending-convert flow refuse the key
   before writing. Any bulk member write (the seed roster today; the new-year
   wizard later) must skip that key and be per-row and best-effort, never folded
@@ -4621,7 +4621,7 @@ requester's side is app.js (the denied screen).
   and "No counselors yet" under the name, then "+ Add someone" (the one-person form with that team picked) — never a box.
   A pending row the hub still counts (`peoplePendingWarn`, the hub's week rule) carries the gold "!" on its status line. A person row is a `.cb-row` whose time column is an initial in a ring;
   its sub says status in words ("Signed in · Counselor", "No sign-in yet · Director"); your own row carries "you"; **the owner
-  row is a `<div>`** ("Owner · managed in the Firebase console"). Rows are painted through `secPaintList` (keyed `p-<key>`,
+  row is a `<div>`** ("Owner · only Patrick can change this row"). Rows are painted through `secPaintList` (keyed `p-<key>`,
   `r-<key>`, `g-<tid>`), so an idle pass writes nothing.
 - **The five sheets** (shell sheets, ONE at a time, `SETUP_SHEETS`; each opens only with state a tap made —
   `peopleSheetReady` — and `peopleCleanSheets` drops a closed sheet's state so a Forward never reopens a stale form; a sheet
@@ -5531,7 +5531,7 @@ count). All of this is in app.js ("The six-team bracket's rules", "What both bra
 - **Marks in a match** (`bracketMarkHtml`, app.js): the call-up, the live board's team column and the own-team note show the team's flag / tile from
   `teamMarkHtml`; a SHIELD team (junior) keeps its emoji there, because the six-team wizard rebuilds those views on every render and an `<img>` re-created
   twice a minute blinks. The board's score numerals are the team colour taken toward ink (72 % light, 55 % dark): a camp's older single colour has no
-  measured half per theme. The live steppers are clamped to 44–56 px and wrap, the winner keys are plain `button.btn.winner-btn` (the team's mark beside "… won", every `data-winner` hook kept; the ladder's "reached 21" key is filled ink) and the copy line a quiet `.copy-matchup-btn` whose label span alone says "Copied". `upcomingMatchups` / `findNextMatchupFor` / `gameRoundTeams` read `fourLive`; `gameRowStatus` calls a
+  measured half per theme. The live steppers are clamped to 44–56 px and wrap, the winner keys are plain `button.btn.winner-btn` (the team's mark beside "… won", every `data-winner` hook kept; the ladder's "reached 21" key is filled ink) and the copy line a quiet `.copy-matchup-btn` whose label span alone says "Copied" (its icon the check) for 1.5 s. Both brackets' Start is the app's chunky gold `.btn.bracket-go` (the `#start-bracket-btn` / `data-four` hooks kept) under one meta line; the bye and bronze notes are plain note lines. `upcomingMatchups` / `findNextMatchupFor` / `gameRoundTeams` read `fourLive`; `gameRowStatus` calls a
   bracket live only when `fourRead` can read it. The preview walk (`tests/preview.test.js`) covers every step: the "3rd place" label is the bronze MATCH, never
   a standings place, so the leak patterns read the text with it set aside.
 - **Tests**: `bracket.test.js` (the six-team wizard, pinned first; the new Undo / stale-tap cases are at its end), `bracket.senior.test.js` (engine, readers,
@@ -5739,7 +5739,7 @@ should expire on its own.
   its extra line at 60), Steps (numbered; the emoji is the Meals screen's tile opening the game sheet's grid, whose Other box
   takes only an emoji; Move up / Remove step), Closing line, then `#nbs-preview` (`noticeCardHtml(true, notice)` in Tell
   everyone's phone outline, reached from the lede by `#nbs-see`) and the dock (`#nbs-post` gold "Pin the notice" / the
-  dashed "Write the notice first"; `#nbs-down` "Take it down").
+  dashed "Write the notice first"; `#nbs-down` "Take down").
   Ids are `nbs-`; field classes keep the old tab's `nb-` names. No field for the stored `eyebrow` (no phone draws it; it is
   the heading's hint when the heading is empty). **Behaviour** (setup-ui.js section 18; `tests/notice-screen.test.js`): every edit
   goes through `nbsEdit(label, mutate)`, which edits the live notice, saves it whole with `saveState()` + `renderAll()` (no second
@@ -5755,7 +5755,7 @@ should expire on its own.
   place, never writes a focused field (an idle `renderAll` writes nothing) and **never moves the row holding the focus** (or the
   one Next is moving into, or whose field is committing: `nbsHeldRow`): the rows around it move instead, so typing a place for an
   unlisted team keeps the keyboard. The lists are no scroll anchor (`overflow-anchor: none`), so a move glides only the rows that
-  moved; Move up lets go of the focus first so the moved row itself travels. Pin the notice asks (`askDialog`), Take it
+  moved; Move up lets go of the focus first so the moved row itself travels. Pin the notice asks (`askDialog`), Take
   down is Tell everyone's `tellNoticeDown()` (10 s Undo); Start again / Clear ask, leave a draft and are undoable (Clear is not
   offered while nothing is written). The preview is `noticeCardHtml(true, notice, { team })` as a counselor on the
   director's own team (if the notice lists it, else the first listed) would see it. Tell everyone's "Write a full notice"
