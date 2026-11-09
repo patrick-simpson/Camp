@@ -431,7 +431,7 @@ const placeWords = (n) => ['', '1st', '2nd', '3rd', '4th', '5th', '6th'][n];
       pub = await nodeOf('real');
       const e4 = pub.pub.g2.e.t4;
       const photoElsewhere = JSON.stringify([pub.pub.g0, pub.pub.g1]).indexOf('data:image') >= 0;
-      await sleep(400);
+      if (!OLD_RULES) await until(async () => { const m = (await tvState(tv)).mark; return !!m && m.tag === 'img' && /tv-photo/.test(m.cls); }, 'the big screen to draw 4th place\'s photo', 8000);
       s = await tvState(tv);
       if (!OLD_RULES) {
         check('B3. 4th place (a photo): its entry carries a small JPEG made on the director\'s phone (at most 20,000 characters), no earlier place carries one, and the big screen draws it as the mark', !!e4 && typeof e4.ph === 'string' && /^data:image\/jpeg;base64,/.test(e4.ph) && e4.ph.length <= 20000 && !photoElsewhere && !!s.mark && s.mark.tag === 'img' && /tv-photo/.test(s.mark.cls) && /^data:image\/jpeg/.test(s.mark.src), JSON.stringify({ len: e4 && e4.ph && e4.ph.length, mark: s.mark, photoElsewhere, a: await A.evaluate(() => ({ thumbs: [...revealThumbs.keys()], mem: [...TEAM_PHOTO_MEM.keys()], v: teamPhotoVersion('t4'), open: revealRemoteOpenFlag, tries: revealThumbTries })), b: await B.evaluate(() => ({ thumbs: [...revealThumbs.keys()], mem: [...TEAM_PHOTO_MEM.keys()], open: revealRemoteOpenFlag })) }));

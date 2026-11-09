@@ -896,3 +896,12 @@ test('the rules file stays well inside the published size limit', () => {
   assert.ok(bytes < 192 * 1024, `as committed ${bytes} bytes — over 192 KiB, split R1 into R1a/R1b (setup-rebuild-spec §8.6)`);
   assert.ok(minified < 160 * 1024, `minified ${minified} bytes`);
 });
+
+test('a shown place\'s team photo is refused when the team is in ANY other group (all six clauses, both camps, both modes)', () => {
+  // The emulator suite proves each clause decides once (reveal.mjs); this pins that none was dropped from the file.
+  for (let k = 0; k < 6; k++) {
+    const clause = `($g === 'g${k}' || !newData.parent().parent().parent().parent().child('g${k}').child('e').child($tid).exists())`;
+    const n = RULES_TEXT.split(clause).length - 1;
+    assert.ok(n >= 2, `the photo-uniqueness clause for g${k} is missing (found ${n}, want one per camp at least)`);
+  }
+});

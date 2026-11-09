@@ -1196,9 +1196,12 @@ async function revealRun(action, opts) {
     const again = confirmedReveal[mode];
     const ac = again ? normalizeRevealCtl(again.ctl) : null;
     if (ac && ac.id === c.id && ac.seq === c.seq) {
-      revealBrandRefused = true;
       const plain = revealBuildCommand(action, again, revealFullFor(mode) || full, { mode, ts: revealTs(), nameOf: revealCurrentName });
-      if (plain.ok) { built = plain; res = await revealSend(mode, plain.updates); }
+      if (plain.ok) {
+        built = plain; res = await revealSend(mode, plain.updates);
+        // Latch only when the plain place WENT: a refusal that hits the plain send too is not the old rules' doing.
+        if (res.ok) revealBrandRefused = true;
+      }
     }
   }
   if (res.ok) {

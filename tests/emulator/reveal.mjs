@@ -404,6 +404,20 @@ for (const R of ROOTS) {
     if (out !== 'ok') throw new Error('control refused: ' + out);
     await h.seed(async (db) => { await set(ref(db, `${R}/revealPublic/real/ctl`), c); await set(ref(db, `${R}/revealPublic/real/pub/g1`), null); });
   });
+  // Every one of the six uniqueness clauses must be the deciding one somewhere: seed team t0 into exactly two
+  // groups (i holds it, j is written), then a photo leaf in j is refused because of i alone.
+  await s.t(`${R}: refused — a photo for a team already in ANY other group (each of the six clauses decides once)`, async () => {
+    const c = await ctl();
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) {
+      if (i === j) continue;
+      await h.seed(async (db) => {
+        await set(ref(db, `${R}/revealPublic/real/ctl`), Object.assign({}, c, { shown: 6, cur: 5 }));
+        for (let k = 0; k < 6; k++) await set(ref(db, `${R}/revealPublic/real/pub/g${k}`), (k === i || k === j) ? { place: 6 - k, e: { t0: entry(0) } } : null);
+      });
+      await assertFails(set(ref(ed(), `${R}/revealPublic/real/pub/g${j}/e/t0/ph`), png(500)));
+    }
+    await h.seed(async (db) => { await set(ref(db, `${R}/revealPublic/real/ctl`), c); for (let k = 0; k < 6; k++) await set(ref(db, `${R}/revealPublic/real/pub/g${k}`), null); });
+  });
   await s.t(`${R}: refused — a counselor, a stranger and an unverified director writing a branded place`, async () => {
     const c = await ctl();
     await assertFails(update(ref(vw(), R), nextPayload('real', c, { group: gWith(1, brand()) })));
