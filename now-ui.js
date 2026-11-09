@@ -729,7 +729,7 @@ function nowTapKey(btn) {
   const pts = Number(btn.dataset.pts);
   if (!m.teams.some((t) => t.team === team)) return;
   if (!Number.isInteger(pts) || pts < 0 || pts > m.max || !competitionDows().includes(m.dow)) return;
-  if (!canScoreRound(team)) { showToast("Your own team's points are given by another director."); return; }
+  if (!canScoreRound(team)) { showToast("Your own team’s points are given by another director."); return; }
   const key = row.dataset.key;
   const had = focusWas(btn); // the render below replaces this key: a keyboard user keeps their place
   // The person's own act: the rows (and Still to do today) glide at once instead of waiting for a finger to lift.

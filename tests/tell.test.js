@@ -171,7 +171,7 @@ test('"ends in 38 min": the time left, in the words a director reads', () => {
 test('Buzz is disabled with its reason while phone alerts are not live (as before Step 27, or if the sender is ever disconnected), and offline', () => {
   boot();
   assert.equal(tellBuzzState().available, false);
-  assert.equal(tellBuzzState().reason, "Phone alerts aren't switched on yet");
+  assert.equal(tellBuzzState().reason, "Phone alerts aren’t switched on yet");
   live(true);
   assert.equal(tellBuzzState().available, true);
   fbConnected = false;
@@ -186,7 +186,7 @@ test('a tapped Buzz tick with no phone alerts says why and stays off; once live 
   openTool('tell', { from: 'more' });
   tellToggle('buzz');
   assert.equal(tell.d.buzz, false);
-  assert.equal(toasts.pop().m, "Phone alerts aren't switched on yet");
+  assert.equal(toasts.pop().m, "Phone alerts aren’t switched on yet");
   live(true);
   tellToggle('buzz');
   assert.equal(tell.d.buzz, true, 'ticked now');
@@ -297,7 +297,7 @@ test('a send while offline says it is only saved on this phone and when it goes 
     await tellSend();
     assert.equal(toasts[toasts.length - 1].m, 'Banner saved on this phone · Notice saved on this phone. It goes out when you’re back online.');
     // Try again on a banner that failed to post says the same when it lands offline
-    tell.result = { items: [{ way: 'banner', ok: false, text: "Banner didn't post" }], text: 'Water break', plan: { text: 'Water break', banner: { ttlMs: 3600000 }, pin: null, buzz: null } };
+    tell.result = { items: [{ way: 'banner', ok: false, text: "Banner didn’t post" }], text: 'Water break', plan: { text: 'Water break', banner: { ttlMs: 3600000 }, pin: null, buzz: null } };
     await tellRetry('banner');
     assert.equal(toasts[toasts.length - 1].m, 'Banner saved on this phone. It goes out when you’re back online.');
     // connected: the plain words, as before
@@ -389,7 +389,7 @@ test('a buzz that did not go leaves the banner posted, says so per channel, keep
   const items = tell.result.items;
   assert.deepEqual(items.map((i) => [i.way, i.ok]), [['banner', true], ['buzz', false]]);
   assert.equal(items[0].text, 'Banner posted');
-  assert.equal(items[1].text, "Buzz didn't go: couldn't reach the alert sender — check your connection");
+  assert.equal(items[1].text, "Buzz didn’t go: couldn't reach the alert sender — check your connection");
   assert.equal(tell.d.banner, false, 'the banner is un-ticked so a second Send cannot post it twice');
   assert.equal(tell.d.buzz, true, 'the buzz stays ticked for Try again');
   assert.equal(tell.d.text, 'Come inside now', 'and the words stay');
@@ -429,12 +429,12 @@ test('a sender that is not configured, or a call that throws, is a plain sentenc
   tell.d.buzz = true; tell.d.banner = false;
   buzzResult = { ok: false, error: 'not-configured' };
   await tellSend();
-  assert.equal(tell.result.items[0].text, "Buzz didn't go: phone alerts aren't switched on yet");
+  assert.equal(tell.result.items[0].text, "Buzz didn’t go: phone alerts aren’t switched on yet");
   const real = pushSendAlert;
   pushSendAlert = async () => { throw new Error('boom'); };
   await tellRetry('buzz');
   pushSendAlert = real;
-  assert.equal(tell.result.items[0].text, "Buzz didn't go: it did not go through");
+  assert.equal(tell.result.items[0].text, "Buzz didn’t go: it did not go through");
   done();
 });
 
@@ -449,7 +449,7 @@ test('Try again after the connection dropped says so instead of sending', async 
   fbConnected = false;
   await tellRetry('buzz');
   assert.equal(sent.length, 1, 'nothing sent');
-  assert.equal(tell.result.items[0].text, "Buzz didn't go: no signal: buzzing needs a connection");
+  assert.equal(tell.result.items[0].text, "Buzz didn’t go: no signal: buzzing needs a connection");
   fbConnected = true;
   done();
 });

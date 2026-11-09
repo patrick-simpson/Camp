@@ -346,7 +346,7 @@ function awardTapKey(btn) {
   const inVerse = !!btn.closest('#award-verse-list');
   // Only a value the section has a key for (the verse 0–5, cleanup 0–3): a stale or forged tap never writes 9 points.
   if (!Number.isInteger(pts) || pts < 0 || pts > (inVerse ? 5 : 3) || !competitionDows().includes(awardUi.dow)) return;
-  if (!canScoreRound(team)) { showToast("Your own team's points are given by another director."); return; }
+  if (!canScoreRound(team)) { showToast("Your own team’s points are given by another director."); return; }
   const key = row.dataset.key;
   const had = focusWas(btn); // the render below replaces this button: a keyboard user keeps their place (focusBack)
   if (inVerse) setVersePoints(team, awardUi.dow, pts);
@@ -360,7 +360,7 @@ function awardTapKey(btn) {
 function awardToggleTeam(btn) {
   const id = btn.dataset.team;
   if (!awardMayUse()) return;
-  if (!canScoreRound(id)) { showToast("Your own team's points are given by another director."); return; }
+  if (!canScoreRound(id)) { showToast("Your own team’s points are given by another director."); return; }
   const d = bonusDraft;
   const i = d.teams.indexOf(id);
   const had = focusWas(btn);
@@ -405,7 +405,7 @@ async function awardRemove(id) {
   if (!yes || !awardMayUse()) return;
   const row = document.querySelector('#award-ledger [data-key="b-' + id + '"]');
   const go = () => {
-    if (!removeBonusEntry(id)) { showToast("Your own team's points are changed by another director."); return; }
+    if (!removeBonusEntry(id)) { showToast("Your own team’s points are changed by another director."); return; }
     glideNow(renderAll); // the rest of the day's ledger glides up at once
   };
   playRowOut(row, go); // squashes out (calm: a fade)

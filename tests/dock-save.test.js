@@ -55,8 +55,12 @@ test('tallySave writes the old Save Result record, refuses a second save and a v
     assert.notOk(state.drafts[g.id], 'the draft is gone');
     assert.deepEqual(got, ['t0']);
     state.results[g.id].savedAt = 'first';
-    assert.equal(tallySave(g.id).ok, false, 'a stale form never overwrites');
+    state.drafts[g.id] = { scores: { t0: '1', t1: '2', t2: '3' }, medals: {} }; // a stale form that still holds a complete draft
+    const again = tallySave(g.id);
+    assert.equal(again.ok, false, 'a stale form never overwrites');
+    assert.equal(again.problem, 'unavailable', 'refused for the saved result, not for an incomplete draft');
     assert.equal(state.results[g.id].savedAt, 'first');
+    assert.deepEqual(state.results[g.id].medals, { gold: 't0', silver: 't1', bronze: 't2' });
     assert.equal(gamesDock(g.id).tone === 'tally', false, 'after the save the dock is the Next game dock');
   } finally { celebrate = realCelebrate; }
 });

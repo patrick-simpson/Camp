@@ -11,7 +11,7 @@
 //    whole (and put back to draft by setNoticeStatus), a buzz is push.js's pushSendAlert in its DIRECT mode. Nothing
 //    here talks to the database itself, so every guard those carry (director only, the first-pull gate, the sender's
 //    own checks) holds. The tool opens only for a director (toolMayOpen) and the pin / take down paths re-check.
-//  - A SEND NEVER LIES. Each channel reports on its own ("Banner posted · Buzz didn't go: …"). A send that fully worked
+//  - A SEND NEVER LIES. Each channel reports on its own ("Banner posted · Buzz didn’t go: …"). A send that fully worked
 //    closes the composer and leaves a 10-second Undo toast; one that did not leaves "Last send" with Try again on the
 //    channel that failed, and un-ticks the channels that already went so a second Send cannot post the banner twice.
 //  - A BUZZ CAN'T BE TAKEN BACK and is never armed by accident: off by default, disarmed whenever it becomes
@@ -141,7 +141,7 @@ function tellClone(v) { return v === undefined ? undefined : JSON.parse(JSON.str
 // Can this phone buzz right now? Only with phone alerts connected (PUSH_SERVICE_URL, set since Step 27), and a buzz needs a connection.
 function tellBuzzState() {
   const live = typeof pushConfigured === 'function' && pushConfigured() && typeof pushSendAlert === 'function';
-  if (!live) return { available: false, reason: "Phone alerts aren't switched on yet" };
+  if (!live) return { available: false, reason: "Phone alerts aren’t switched on yet" };
   if (!fbConnected) return { available: false, reason: 'No signal: buzzing needs a connection' };
   return { available: true, reason: '' };
 }
@@ -592,9 +592,9 @@ async function tellAskReplace(n) {
 
 function tellBuzzWhy(r) {
   if (!r) return 'no answer';
-  if (r.error === 'not-configured') return "phone alerts aren't switched on yet";
+  if (r.error === 'not-configured') return "phone alerts aren’t switched on yet";
   if (r.error === 'not-editor') return 'only directors can buzz';
-  // it follows "Buzz didn't go: ", so a sentence from the sender starts in lower case (but "SMS" or "CORS" stays)
+  // it follows "Buzz didn’t go: ", so a sentence from the sender starts in lower case (but "SMS" or "CORS" stays)
   return String(r.error || 'it did not go through').replace(/\.$/, '').replace(/^([A-Z])(?![A-Z])/, (c) => c.toLowerCase());
 }
 
@@ -602,7 +602,7 @@ function tellBuzzWhy(r) {
 async function tellRunBuzz(buzz, text) {
   let r = null;
   try { r = await pushSendAlert({ text, audience: buzz.audience, urgent: buzz.urgent }); } catch (e) { r = { ok: false, error: 'it did not go through' }; }
-  if (!r || !r.ok) return { way: 'buzz', ok: false, text: "Buzz didn't go: " + tellBuzzWhy(r) };
+  if (!r || !r.ok) return { way: 'buzz', ok: false, text: "Buzz didn’t go: " + tellBuzzWhy(r) };
   const n = (Number(r.sent) || 0) + (Number(r.queued) || 0);
   if (!n) return { way: 'buzz', ok: false, text: 'Buzz reached no phones: ' + (buzz.nobody || 'nobody has phone alerts on yet') };
   return { way: 'buzz', ok: true, text: 'Buzz sent to ' + n + ' phone' + (n === 1 ? '' : 's') };
@@ -611,7 +611,7 @@ async function tellRunBuzz(buzz, text) {
 // The report line for a local way (banner, pin) once it was written. Written while offline it says where it is, and
 // carries `offline` so the toast can say when it goes out.
 function tellLocalItem(way, ok) {
-  if (!ok) return { way, ok: false, text: way === 'banner' ? "Banner didn't post" : "Notice didn't pin" };
+  if (!ok) return { way, ok: false, text: way === 'banner' ? "Banner didn’t post" : "Notice didn’t pin" };
   const off = tellOffline();
   const text = off ? (way === 'banner' ? 'Banner' : 'Notice') + ' saved on this phone' : way === 'banner' ? 'Banner posted' : 'Notice pinned';
   return off ? { way, ok: true, text, offline: true } : { way, ok: true, text };
@@ -704,7 +704,7 @@ async function tellRetry(way) {
   let rec = { bannerId: '', banner: null, notice: null };
   try {
     if (way === 'buzz' && r.plan.buzz) {
-      if (!tellBuzzState().available) item = { way: 'buzz', ok: false, text: "Buzz didn't go: " + tellBuzzState().reason.toLowerCase() };
+      if (!tellBuzzState().available) item = { way: 'buzz', ok: false, text: "Buzz didn’t go: " + tellBuzzState().reason.toLowerCase() };
       else item = await tellRunBuzz(r.plan.buzz, r.text);
     } else if (way === 'banner' && r.plan.banner) {
       rec = tellApplyLocal({ text: r.text, banner: r.plan.banner, pin: null, buzz: null });

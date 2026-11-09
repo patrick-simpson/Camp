@@ -378,8 +378,8 @@ const SCHED_DAYS = [
   { dow: 6, short: 'Sat', full: 'Saturday', tag: 'Send-off' },
 ];
 
-// This week's counselors, per team — the seed list behind "Add this week's
-// counselors" in the Members drawer. They start as PENDING members (a name
+// This week’s counselors, per team — the seed list behind "Fill in last year’s printed
+// roster" on the People screen. They start as PENDING members (a name
 // and a team, no sign-in yet); an editor fills in each person's email or
 // phone later with "Add sign-in", which is what actually lets them in.
 // Spellings follow the standings' counselor text, which is what camp prints.

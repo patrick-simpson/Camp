@@ -339,7 +339,7 @@ function gamesQuickReady() {
 }
 function gamesOpenQuick(team, opener) {
   if (!canEdit() || !standingsVisible() || !teamIds().includes(team)) return;
-  if (!canScoreRound(team)) { showToast("Your own team's points are given by another director."); return; }
+  if (!canScoreRound(team)) { showToast("Your own team’s points are given by another director."); return; }
   gamesUi.quick = { team, pts: 0, why: '', other: '' };
   gamesUi.quickWas = null;
   shellSheetOpen('quick', opener);
@@ -409,7 +409,7 @@ function gamesQuickAddTap() {
   const team = q.team;
   const r = gamesQuickAdd(team, q.pts, gamesQuickWhy());
   if (!r.ok) {
-    showToast(r.problem === 'own-team' ? "Your own team's points are given by another director." : 'Those points could not be added.');
+    showToast(r.problem === 'own-team' ? "Your own team’s points are given by another director." : 'Those points could not be added.');
     return;
   }
   const short = nowTeamWord(team);
