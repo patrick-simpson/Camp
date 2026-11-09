@@ -426,40 +426,40 @@ const MEAL_CLEANUP_SCHEDULE = {
 function defaultNotice() {
   return {
     status: 'draft',
-    eyebrow: '🧹 Campground cleanup · 8:30–9:30am',
+    eyebrow: 'Campground cleanup · 8:30–9:30 AM',
     title: 'Where your team cleans',
-    sub: "Straight from breakfast to your team's area — no going up to the cabins yet. "
+    sub: 'Go straight from breakfast to your team’s area. Nobody goes up to the cabins yet. '
        + 'Finish by 9:30, then meet in the Tabernacle for send-off.',
     zones: [
       { teamId: 't3', place: 'Chapel Lawn', note: '' },
       { teamId: 't1', place: 'Waterfront', note: '' },
       { teamId: 't0', place: 'Linger a While', note: '' },
       { teamId: 't5', place: 'Snack Shack', note: '' },
-      { teamId: 't2', place: 'Dining Hall', note: 'breakfast cleanup' },
+      { teamId: 't2', place: 'Dining Hall', note: 'Breakfast cleanup' },
       { teamId: 't4', place: 'Tabernacle', note: '' },
     ],
     steps: [
       { emoji: '🚶', when: 'Straight after breakfast', items: [
-        "Campers go straight to their team's area above — nobody goes up to the cabins yet.",
+        'Campers go straight to their team’s area, listed above. Nobody goes up to the cabins yet.',
       ] },
       { emoji: '🗑️', when: 'In your area', items: [
-        'All the trash goes — empty the cans and put a fresh bag in.',
-        'Put away the games and anything else we used this week.',
-        'Lost and found goes to the tables at the Snack Shack.',
+        'Empty every trash can and put in a fresh bag.',
+        'Put away the games and everything else we used this week.',
+        'Take lost and found to the tables at the Snack Shack.',
       ] },
       { emoji: '⛪', when: 'When your area is done', items: [
         'Head to the Tabernacle and help finish up there.',
       ] },
-      { emoji: '🛏️', when: 'Cabins — once the Tabernacle is set', items: [
-        'Now campers can go up to pack.',
-        'Sweep the floors and clear out the trash before anything gets packed.',
+      { emoji: '🛏️', when: 'Cabins, once the Tabernacle is set', items: [
+        'Now campers can go up and pack.',
+        'Sweep the floors and take out the trash before anything gets packed.',
       ] },
       { emoji: '🚿', when: 'Once the campers have gone', items: [
         'Clean the shower houses.',
-        'Walk the cabins one last time — nothing left behind.',
+        'Walk through the cabins one last time and check nothing is left behind.',
       ] },
     ],
-    signoff: "Let's leave these grounds looking better than we found them!",
+    signoff: 'Let’s leave these grounds better than we found them.',
   };
 }
 CAMPS.junior = {
@@ -644,19 +644,19 @@ const MEMORY_VERSES = {
 function seniorDefaultNotice() {
   return {
     status: 'draft',
-    eyebrow: '🧹 Campground cleanup',
+    eyebrow: 'Campground cleanup',
     title: 'Where your team cleans',
-    sub: 'Assignments to come.',
+    sub: 'Go to your team’s area and clean it before send-off.',
     zones: [
-      { teamId: 't0', place: 'TBA', note: '' },
-      { teamId: 't1', place: 'TBA', note: '' },
-      { teamId: 't2', place: 'TBA', note: '' },
-      { teamId: 't3', place: 'TBA', note: '' },
+      { teamId: 't0', place: 'Still to come', note: '' },
+      { teamId: 't1', place: 'Still to come', note: '' },
+      { teamId: 't2', place: 'Still to come', note: '' },
+      { teamId: 't3', place: 'Still to come', note: '' },
     ],
     steps: [
-      { emoji: '🗑️', when: 'In your area', items: ['Trash out, fresh bags in, gear put away.'] },
+      { emoji: '🗑️', when: 'In your area', items: ['Empty the trash, put in fresh bags and put away the games.'] },
     ],
-    signoff: "Let's leave these grounds looking better than we found them!",
+    signoff: 'Let’s leave these grounds better than we found them.',
   };
 }
 

@@ -2084,9 +2084,9 @@
  },
  "defaultNotice": {
   "status": "draft",
-  "eyebrow": "🧹 Campground cleanup · 8:30–9:30am",
+  "eyebrow": "Campground cleanup · 8:30–9:30 AM",
   "title": "Where your team cleans",
-  "sub": "Straight from breakfast to your team's area — no going up to the cabins yet. Finish by 9:30, then meet in the Tabernacle for send-off.",
+  "sub": "Go straight from breakfast to your team’s area. Nobody goes up to the cabins yet. Finish by 9:30, then meet in the Tabernacle for send-off.",
   "zones": [
    {
     "teamId": "t3",
@@ -2111,7 +2111,7 @@
    {
     "teamId": "t2",
     "place": "Dining Hall",
-    "note": "breakfast cleanup"
+    "note": "Breakfast cleanup"
    },
    {
     "teamId": "t4",
@@ -2124,16 +2124,16 @@
     "emoji": "🚶",
     "when": "Straight after breakfast",
     "items": [
-     "Campers go straight to their team's area above — nobody goes up to the cabins yet."
+     "Campers go straight to their team’s area, listed above. Nobody goes up to the cabins yet."
     ]
    },
    {
     "emoji": "🗑️",
     "when": "In your area",
     "items": [
-     "All the trash goes — empty the cans and put a fresh bag in.",
-     "Put away the games and anything else we used this week.",
-     "Lost and found goes to the tables at the Snack Shack."
+     "Empty every trash can and put in a fresh bag.",
+     "Put away the games and everything else we used this week.",
+     "Take lost and found to the tables at the Snack Shack."
     ]
    },
    {
@@ -2145,10 +2145,10 @@
    },
    {
     "emoji": "🛏️",
-    "when": "Cabins — once the Tabernacle is set",
+    "when": "Cabins, once the Tabernacle is set",
     "items": [
-     "Now campers can go up to pack.",
-     "Sweep the floors and clear out the trash before anything gets packed."
+     "Now campers can go up and pack.",
+     "Sweep the floors and take out the trash before anything gets packed."
     ]
    },
    {
@@ -2156,10 +2156,10 @@
     "when": "Once the campers have gone",
     "items": [
      "Clean the shower houses.",
-     "Walk the cabins one last time — nothing left behind."
+     "Walk through the cabins one last time and check nothing is left behind."
     ]
    }
   ],
-  "signoff": "Let's leave these grounds looking better than we found them!"
+  "signoff": "Let’s leave these grounds better than we found them."
  }
 }
