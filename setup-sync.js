@@ -2765,7 +2765,7 @@ let setupPlanMemo = null;            // the live tree's plans, rebuilt only when
 let setupBuiltInMemo = null;         // the built-in week resolved the same way (planForDow while the schedule is off)
 let setupBuiltInTreeMemo = null;     // …and the seeded tree it was resolved from (the Schedule screen's read-only preview reads it)
 
-// What a team's tail in a label reads from: the roster's ids, short names and emojis. renderLabel bakes teamEmoji /
+// What a team's tail in a label reads from: the roster's ids, short names, emojis and plain marker. renderLabel bakes teamEmoji /
 // teamShort into every label it builds, so a plan memoized on the tree alone kept the OLD "🦃 Turkey" in Happening
 // Now, the schedule sheet, the calendar file and the published schedule after a director renamed a team and took the
 // suggested short name (the Teams screen, a colleague's snapshot, an undo, a restore all change state.teams without
@@ -2776,7 +2776,7 @@ function setupTeamSig() {
   let s = '';
   for (let i = 0; i < ts.length; i++) {
     const t = ts[i];
-    s += (t ? String(t.id) + '\u0001' + String(t.short === undefined ? '' : t.short) + '\u0001' + String(t.emoji === undefined ? '' : t.emoji) : '') + '\u0002';
+    s += (t ? String(t.id) + '\u0001' + String(t.short === undefined ? '' : t.short) + '\u0001' + String(t.emoji === undefined ? '' : t.emoji) + '\u0001' + (t.plain === true ? 'p' : '') : '') + '\u0002';
   }
   return s;
 }

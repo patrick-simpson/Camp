@@ -458,3 +458,14 @@ test('a plain team\'s schedule labels say Team N, with the keycap, once the rost
   if (sig !== null) assert.ok(setupTeamSig() !== sig, 'a plain team changes the labels signature');
   freshState();
 });
+
+// ── review fixes after the cleared look ──
+
+test('the plain marker alone moves the label memo\'s signature (a record with no short or emoji)', () => {
+  freshState();
+  const before = setupTeamSig();
+  state.teams[0].plain = true;
+  assert.ok(setupTeamSig() !== before, 'plain flips teamShort / teamEmoji, so the plans memoized on the signature must rebuild');
+  state.teams[0].plain = false;
+  assert.ok(setupTeamSig() === before);
+});

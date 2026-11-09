@@ -333,3 +333,36 @@ test('the Alerts sheet\'s pop-ups switch is the same state as the Notify me butt
   assert.ok(/getElementById\('notify-toggle'\)[\s\S]*toggleAttribute\('checked', !!state\.notify\)/.test(body), 'the switch follows the state');
   assert.ok(/renderAlertsState\(\)/.test(body), 'and so does the Alerts row line');
 });
+
+// ── the Your team sheet still draws (it was empty from Step 25: setup-ui.js declared a second renderTeamSheet) ──
+
+test('the Your team sheet paints the followed team\'s name and mark through the real scripts (app.js and setup-ui.js both loaded)', () => {
+  freshState();
+  state.followTeam = 't1';
+  renderTeamSheet();
+  assert.equal(document.getElementById('sheet-team-title').textContent, state.teams[1].name, 'the sheet is titled by the team');
+  assert.equal(document.getElementById('ts-name').textContent, state.teams[1].name);
+});
+
+test('no top-level function name is declared in two shipped scripts (they share one global scope: the later one silently wins)', () => {
+  const files = ['defaults.js', 'camp-core.js', 'reveal-core.js', 'camps.js', 'jelly-motion.js', 'app.js', 'reveal.js', 'reveal-ui.js', 'setup-sync.js', 'settings.js',
+    'setup-ui.js', 'chat.js', 'push.js', 'tell.js', 'award.js', 'now-ui.js', 'games-ui.js'];
+  const seen = {};
+  const dup = [];
+  files.forEach((f) => {
+    for (const m of readFixture('../' + f).matchAll(/^(?:async )?function\s+([A-Za-z0-9_$]+)\s*\(/gm)) {
+      if (seen[m[1]] && seen[m[1]] !== f) dup.push(m[1] + ' (' + seen[m[1]] + ', ' + f + ')');
+      seen[m[1]] = seen[m[1]] || f;
+    }
+  });
+  // defaultNotice: camps.js holds the profile's reference and app.js's wrapper calls CAMP.defaultNotice() (harmless).
+  assert.deepEqual(dup.filter((d) => !/^defaultNotice /.test(d)), []);
+});
+
+test('a team tile is square in the mini TV and a plain tile is a label (hairline, no ink outline, numeral in ink-2)', () => {
+  assert.ok(/\.mtv \.tm\.flag,\s*\.mtv \.tm\.tm-tile \{\s*height: var\(--mk\)/.test(CSS), 'the height rule outranks .mtv .mtv-rows .tm { height: auto }');
+  const tile = CSS.slice(CSS.indexOf('\n.tm-tile {'), CSS.indexOf('\n.tm-tile[style*="--tm-accent"]'));
+  assert.ok(/background: var\(--well\)/.test(tile) && /inset 0 0 0 1px var\(--line\)/.test(tile), 'flat well and a hairline');
+  assert.notOk(/var\(--ink\)/.test(tile), 'no ink outline: it would read as a points key');
+  assert.ok(/\.tm-tile\[data-num\] \{[^}]*color: var\(--ink-2\)/.test(CSS), 'the numeral is quieter than a place number');
+});

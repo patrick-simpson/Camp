@@ -5693,7 +5693,7 @@ function renderTeamsScreen() {
   // Original colours that are hard to see on a theme: a gentle note that NAMES them, and the one place to fix them all, named too.
   const weakShort = m.flag.map((id) => teamShort(id) || teamName(id) || id);
   const bareIds = m.rows.filter((r) => r.bare).map((r) => r.id);
-  const bareShort = bareIds.map((id) => teamShort(id) || teamName(id) || id);
+  const bareShort = bareIds.map((id) => teamNumJoin(teamShort(id) || teamName(id) || id));
   const weakOnly = m.weak.filter((id) => bareIds.indexOf(id) === -1);
   const weakWords = weakOnly.length ? teamsWeakSentence(weakOnly) : '';
   // Every team bare says it as the hub's note does ("6 teams have no colour yet"); a few are named, as the link under it names them.
@@ -10313,7 +10313,7 @@ function nywClearRows(a) {
     if (a.carry[k] !== 'clear' || !NYW_CARRY_WORDS[k]) return;
     if ((k === 'stations' || k === 'stationPeople') && !(CAMP.features && CAMP.features.electives)) return;
     if (k === 'stationPeople' && a.carry.stations === 'clear') return;
-    add('c-' + k, { mark: 'item' }, NYW_CARRY_WORDS[k], k === 'teams' ? 'Teams become Team 1 to Team ' + CAMP.teamCount + ', each with its number for its emoji' : '');
+    add('c-' + k, { mark: 'item' }, NYW_CARRY_WORDS[k], k === 'teams' ? 'Teams become Team\u00a01 to Team\u00a0' + CAMP.teamCount + ', each with its number for its emoji' : '');
   });
   if (c.noticePosted) add('notice', { mark: 'item' }, 'Notice board · back to a draft', '');
   const mem = nywUi.members;

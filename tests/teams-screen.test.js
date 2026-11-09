@@ -472,7 +472,7 @@ test('the colours sheet also serves cleared teams: it lists them, a pick commits
   renderTeamsScreen();
   assert.equal(tsEl('teams-weak').hidden, false);
   assert.ok(/Pick (new )?colours for/.test(tsEl('teams-weak-btn-text').textContent), tsEl('teams-weak-btn-text').textContent);
-  assert.ok(tsEl('teams-weak-text').textContent.includes('Team 1'));
+  assert.ok(/Team[ \u00a0]1/.test(tsEl('teams-weak-text').textContent));
   teamColorsOpen();
   assert.equal(teamUi.colors, true);
   renderTeamColorsSheet();

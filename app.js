@@ -13003,7 +13003,9 @@ function annStripClick(e) {
   const ws = t && t.closest('[data-wn-show]');
   if (ws) {
     const note = CHANGES.find((c) => c.id === ws.dataset.wnShow);
-    const tgt = note && note.show && WHATS_NEW_SHOW[note.show.to];
+    // Only while its hour still runs: the overflow sheet repaints on the 30 s tick, so a tap can land just after the hour.
+    const live = note && whatsNewDue([note], whatsNewDismissed(), serverNow(), whatsNewWho()).length > 0;
+    const tgt = live && note.show && WHATS_NEW_SHOW[note.show.to];
     whatsNewEnd(ws.dataset.wnShow);
     renderAnnouncements();
     if (tgt && tgt.ok()) tgt.go();

@@ -323,7 +323,8 @@ legacy `campScoreboardDismissedChanges` key stays only in `clearLocalData`'s wip
    readers), each with its own × and Show me. Large text (the strip under 18rem across): Show me rides the words' last line.
 6. **Memory**: `localStorage.campScoreboardWhatsNew` = `{ v: 2, d: { id: 1 } }` (the notes this phone dismissed with × or Show me;
    device-wide, no camp suffix, never synced, not camp data, never in a backup), read lazily (never at load) into an in-memory Set
-   that is the truth for the page's life (a blocked store still hides a dismissed note until reload), every access in try/catch;
+   that is the truth for the page's life (a blocked store still hides a dismissed note until reload; a dismissal made in a second tab
+   reaches this one only on its reload, accepted: no data is involved and the hour is short), every access in try/catch;
    anything else in the key (the old v1 pacing memory) reads as empty. Sign-out KEEPS it. Ids no longer in `CHANGES` are dropped
    on write.
 7. **Motion**: a note new to a paint while Now was ALREADY on screen (the 30 s tick, the member record answering after boot)
