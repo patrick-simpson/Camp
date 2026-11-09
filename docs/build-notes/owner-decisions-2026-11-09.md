@@ -53,3 +53,20 @@ recorded so no agent asks again or builds against them.
 - **Directors' "Cleanup: TBA" line** on a meal with no team: keep for directors (counselors see nothing).
 - **The notice's hidden small label (eyebrow)**: stays hidden; no box for it.
 - **"Start from last year's Sunday"** on an empty Schedule day: not wanted; remove any dead control for it.
+
+## Later the same day (Mon Nov 9, about 12:30–1:05 PM ET), after v215 went live
+
+These REPLACE the matching parts of items 2 and 6 above.
+
+8. **A team cleared by the new-year setup** (replaces item 2's look): name **"Team N"**, short name **"Team N"** too, emoji the
+   number keycap (1️⃣ … 6️⃣), and **no built-in look at all**: not the camp's shipped shield (junior), not its printed emoji, not
+   its flag or printed colour (senior), and no colour (a plain, neutral mark). The owner first answered "no shield or emoji at
+   all", then suggested the number emoji instead (accepted). What a director then picks on the Teams screen (a colour, an emoji,
+   a photo) shows as usual. The published rules already accept this: `state/teams/$i` validates only `emoji` / `short` /
+   `color` / `photoV`, so an extra marker field (for example `plain: true`) needs no rules change.
+9. **What's new notes live for ONE HOUR after the update ships, then never again**, whatever the time of year (replaces item
+   6's pacing): no one-an-hour release per phone, no catch-up over later weeks, no camp-week rule. A phone not opened during
+   that hour never sees that update's notes. (The owner was asked "an hour after it appears on each phone" versus "an hour
+   after the update ships" and chose the second.) Everything else in item 6 stands: banners at the top of Now in the
+   message-strip look, sorted by role, written by the agent with each update, dismissed per note on each phone, Show me.
+   The catch-up set shipped with v215 at 10:50 AM ET is therefore over.
