@@ -877,10 +877,9 @@ img.hdr-mark,
   50% { opacity: .3; }
 }
 
-/* INTERIM, until the builder moves into the frame as a takeover: today's
-   full-screen builder brings its own back pill and sizes itself to the whole
-   screen, so the header steps aside for it and the page gets its notch padding
-   back — exactly the v196 layout. (Chat is a tab now: it keeps the header.) */
+/* The builder (Set up the week) is a full-screen frame with its own head and
+   back, so the app header steps aside for it and the page gets its notch
+   padding back. (Chat is a tab now: it keeps the header.) */
 body.builder-open .app-header {
   display: none;
 }
@@ -1959,7 +1958,7 @@ html.view-only #more-director {
   color: var(--ink-2);
 }
 
-/* ── Games tab, interim (Step 18 replaces the day tabs and the table) ── */
+/* ── Games tab ── */
 #tab-games {
   display: flex;
   flex-direction: column;
@@ -2012,7 +2011,7 @@ html.view-only #more-director {
   color: var(--ink-2);
 }
 
-/* The drawers still on jelly-drawer (Alerts, Change history, Who can sign in)
+/* The drawers still on jelly-drawer (Alerts, Change history)
    wear the shell sheet's frame (.sheet): flush to the bottom, rounded on top
    only, the same flat scrim (no blur), a 44px close on the gutter. ::part()
    rules from outside beat the component's own. */
@@ -6930,7 +6929,7 @@ jelly-tabs.day-tabs {
 }
 jelly-tabs.day-tabs::part(tabs) {
   width: 100%;
-  /* INTERIM until Step 18: the chosen day is the shell's lifted segment, not a
+  /* The chosen day is the shell's lifted segment, not a
      roof-blue pill (in dark it was the loudest thing on the screen). Set on the
      part, so it reaches only the picker, never the game cards in the panels. */
   --jelly-color-background-accent: var(--lift);
@@ -9808,7 +9807,7 @@ jelly-button.winner-btn.winner-ready {
 }
 
 /* ============================================================
-   DRAWER BODIES (Alerts, Change history, Who can sign in)
+   DRAWER BODIES (Alerts, Change history)
    ============================================================ */
 .settings-title {
   margin: 0;
@@ -9929,7 +9928,7 @@ jelly-button.winner-btn.winner-ready {
 
 /* The builder opens full-page: hide everything else in main-wrap (and the
    footer) while it's up, so the collapsible cards don't render beneath it.
-   #setup holds the frame and the classic builder (#settings-view) both. */
+   #setup holds the frame and every Set up the week screen. */
 body.builder-open .main-wrap > :not(#setup) {
   display: none;
 }

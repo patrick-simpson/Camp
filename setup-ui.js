@@ -988,7 +988,7 @@ function renderSetupUi(open) {
   // The camper list (minors' names, memory only) is held only while a screen that shows counts or names is up; any other lets it go.
   if (typeof campersWant === 'function') campersWant(canEdit() && CAMPERS_SCREENS.indexOf(screen) !== -1);
   // The chips draw names, and only the Campers screen shows them: leaving it (to the hub, which still holds the list for its
-  // counts, or to the Classic editor, which holds nothing) takes them out of the page, so a hidden screen never keeps a minor's name.
+  // counts, or to any screen that shows no names) takes them out of the page, so a hidden screen never keeps a minor's name.
   if (screen !== 'campers' && typeof campersUiForget === 'function') campersUiForget();
   if (typeof applyOwnerClass === 'function') applyOwnerClass();
   if (nywUi.openNow !== (screen === 'wizard')) { nywUi.openNow = screen === 'wizard'; if (typeof wizardSetOpen === 'function') wizardSetOpen(nywUi.openNow); }

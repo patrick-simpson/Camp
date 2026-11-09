@@ -61,7 +61,7 @@ const CHANGES = [];
 //   'viewer' — counselors. Can watch everything, can change nothing.
 //              (Deliberate: counselors must not bump their own team's points.)
 //   'editor' — directors / game leaders. Edit scores AND manage the member
-//              list (More → Who can sign in).
+//              list (More → People).
 //
 // THE ONE INVARIANT (see also CLAUDE.md → "Auth, members & roles"):
 // no database ref may attach until sign-in resolves AND the self-read of
@@ -580,7 +580,7 @@ function identityFromKey(key) {
 
 // The owner's member key, the lockout anchor. The security rules refuse EVERY
 // write to this key in both camps' member lists (`$memberKey != '…'`), so the
-// Members drawer must not offer controls that can only fail: its row shows
+// People screen must not offer controls that can only fail: its row shows
 // "Owner · only the owner can change this row" and nothing else, for the owner
 // themselves and for every other editor. The same literal is in
 // database.rules.json (tests/owner-row.test.js pins that they agree). Any bulk
@@ -3450,7 +3450,7 @@ normalizeSyncedState();
 
 // Who's with this team, everywhere the app names a team's counselors. The
 // member directory is the live truth once anyone is assigned to a team in
-// More → Who can sign in; the hand-typed team.counselor text is the
+// More → People; the hand-typed team.counselor text is the
 // fallback for teams nobody has been assigned to yet (and for the moment
 // before the directory loads).
 function counselorName(id) {
@@ -8287,7 +8287,7 @@ function teamPickerOverlayEl() {
 // This overrides a hand-picked choice on purpose: the account is the truth,
 // and a counselor who tapped a different team during camp week shouldn't
 // keep seeing someone else's team as "yours". Un-assign them in More →
-// Who can sign in and the picker comes back.
+// People and the picker comes back.
 function adoptMemberTeam() {
   if (!memberTeamId) return false;
   let changed = false;
@@ -13701,7 +13701,7 @@ function previewTap() {
 function previewStart() {
   if (!previewMayStart()) return false;
   counselorPreviewOn = true;
-  // The sheets a counselor has no door to (What counselors see itself, Who can sign in, change history, the
+  // The sheets a counselor has no door to (What counselors see itself, People, change history, the
   // builder's) close now; renderAll closes the director's takeovers and the builder.
   shellCloseDisallowedSheets();
   previewPaint();
@@ -13790,7 +13790,7 @@ function shellGameBackLabel(g) {
 // down, focus is trapped while open and returns to the opener. `schedule` is
 // the older #schedule-overlay, which keeps its own markup and motion and only
 // reports here, so Back closes it too.
-// The three jelly-drawers that remain (Alerts, Change history, Who can sign in)
+// The two jelly-drawers that remain (Alerts, Change history)
 // ride the same stack: the drawer keeps its own backdrop, focus and scroll lock;
 // the shell only OPENS and CLOSES it and files the history entry, so phone Back
 // closes it instead of popping the tab beneath. Their own ✕ / backdrop / Escape
