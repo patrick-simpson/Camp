@@ -425,17 +425,17 @@
                              and under a live reveal. No × : a notice stays until
                              a director takes it down.
              #announcements  the banners (BANNER MARKUP, after Tell everyone):
-                             join bar first, then newest first, then at most
-                             ONE What's new note, last (NOTE MARKUP, after
-                             BANNER MARKUP): drawn only while the strip has
-                             room for it, never behind "N more messages", never
-                             in #sheet-messages, never under a live reveal.
+                             join bar first, then newest first, then the What's
+                             new notes of the hour, last and joined as one group
+                             (NOTE MARKUP, after BANNER MARKUP), as many as the
+                             strip has room for; never under a live reveal.
              #now-msgs-more  "2 more messages" when the strip would pass a third
                              of the screen (§3.2: about 280px on a 390×844 phone;
                              measured here, the notice strip is ~118px and a one-
                              line banner ~72px, so: the notice + 2 banners, or 3
                              banners, then this row). Opens #sheet-messages with
-                             every banner. Its count is #now-msgs-more-text.
+                             every banner and then every note the strip had no
+                             room for. Its count is #now-msgs-more-text.
            The notice strip's parts are static and patched in place:
              #now-notice-title     the notice's title (else its first line)
              #now-notice-sub       its first line ("" hides it)
@@ -3223,12 +3223,16 @@
        preview: the meta reads "Now · Jenn", no Remove, and .msg-x is drawn but
        inert. -->
 
-  <!-- NOTE MARKUP (What's new, owner's answer of Nov 9, 2026): one note about a
-       change to the app, in the strip's own message language. It rides
-       #announcements LAST (after the join bar and every banner), at most ONE at
-       a time, and only while the strip has room for it (never behind "N more
-       messages", never in #sheet-messages, never under a live reveal, never in
-       a counselor preview). The one blue tint like any message; its tile is the
+  <!-- NOTE MARKUP (What's new, owner's answers of Nov 9, 2026): one note about a
+       change to the app, in the strip's own message language. A note shows only
+       during the HOUR after the update that ships it goes live, then never again.
+       It rides #announcements LAST (after the join bar and every banner); the
+       notes of one hour ride together, in the order they were written, the
+       later ones JOINED to the first as one group (2px apart, corners squared,
+       the signpost and "What's new" only on the first); the ones the strip has
+       no room for go behind "N more messages" into #sheet-messages, after the
+       banners, in the same look. Never under a live reveal, never in a
+       counselor preview. The one blue tint like any message; its tile is the
        quiet one (an ink-3 ring on the sheet, the signpost in ink-2) so a
        director's banner (the filled blue tile) always reads as the louder
        thing. No badge, no emoji, no capitals, no exclamation mark; the meta
@@ -3246,10 +3250,13 @@
        may open right now; without one the meta line is the label alone. The ×
        and Show me carry data-wn-* (never .msg-remove / data-ann-id), so the
        strip's delegated handler (annStripClick) tells them from a banner's.
-       Motion (from diffs, calm-aware): a released note UNFOLDS in place from its
-       top (scaleY .6 → 1 on glide, no drop: a note is never as loud as a
-       banner), the sections under the strip glide down (annGlideBelow); ×
-       squashes it out (playRowOut) and the rest glide up; calm: fades. -->
+       Motion (from diffs, calm-aware): a note that appears while Now is already
+       on screen UNFOLDS in place from its top (scaleY .6 → 1 on glide, no drop:
+       a note is never as loud as a banner; several unfold 60 ms apart, top
+       first), the sections under the strip glide down (annGlideBelow); ×
+       squashes it out (playRowOut) and the rest glide up; at the end of its
+       hour it leaves like any row the strip drops (the rest glide up); calm:
+       fades. -->
 
   <!-- ── AWARD POINTS (redesign §7.3; Step 24) ──────────────────────────
        Directors only, from More → Director → Award points: the place for
