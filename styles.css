@@ -19223,6 +19223,20 @@ button.copy-matchup-btn .ico {
 #bracket-body .gres + .four-meta {
   margin-top: 12px;
 }
+/* The result list (both brackets' summaries and every saved result) at large text: under ~14em of its own text the mark
+   column steps aside, the standings' "one name and one number" rule, so a team's name keeps whole words (at 200% on a
+   360px phone "Ferocious" broke as "Ferocio / us" beside the shield). The place disc stays: it IS the medal. */
+.gres {
+  container: gres / inline-size;
+}
+@container gres (max-width: 14em) {
+  .gres-r {
+    grid-template-columns: 1.625rem minmax(0, 1fr) auto;
+  }
+  .gres-mark {
+    display: none;
+  }
+}
 
 /* ── Now: a card that IS one game, before it starts ──
    #now-card-tag gains data-tag="todo" with the words "Not started": the empty ring a game row draws, said in words on the title
