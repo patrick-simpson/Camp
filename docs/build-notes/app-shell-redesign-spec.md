@@ -577,13 +577,17 @@ if a director missed the lunch moment, it's still one tap away.
 | intro | "Reveal" / **6th place** (junior) · **4th place** (senior) | "nothing before" (disabled) |
 | live, cur = k, ready | "Reveal" / **3rd place** (a tie reads **2nd place (tie)**) | "show 5th again" |
 | live, recharging | "Showing the name… 3" → "Showing the score… 1" / **3rd place next** | locked: "after the score" |
-| after 1st, Friday | "Friday finale" / **Crown the champions** | "show 1st again" |
+| after 1st, Friday | "Friday finale" / **Crown the champions** | "show 2nd again" (the place shown before 1st) |
 | champion | "Next" / **Show the final table** | "show 1st again" |
-| after 1st, other days | "Next" / **Show the final table** | "show 1st again" |
+| after 1st, other days | "Next" / **Show the final table** | "show 2nd again" (the place shown before 1st) |
 | table | "All places shown" / **End the reveal** (confirm dialog, mockup 07c) | "champions" / "show 1st again" |
 | ended | "Replaces tonight's" / **Start a new reveal** (confirm) | — |
 
 Labels are sentence case (no letter-spaced capitals). Every state is drawn in mockup 07c.
+
+*Corrected Nov 9, 2026 to the built behaviour the owner kept: right after 1st place is shown, Back steps to the
+place shown before it (reveal.js revealBackInfo: `placeAt(cur - 1)`, "show 2nd again", or that tie's own place);
+only from the champion and table states does Back show 1st again.*
 
 **The button recharges, and says so.** After every command the gold fill grows left to right
 while the big screen plays that place's beat (name 0–3 s, score 3–4.5 s), and the button can't

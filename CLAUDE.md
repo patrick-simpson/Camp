@@ -275,10 +275,46 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 ## What's new banners & auto-reload
 
-**"What's new" banners are discontinued** (owner's call, 2026-07-21): `CHANGES` (top of `app.js`) stays EMPTY so
-`activeChanges()` returns nothing and no banner renders. The queue code (`changeReleases`, `activeChanges`,
-`renderWhatsNew`, the per-`id` dismissal key `campScoreboardDismissedChanges`) is dormant on purpose, in case the
-owner revives it; it releases one entry an hour, awake hours only (7am–9pm camp time). Do not add entries.
+**"What's new" comes back, redone** (owner's answer of Nov 9, 2026, reversing the July 21 "discontinued"). The design
+pass drew it (below); **until the build session lands its engine, `CHANGES` stays EMPTY** and step 4 above stands (the old
+queue code — `changeReleases`, `activeChanges`, `renderWhatsNew` — draws nowhere: its `#whats-new` section and `.whats-new-*`
+CSS are gone). The build session replaces that code, then rewrites step 4 and this paragraph to "add a plain-English note,
+with its audience, for each change people would notice".
+
+**What's new notes: the design** (markup: NOTE MARKUP in index.html; look: `.msg[data-kind="new"]`, `.msg-show`, `#i-signpost`).
+1. **A note** is an entry of `CHANGES` (app.js): `{ id, at, for, camp?, needs?, text, show? }`. `id` `^[a-z0-9-]{3,40}$`, unique
+   forever (a phone's memory is keyed by it); `at` the UTC deploy time that ships it; `for` `everyone | counselors | directors |
+   owner`; `camp` `junior | senior` (absent: both); `needs` gate names (5); `text` plain, at most 56 characters (two lines at 360px,
+   measured), sentence case, curly apostrophes, no emoji, no `!`, never "update", "feature" or "version", saying what changed and
+   where to find it, never a point or a place; `show` `{ to, where }` (6). Written by the agent who ships the change; no jokes.
+2. **One at a time, the strip's last**: the note rides `#announcements` after the join bar and every banner, only while the
+   strip has room for it (it never counts in "N more messages" and never goes to `#sheet-messages`), never under a live reveal,
+   never in a counselor preview (a note is this phone's own reading list, not camp content). nowModel stays pure: it is
+   `renderAnnouncements`' own item, not in `nowMessages`.
+3. **Pacing is per phone.** A note is DUE when `at` ≤ now, it passes (4)–(5) and this phone has no record of it. One is
+   RELEASED only while Now is on screen with nothing over it, the page visible, inside waking hours (`isAwakeHours`, 7 AM–9 PM
+   camp time, all year), no live reveal, the strip has room, and 60 minutes or more since this phone's last release: the oldest
+   due note (by `at`, then list order). The CURRENT note is the newest released one, not dismissed, under 4 awake hours old
+   (`awakeElapsedMs`); the next release supersedes it and it never comes back. × or Show me ends it on this phone.
+4. **Stale and capped**: never released once `now − at` > 365 days, or this phone's camp week has ended (`campWeek().phase ===
+   'after'`) and `at` is before that week's end; when more than 10 are due at once the oldest beyond 10 are skipped for good.
+5. **Who reads it** (render time, nothing stored): only with a confirmed role (`memberRoleConfirmed`); `everyone` any role,
+   `counselors` `viewRole() === 'viewer'`, `directors` `viewRole() === 'editor'`, `owner` `isOwner()`; `camp` = `CAMP.id`;
+   every `needs` gate passes (`WHATS_NEW_NEEDS`: `games` / `verse` / `cleanup` = not in `nowHiddenSections()`, `chat` = chat.js
+   loaded and `!chatHiddenFromMe()`, `alerts` = `pushConfigured()`, `electives` = `CAMP.features.electives`, `reveal` = reveal-ui.js
+   loaded (a director's note also `revealRemoteMayOpen()`), `tell` / `award` = `toolMayOpen(id)`, `setup` = `canEdit()` and
+   setup-ui.js loaded, `schedule-alerts` = `pushScheduleAlertOffered()`).
+6. **Show me** (`WHATS_NEW_SHOW`, each `{ ok(), go() }`, drawn only while `ok()`): `games` / `chat` → `showTab`; `alerts` →
+   `openPushDrawer()`; `reveal` → `openReveal({from: 'now'})`; `tell` / `award` → `openTool(id, {from: 'now'})`; `setup` →
+   `openBuilder()`; `counselors` → `shellSheetOpen('counselors')`. A tap ends the note, then opens the place. Its spoken name is
+   "Show me " + `where`.
+7. **Memory**: `localStorage.campScoreboardWhatsNew` (device-wide, no camp suffix, never synced, not camp data, never in a
+   backup) `{ v: 1, last, n: { id: { s?, d?, k? } } }` (released, dismissed, skipped), read lazily (never at load), every access
+   in try/catch (a blocked store shows nothing and loops nothing). Sign-out KEEPS it (a wiped list would bring every note back
+   after each sign-in). Ids no longer in `CHANGES` are dropped on write.
+8. **Motion**: a release seen on screen UNFOLDS in place (`glide`, scaleY .6 → 1 from its top, no drop: a note is never as loud
+   as a banner) and the sections under the strip glide (`annGlideBelow`); × squashes it out (`playRowOut`) and the rest glide up;
+   calm: fades; the first paint and a paint under a takeover move nothing.
 
 **Auto-reload on deploy.** Open phones refresh themselves when a newer
 build ships. Each client polls the deployed `index.html` (same-origin,
