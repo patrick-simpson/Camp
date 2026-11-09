@@ -107,7 +107,7 @@ Files:
 - `games-ui.js` — THE GAMES TAB'S RENDERERS (see "The Games tab"): paints `gamesModel()` onto `#tab-games` (the day picker, the day's blocks
   with Now's own game rows, the directors' standings), runs the quick-points sheet and the standings "…" sheet, and draws the game takeover's
   podium picker, saved result and dock (Save, then Next game). A classic script right after now-ui.js (its rows are Now's), every hook in app.js
-  typeof-guarded; without it the Games tab is an empty page and a podium game is scored with the old three dropdowns, the app runs
+  typeof-guarded; without it the Games tab is an empty page and a podium game is scored with the old three dropdowns and a tally / six-team Save is a body button, the app runs
 - `jelly-motion.js` — the SPRING SYSTEM and the ONE calm-motion switch (see
   "Motion and calm motion" below). A classic script loaded between camps.js and
   app.js with no dependency on `vendor/jelly.js` (that module can't parse on
@@ -756,9 +756,7 @@ never rebuilds a segmented control under a finger.
   a counselor's live game is the four-team view's language ("Live now · 3 of 6 teams in" over Now's own board, `.lb`, in
   roster order; "Live now · Final" over the Big Board; no gold box, no "updates automatically" note); the Big Board
   rings the followed team's column (`data-mine`, the team's colour for the theme, ink without one). The sign-in's logo
-  is the big screen's camp mark; its words are `.lock-logo-name` ("Senior camp" on senior). **Still to move into the
-  dock** (Step 29 design review, a test driver change): the six-team summary's and score entry's Save, which sit in the
-  body (`bracket.test.js` and `game-view.test.js` drive them there).
+  is the big screen's camp mark; its words are `.lock-logo-name` ("Senior camp" on senior). Score entry's and the six-team summary's Save are in the takeover's dock (see "The dock and the saved result").
 
 ## The Now tab (Step 17 — `nowModel()` in app.js, painted by now-ui.js)
 
@@ -963,6 +961,8 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
   snapshot writes nothing; a rename or a different game rebuilds it (`gamesPodiumHtml(m, true)` is the shape compared). A pick's check pops on `snap` (none while
   calm). A counselor, a preview and a view-only tab get no picker, no Save and `podiumPick` / `podiumSave` refuse them. A refused tap says why in a toast.
 - **The dock and the saved result** (`gamesDock`, `renderGameDock`, `gamesResultModel`, `renderSavedResult`; mockup 14b): while a podium is picked the dock is ONE
+  **Score entry and the six-team Results step save from the dock too** (`gamesDock` tones `tally` and `six`; writers `tallySave(gid)` / `sixSaveResult(g)`, taps `gamesTallySaveTap` / `gamesSixSaveTap`, routed by `data-tone="tally"` / `data-kind="six|four"`): a tally's dock is the dashed well ("Type the scores first", "Pick silver and bronze", "Pick bronze, then save", "Each medal needs a different team"; a tap goes to the score box or the medal pick, `gamesTallyGoto`) and then, with a small "4 of 6 teams have a score" line while a team has none, the gold Save. `tallyPicks(g)` is the ONE read of the medals (the draft's pick, else the team the scores put there) for the selects and the dock. The medal picks are native `select.fld-input.medal-pick` (not the podium picker's keys: the scores already order the teams). The score boxes save without a render, so `updateTallyMedals` asks `renderGameDock` itself. Without games-ui.js the old body Save buttons come back (same writers). The six-team summary is written through `setLiveHtmlIfChanged`, so an idle snapshot leaves its shields alone.
+  The older bracket views (kicking team, ladder tracker, free-pick and bye chips) draw `bracketMarkHtml`; the kicking team's mark is rewritten only when the team changes.
   button — the dashed well naming what is missing ("Pick bronze, then save", "Pick silver and bronze", "Pick gold, silver and bronze"; a tap on it scrolls to
   that row and focuses its first free key), then the gold **Save result** (it lands on `snap`). After a save the takeover is the result — the line, the winners
   as a hairline list (the medal named in words for a screen reader, "+7" a director's word, `data-mine` for the followed team, a tally's scores under it) and
@@ -5528,7 +5528,7 @@ count). All of this is in app.js ("The six-team bracket's rules", "What both bra
 - **Marks in a match** (`bracketMarkHtml`, app.js): the call-up, the live board's team column and the own-team note show the team's flag / tile from
   `teamMarkHtml`; a SHIELD team (junior) keeps its emoji there, because the six-team wizard rebuilds those views on every render and an `<img>` re-created
   twice a minute blinks. The board's score numerals are the team colour taken toward ink (72 % light, 55 % dark): a camp's older single colour has no
-  measured half per theme. The live steppers are clamped to 44–56 px and wrap, the winner and copy jelly-buttons grow with their label (`::part(button)`). `upcomingMatchups` / `findNextMatchupFor` / `gameRoundTeams` read `fourLive`; `gameRowStatus` calls a
+  measured half per theme. The live steppers are clamped to 44–56 px and wrap, the winner keys are plain `button.btn.winner-btn` (the team's mark beside "… won", every `data-winner` hook kept; the ladder's "reached 21" key is filled ink) and the copy line a quiet `.copy-matchup-btn` whose label span alone says "Copied". `upcomingMatchups` / `findNextMatchupFor` / `gameRoundTeams` read `fourLive`; `gameRowStatus` calls a
   bracket live only when `fourRead` can read it. The preview walk (`tests/preview.test.js`) covers every step: the "3rd place" label is the bronze MATCH, never
   a standings place, so the leak patterns read the text with it set aside.
 - **Tests**: `bracket.test.js` (the six-team wizard, pinned first; the new Undo / stale-tap cases are at its end), `bracket.senior.test.js` (engine, readers,
