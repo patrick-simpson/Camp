@@ -1,86 +1,87 @@
 # R2 rules publish runbook (big-screen branding, owner's decisions item 7)
 
-Who: the owner, from Google Cloud Shell (gcloud already signed in). What: replace the live rules (R1) with the file
-in the repo, `database.rules.json`, which adds ONE thing: three optional fields (`em`, `pl`, `ph`) in a SHOWN
-place's entry under `revealPublic`. Nothing else changes. Nothing anonymous becomes writable.
+Who: the owner, in Google Cloud Shell (gcloud already signed in). What: replace the live database rules with the
+file in the repo, `database.rules.json`. It adds ONE thing to what is live now (R1): three optional fields
+(`em`, `pl`, `ph`) in a place the directors have already SHOWN, under `revealPublic`. Nothing else changes and
+nothing anonymous becomes writable.
 
-Until the switch (`REVEAL_BRANDING_LIVE` in reveal.js) is flipped by a later deploy, no phone writes any of the new
-fields, so publishing early or late changes nothing anyone sees. A phone with the switch on that meets the old rules
-sends its place plain after one refusal (proved in `tests/emulator/reveal-client.mjs`), so the order does not matter.
+The file to publish: **sha256 prefix `e0d3edd5`, 163,109 bytes** (limit 262,144). The R1 file that is live now
+has prefix `ccf2e5d3` (kept in the repo as `tests/emulator/r1.rules.json`). Paste the blocks below one at a
+time. No block contains a token: `gcloud` supplies it.
 
-The file's hash prefix is in the commit message that carries it. Recompute it any time:
-`sha256sum database.rules.json | cut -c1-8`. The R1 file that is live now has the prefix `ccf2e5d3`
-(kept as `tests/emulator/r1.rules.json`).
+Nothing changes for anyone until the later deploy that flips `REVEAL_BRANDING_LIVE`, so publishing early or late
+is safe. A phone with the switch on that meets the old rules sends its place plain after one refusal.
 
-## 1. Back up the live rules, and look at what is live
+## Block 1: BACKUP and download
 
 ```sh
-cd ~
-curl -s -o rules-before-r2.json "https://camp-89cea-default-rtdb.firebaseio.com/.settings/rules.json?access_token=$(gcloud auth print-access-token)"
-sha256sum rules-before-r2.json | cut -c1-8      # not the file's hash: the console re-formats; compare in step 3
-wc -c rules-before-r2.json
+DB=https://camp-89cea-default-rtdb.firebaseio.com
+TOKEN=$(gcloud auth print-access-token)
+curl -s -H "Authorization: Bearer $TOKEN" "$DB/.settings/rules.json" > rules-backup-$(date +%F-%H%M).json
+ls -l rules-backup-*.json
+curl -s -o rules.json "https://camp.patricksimpson.info/database.rules.json?cb=$(date +%s)"
+sha256sum rules.json | cut -c1-8
+wc -c rules.json
 ```
 
-Keep `rules-before-r2.json`: it is the rollback.
+Expect: the backup file is about 130,000 to 165,000 bytes (never 0, and its first characters are `{"rules"` or
+`{`, not the word `error`); then `e0d3edd5` and `163109 rules.json`. If the prefix differs, STOP: the site has
+not finished updating. Wait ten minutes and paste block 1 again. Keep the backup file: it is the rollback.
 
-## 2. Fetch the new file and check it, then publish
+## Block 2: PUBLISH (only if the prefix was `e0d3edd5`)
 
 ```sh
-curl -s -o rules-r2.json https://camp.patricksimpson.info/database.rules.json
-sha256sum rules-r2.json | cut -c1-8             # must equal the prefix in the commit message
-wc -c rules-r2.json                             # about 163,000 bytes (the limit is 262,144)
-curl -X PUT -H "Authorization: Bearer $(gcloud auth print-access-token)" --data-binary @rules-r2.json \
-  "https://camp-89cea-default-rtdb.firebaseio.com/.settings/rules.json"
+EXPECT=e0d3edd5
+[ "$(sha256sum rules.json | cut -c1-8)" = "$EXPECT" ] && \
+  curl -s -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @rules.json "$DB/.settings/rules.json"
 ```
 
-A refusal for size leaves the old rules live (nothing breaks): stop and say so.
+Expect: the rules text printed back (a long JSON block starting `{"rules"`), no word `error`. If it says
+"too large" or any error, the old rules stay live and nothing breaks: stop and tell the agent. If nothing is
+printed at all, the prefix did not match: go back to block 1.
 
-## 3. Read back and compare
+## Block 3: READ BACK
 
 ```sh
-curl -s "https://camp-89cea-default-rtdb.firebaseio.com/.settings/rules.json?access_token=$(gcloud auth print-access-token)" > rules-live.json
-python3 - <<'PY'
-import json
-a=json.load(open('rules-r2.json')); b=json.load(open('rules-live.json'))
-print('RULES MATCH' if a==b else 'DIFFERENT - do not trust it; roll back (step 5)')
-PY
+curl -s -H "Authorization: Bearer $TOKEN" "$DB/.settings/rules.json" > rules-live.json
+python3 -c "import json;print('RULES MATCH' if json.load(open('rules.json'))==json.load(open('rules-live.json')) else 'RULES DIFFER')"
 ```
 
-## 4. The probes (no sign-in needed; every line is expected)
+Expect `RULES MATCH`. On `RULES DIFFER`, do the ROLLBACK below.
+
+## Block 4: PROBES (no sign-in)
 
 ```sh
-for R in campScoreboard seniorScoreboard; do
-  echo "$R revealPublic (expect null):"; curl -s "https://camp-89cea-default-rtdb.firebaseio.com/$R/revealPublic.json"; echo
-  for p in revealFull state config members chat setup campers; do
-    printf "%s/%s (expect Permission denied): " $R $p; curl -s "https://camp-89cea-default-rtdb.firebaseio.com/$R/$p.json"; echo
+for r in campScoreboard seniorScoreboard; do
+  printf '%s revealPublic (null or data): ' $r; curl -s "$DB/$r/revealPublic.json"; echo
+  for p in state config members setup campers revealFull chat; do
+    printf '%s/%s (Permission denied): ' $r $p; curl -s "$DB/$r/$p.json"; echo
   done
-  printf "%s anonymous write (expect Permission denied): " $R
-  curl -s -X PUT -d '"x"' "https://camp-89cea-default-rtdb.firebaseio.com/$R/revealPublic/real/pub/g0/e/t0/em.json"; echo
+  printf '%s anonymous PUT to revealPublic (Permission denied): ' $r
+  curl -s -X PUT -d '{"ctl":{"v":1}}' "$DB/$r/revealPublic/real.json"; echo
+  printf '%s anonymous PUT of a branding field (Permission denied): ' $r
+  curl -s -X PUT -d '"x"' "$DB/$r/revealPublic/real/pub/g0/e/t0/em.json"; echo
 done
 ```
 
-Expected: `null` for both `revealPublic` reads, `Permission denied` for everything else including the write.
+Expect, for each of the two camps: the `revealPublic` read says `null` (no reveal is running) or shows reveal
+data; every other line says `{"error" : "Permission denied"}`, including both writes. Anything else
+(for example data from `state` or `members`): do the ROLLBACK at once and tell the agent.
 
-## 5. Roll back (only if something is wrong)
+## ROLLBACK (only if something is wrong)
 
 ```sh
-curl -X PUT -H "Authorization: Bearer $(gcloud auth print-access-token)" --data-binary @rules-before-r2.json \
-  "https://camp-89cea-default-rtdb.firebaseio.com/.settings/rules.json"
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @"$(ls -t rules-backup-*.json | head -1)" "$DB/.settings/rules.json"
 ```
 
-R2 is additive, so a rollback loses nothing; the client then sends places plain.
+R2 only adds optional fields, so going back loses nothing; the app then sends places plain.
 
-## 6. Tell the agent
+## Then
 
-Say "R2 is published and read back". The next deploy flips `REVEAL_BRANDING_LIVE = true` and adds the What's new
-note, which must say exactly what reaches the big screen: a team's photo; a picked colour (a line under the team's name,
-and the flag or tile filled or edged with it); a picked emoji (the confetti, or a cleared team's tile); a cleared team's
-number. Then run a Practice on the real big screen and check each of those appears as each place is shown, and nothing
-before it.
+Tell the agent "R2 is published and read back" and paste the block 3 and block 4 results.
 
 ## The kill switch (unchanged)
 
-If the connections or download graph ever shows polling, change `revealPublic/.read` from `true` to the member
-expression (`setup/.read` spells it out) and publish the same way. The big screen then shows Waiting; phones and
-remotes carry on. A script reading the public node once a second all night with six photos would use about 5 GB of
-Spark's 10 GB a month; that is the case to watch for.
+If the usage graph ever shows polling of `revealPublic`, change `revealPublic/.read` from `true` to the member
+expression (`setup/.read` spells it out) in both camps and publish the same way (CLAUDE.md, R1 notes, block 5 of
+the old runbook). The big screen then shows Waiting; phones and remotes carry on.

@@ -508,3 +508,4 @@ checklist hub, teams (palette color + emoji + optional photo), counselors
 (editor-only rules!), games attached to schedule blocks + 4-team bracket,
 presence tags, Undo + restore points, mid-week schedule change ⇒ push alert,
 TV page both camps, full-week calendar export.
+- R2 owner runbook (backup, publish, read-back, probes, rollback): docs/build-notes/rules-r2-runbook.md, file prefix e0d3edd5.
