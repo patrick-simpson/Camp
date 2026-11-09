@@ -15,8 +15,8 @@
 //   Needs: `playwright` resolvable from here (npm i -D playwright, or a global one with
 //   NODE_PATH=$(npm root -g)), and `curl` once to fetch the SDK files (or SDK_DIR pointing at them).
 //   E2E_SHOTS=<dir> writes a screenshot of every context when a check fails.
-//   BRAND=1         R2 (big-screen branding): the served reveal.js has its REVEAL_BRANDING_LIVE switch turned ON (for this
-//                   run only; the shipped file keeps it off until the owner has published R2 and verified it), three teams
+//   BRAND=1         R2 (big-screen branding): the shipped reveal.js already has REVEAL_BRANDING_LIVE ON, so this adds
+//                   the looks: three teams
 //                   carry a look (a colour + emoji, a cleared number tile, a photo) and extra checks follow each shown
 //                   place onto the big screen and into the public node.
 //   OLD_RULES=1     with BRAND=1: load the rules that were live before R2 (tests/emulator/r1.rules.json) instead of
@@ -167,7 +167,7 @@ function serve() {
     if (!file.startsWith(ROOT) || /\/(\.git|node_modules|tests)\//.test(rel)) { res.writeHead(404); res.end(); return; }
     if (rel === '/firebase-config.js') { res.writeHead(200, { 'Content-Type': MIME['.js'] }); res.end(emulatorConfig()); return; }
     fs.readFile(file, (err, data) => {
-      if (!err && BRAND && rel === '/reveal.js') data = Buffer.from(data.toString('utf8').replace('let REVEAL_BRANDING_LIVE = false;', 'let REVEAL_BRANDING_LIVE = true;')); // test only
+      if (!err && BRAND && rel === '/reveal.js') data = Buffer.from(data.toString('utf8').replace('let REVEAL_BRANDING_LIVE = false;', 'let REVEAL_BRANDING_LIVE = true;')); // test only: a no-op now the shipped switch is on, kept so an older checkout still runs
       if (err) { res.writeHead(404); res.end('not found'); return; }
       let body = data;
       if (rel.endsWith('.html')) {

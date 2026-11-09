@@ -310,7 +310,7 @@ for (const R of ROOTS) {
 }
 
 // ── R2: a team's own look in a shown place (owner's decisions item 7) ─────────────────────────────────────
-// The switch REVEAL_BRANDING_LIVE ships off. These cases flip it in the page and prove the three pairings:
+// The switch REVEAL_BRANDING_LIVE ships ON (owner's decisions item 10; the cases still set it explicitly, and the OFF case turns it off). They prove the three pairings:
 // ON under R2 (the look only in shown places), OFF under R2 (writes identical to before), ON under the rules live
 // before R2 (a refused branded place is retried plain; the whole reveal, the crowning and End still run).
 const THUMB = 'data:image/jpeg;base64,' + 'A'.repeat(1500);
@@ -334,6 +334,7 @@ for (const R of ROOTS) {
     const d = await phone(R, ED, 'editor');
     d.standings(pts); giveLooks(d, teams);
     await d.boot();
+    if (d.run('REVEAL_BRANDING_LIVE') !== true) throw new Error('the shipped switch is not ON');
     d.run('REVEAL_BRANDING_LIVE = true');
     d.skew(0);
     let r = await d.run('revealStart({ quiet: true })');
@@ -362,6 +363,7 @@ for (const R of ROOTS) {
     const d = await phone(R, ED, 'editor');
     d.standings(pts); giveLooks(d, teams);
     await d.boot();
+    d.run('REVEAL_BRANDING_LIVE = false');
     d.skew(0);
     let r = await d.run('revealStart({ quiet: true })');
     if (!r.ok) throw new Error('Start: ' + JSON.stringify(r));
