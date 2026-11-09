@@ -2,7 +2,7 @@
 // senior's four teams, whose marks are flags, on the sibling database root.
 eval(readFixture('reveal-remote.test.js'));
 
-test('senior: the ladder has four places, the first button says 4th place, and the mini TV draws flags', async () => {
+test('senior: the ladder has four places, the first button says 4th place, and the mini TV draws no mark before a place is shown', async () => {
   assert.equal(CAMP.id, 'senior');
   await bootDirector();
   await openRemote();
@@ -10,7 +10,7 @@ test('senior: the ladder has four places, the first button says 4th place, and t
   renderRevealRemote();
   assert.equal(text('reveal-go-m'), '4th place', 'the button starts at the last of four');
   assert.equal((el('reveal-ladder').innerHTML.match(/data-state="(hidden|next)"/g) || []).length, 4);
-  assert.ok(/<svg class="tm flag"/.test(el('mtv-wait-marks').innerHTML) && !/<img/.test(el('mtv-wait-marks').innerHTML), 'flags, not shields');
+  assert.ok(!/mtv-(wait|intro)-marks/.test(readFixture('../reveal-ui.js')), 'no mark slot is painted in the waiting or intro frame (words only)');
   closeReveal();
   afterDirector();
 });

@@ -197,7 +197,7 @@ function normalizeRevealPub(raw) {
 // ── A team's mark on a public screen (R2) ────────────────────────────
 // What the big screen and the remote's mini TV draw for one team in a SHOWN place: the phones' own order
 // (teamMarkSpec) over the laundered entry (`brand` = { k, em, pl, ph } as normalizeRevealPub returns them, or
-// null for the camp's printed look, which is what Waiting and the intro always show). Pure: `camp` is the
+// null for an older sender's shown place with no look; Waiting and the intro draw no mark). Pure: `camp` is the
 // profile (teamCrest, teamFlag, teamEmoji, teamAccent), nothing is read from the page.
 //   1. a photo; 2. not cleared and the camp ships a shield; 3. not cleared and the camp has a flag (a picked
 //   colour fills it); 4. a tile: its content the team's own emoji (a keycap is drawn as its digit in type),

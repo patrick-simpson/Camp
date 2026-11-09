@@ -70,20 +70,13 @@
   // Names and points come from the node. A mark is drawn by reveal-core's revealMarkSpec in the phones' own
   // order: the photo a director picked (a small copy that rides in the shown place's entry), else the camp's
   // shipped shield (junior) or flag (senior), else a tile; a team the new-year setup cleared never falls back
-  // to the printed look. `brand` is a SHOWN place's laundered entry (k, em, pl, ph); Waiting and the intro pass
-  // none, so before any place is shown the screen holds only the camp's printed marks. A database string never
+  // to the printed look. `brand` is a SHOWN place's laundered entry (k, em, pl, ph); Waiting and the intro draw no
+  // mark at all (owner's decisions item 11), so no team's look is public before its place is shown. A database string never
   // becomes markup or a style: the colour only SELECTS a palette value, the photo is a laundered data address
   // set as a property, the emoji and the numeral go in as text.
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var PARTY = ['🎉', '🎊', '✨', '⭐'];
 
-  function campTeamIds() {
-    var out = [];
-    for (var i = 0; i < CAMP.teamCount; i++) out.push('t' + i);
-    return out;
-  }
-  // A team slot's own mascot (camps.js), laundered like every string that becomes markup.
-  function teamEmojiOf(id) { return safeEmoji(CAMP.teamEmoji && CAMP.teamEmoji[id], '🏕️'); }
   // A colour a director picked for a SHOWN place, as the palette's light value, or ''. The entry's `k` only SELECTS
   // a swatch (an own-property lookup, so '__proto__' or a style payload selects nothing); the value is the constant's.
   // A junior shield and a photo do not wear the colour, so it is drawn beside the mark: a rule under the name in the
@@ -114,8 +107,7 @@
     return out.length ? out : PARTY;
   }
 
-  // A team's mark as a DOM node, in the slot's own class (hero-shield, intro-crest, wait-crest, row-crest,
-  // champ-crest), which carries its size and motion. Never an <img> with no usable source, never an address
+  // A team's mark as a DOM node, in the slot's own class (hero-shield, row-crest, champ-crest), which carries its size and motion. Never an <img> with no usable source, never an address
   // concatenated into markup.
   function teamMark(id, cls, brand) {
     var spec = revealMarkSpec(CAMP, id, brand);
@@ -496,21 +488,13 @@
       }).join('');
       return '<span class="word">' + letters + '</span>';
     }).join(' ');
-    // One mark per REAL team (a camp may have four or six), in the camp's fixed order — never
-    // standings order, which the room does not know yet.
-    var sh = $('intro-shields');
-    sh.innerHTML = '';
-    campTeamIds().forEach(function (id, n) {
-      var node = teamMark(id, 'intro-crest');
-      node.style.animationDelay = (0.5 + n * 0.12).toFixed(2) + 's, ' + (1.2 + n * 0.2).toFixed(2) + 's';
-      sh.appendChild(node);
-    });
   }
 
-  // Intro: an opening emoji burst, then a fresh blast every 10 s for as long as the intro is up.
+  // Intro: an opening party burst, then a fresh blast every 10 s for as long as the intro is up.
   function startIntroBlast() {
     stopIntroBlast();
-    var mix = campTeamIds().map(teamEmojiOf);
+    // The party set, never a team's mascot (owner's decisions item 11): no team's look before its place is shown.
+    var mix = PARTY;
     introBlastTimer = setTimeout(function () { introBlastTimer = null; cannon(mix, 6, 11 * dpr); }, 700);
     introBlastIv = setInterval(function () { cannon(mix, 6, 11 * dpr); }, 10000);
   }
@@ -833,8 +817,6 @@
   // The tab and the page say which camp this is (two camps, one page).
   document.title = 'Current standings — ' + campWord(); // camps.js: the one way the camp's name is written
   setText($('wait-camp'), campWord() + ' · Standings');
-  var waitShields = $('wait-shields');
-  campTeamIds().forEach(function (id) { waitShields.appendChild(teamMark(id, 'wait-crest')); });
   startFeed();
   render('start');
 })();

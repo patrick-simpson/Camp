@@ -356,9 +356,14 @@ test('every element the script looks up exists in the page, and no keyboard or c
   assert.ok(Object.keys(tv.listeners).every((k) => k === 'visibilitychange'), 'the only document event is the page coming and going: ' + Object.keys(tv.listeners));
 });
 
+// Every team mark the page has made: a shield <img>, a flag <svg>, or an emoji tile.
+function drawnMarks(tv) {
+  return tv.log.created.filter((c) => c.tagName === 'IMG' || /\btv-flag\b|\bcrest-tile\b/.test(c.className || '') || c.tagName === 'svg');
+}
+
 // ── Waiting ──────────────────────────────────────────────────────────
 
-test('with no reveal it says Waiting for the directors…, shows the camp\'s marks in their fixed order, and says when it is ready', () => {
+test('with no reveal it says Waiting for the directors…, draws no team mark, and says when it is ready', () => {
   assert.ok(/Waiting for the directors…/.test(TV_HTML), 'the headline is in the markup, so a page whose script fails still says it');
   assert.notOk(markupHidden('waiting'), 'and it is not hidden at load');
   for (const camp of ['junior', 'senior']) {
@@ -373,30 +378,21 @@ test('with no reveal it says Waiting for the directors…, shows the camp\'s mar
     assert.deepEqual(tv.status(), { tone: 'ok', text: 'Connected · this screen is ready' });
     assert.ok(tv.waiting());
     assert.equal(tv.byId('wait-feed').hidden, true, 'no feed problem to report');
-    const marks = tv.byId('wait-shields').children;
-    assert.equal(marks.length, camp === 'senior' ? 4 : 6, 'one mark per team');
-    if (camp === 'senior') {
-      assert.deepEqual(marks.map((m) => m.attrs['data-flag']), ['red', 'blue', 'green', 'gold'], 'senior: flags, in team order');
-      assert.deepEqual(marks.map((m) => m.children[0].attrs.href), ['#flag-plain', '#flag-swallow', '#flag-stripe', '#flag-chevron'], 'a different shape per slot, so colour is not the only difference');
-      marks.forEach((m) => assert.ok(/\btv-flag\b/.test(m.className) && /\bwait-crest\b/.test(m.className)));
-    } else {
-      marks.forEach((m, i) => {
-        assert.equal(m.tagName, 'IMG', 'junior: shields');
-        assert.ok(/^images\/team-shields\/[a-z0-9-]+\.(webp|png)(\?v=\d+)?$/.test(m.src), 'a shipped file: ' + m.src);
-        assert.equal(m.src, CAMPS.junior.teamCrest['t' + i], 'in slot order, not standings order');
-      });
-    }
+    assert.equal(drawnMarks(tv).length, 0, 'Waiting draws no team mark: words only (owner\'s decisions item 11)');
   }
 });
 
 test('a camp\'s marks come from files that ship with the page: a crest address that is not one of them becomes an emoji tile', () => {
   const tv = loadTv({ beforePage: "CAMP.teamCrest = Object.assign({}, CAMP.teamCrest, { t1: 'https://evil.example/x.png', t2: 'data:image/png;base64,AAA\" onerror=\"alert(1)' }); CAMP.teamEmoji = Object.assign({}, CAMP.teamEmoji, { t3: '<img src=x onerror=alert(1)>' });" });
-  const marks = tv.byId('wait-shields').children;
-  assert.equal(marks[1].tagName, 'DIV');
-  assert.ok(/crest-tile/.test(marks[1].className) && marks[1].textContent.length > 0, 'an external address: a tile, never an <img>');
-  assert.equal(marks[2].tagName, 'DIV', 'a quote-breakout data URL: a tile');
-  assert.ok(!/[<>]/.test(marks[3].textContent), 'a markup emoji falls back to the mascot');
-  tv.log.created.forEach((c) => { if (c.tagName === 'IMG') assert.ok(/^images\/team-shields\//.test(c.src), 'every <img> the page made points at a shipped shield'); });
+  tv.online(0);
+  assert.equal(drawnMarks(tv).length, 0, 'nothing is drawn before a place is shown');
+  const G = [1, 2, 3, 4].map((n) => grp(n, ent('t' + n, 'Team ' + n, 10 * n)));
+  tv.feed({ real: nodeOf(tv, G, { phase: 'live', cur: 3, shown: 4, teams: 4, seq: 5, at: tv.serverNow() - 60000, sa: tv.serverNow() - 60000 }) });
+  const board = boardMarks(tv);
+  assert.ok(board.length >= 3, 'the shown places draw marks');
+  board.forEach((m) => { if (m.tagName === 'IMG') assert.ok(/^images\/team-shields\//.test(m.src), 'a shield is a shipped file: ' + m.src); });
+  assert.ok(!tv.log.created.some((c) => c.tagName === 'IMG' && /evil\.example|onerror/.test(c.src || '')), 'an external or breakout address never becomes an <img>');
+  assert.ok(!tv.log.created.some((c) => /[<>]/.test(c.textContent || '')), 'a markup emoji never becomes text of a tile');
 });
 
 test('nothing is painted from the node until the server\'s clock has answered, and the screen then uses the SERVER\'s time, not its own', () => {
@@ -503,16 +499,12 @@ test('hostile branding is inert: a bad colour, markup emoji, an external or brea
   });
 });
 
-test('a node with no branding (an older sender) draws exactly the printed look; Waiting and the intro always do', () => {
+test('a node with no branding (an older sender) draws exactly the printed look on a shown place; Waiting and the intro draw no mark at all', () => {
   const tv = loadTv({});
   tv.online(0);
   const G = brandedSix();
   tv.feed({ real: nodeOf(tv, G, { phase: 'intro', cur: -1, shown: 0, seq: 1 }) });
-  tv.byId('intro-shields').children.forEach((m) => {
-    assert.equal(m.tagName, 'IMG', 'the intro holds the camp\'s shields');
-    assert.ok(/^images\/team-shields\//.test(m.src));
-  });
-  tv.byId('wait-shields').children.forEach((m) => assert.equal(m.tagName, 'IMG'));
+  assert.equal(drawnMarks(tv).length, 0, 'Waiting and the intro draw no mark, even with branding in the node');
   const plainNode = six();
   const tv2 = loadTv({});
   tv2.online(0);
@@ -538,16 +530,32 @@ test('confetti: a team\'s own emoji flies, a cleared team gives the party set, a
   assert.deepEqual(printed.fills, [printed.mascot]);
 });
 
+test('the intro\'s confetti is the neutral party set in both camps: no team mascot, no flag colour (owner\'s decisions item 11)', () => {
+  for (const camp of ['junior', 'senior']) {
+    const tv = loadTv({ search: '?camp=' + camp });
+    tv.online(0);
+    const n = camp === 'senior' ? 4 : 6;
+    const G = six().slice(0, n);
+    tv.feed({ real: nodeOf(tv, G, { phase: 'intro', cur: -1, shown: 0, teams: n, seq: 1 }) });
+    tv.advance(3000);
+    for (let i = 0; i < 6; i++) { const f = tv.log.raf.shift(); if (f) f(); }
+    const fills = [...new Set(tv.log.fills)];
+    assert.ok(fills.length > 0, camp + ': the intro opens with a burst');
+    assert.ok(fills.every((x) => ['🎉', '🎊', '✨', '⭐'].includes(x)), camp + ': party set only, got ' + fills);
+    for (let t = 0; t < n; t++) assert.ok(!fills.includes(tv.run('CAMP.teamEmoji.t' + t)), camp + ': no mascot for t' + t);
+  }
+});
+
 // ── The frames ───────────────────────────────────────────────────────
 
 test('a full reveal: intro, each place through its beats, the board, the final table', () => {
   const tv = loadTv({});
   tv.online(0);
   const G = six();
-  // Start: the intro, with the camp's marks (never a standing)
+  // Start: the intro, words only (never a standing, never a mark)
   tv.feed({ real: nodeOf(tv, G, { phase: 'intro', cur: -1, shown: 0, seq: 1 }) });
   assert.ok(tv.stage() && !tv.practiceTag(), 'a real reveal is not tagged');
-  assert.equal(tv.byId('intro-shields').children.length, 6);
+  assert.equal(drawnMarks(tv).length, 0, 'the intro draws no mark');
   assert.equal(tv.byId('intro').style.display, '', 'the intro is up');
   assert.ok(/Get ready…/.test(TV_HTML) && !/Starting with/.test(TV_HTML.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '')), 'the intro names no place: a tie at the bottom would make it wrong');
   assert.equal(tv.hero(), null, 'no place yet');
@@ -685,7 +693,7 @@ test('senior: four teams, flags for marks, the same frames', () => {
     grp(2, ent('t1', NAMES4[1], 20, { g: 1, s: 1, b: 1 })), grp(1, ent('t0', NAMES4[0], 33, { g: 3, s: 0, b: 0 })),
   ];
   tv.feed({ real: nodeOf(tv, G4, { phase: 'intro', cur: -1, shown: 0, teams: 4 }) });
-  assert.equal(tv.byId('intro-shields').children.length, 4, 'four marks in the intro');
+  assert.equal(drawnMarks(tv).length, 0, 'no marks in the intro');
   tv.feed({ real: nodeOf(tv, G4, { cur: 0, shown: 1, teams: 4, seq: 2 }) });
   const mark = tv.hero().entries[0].mark;
   assert.equal(mark.attrs['data-flag'], 'gold', 't3 is the gold flag');

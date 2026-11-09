@@ -504,8 +504,8 @@ function renderRevealGamesLink() {
 // The mini TV: tvFrame() — the same pure function the big-screen page runs — drawn into the static slots. Always the
 // TV's own light colours (CSS), in container units, so the 352px stage and the 150px thumbnail are one picture.
 // One team's mark exactly as the big screen draws it (reveal-core revealMarkSpec, the same pure rule current-standings.js
-// runs): `brand` is a SHOWN place's laundered entry, or null for the camp's printed look, which Waiting and the intro always
-// show. Never the phone's own look: this is a picture of the big screen. Every value is a laundered one (a palette hex, a
+// runs): `brand` is a SHOWN place's laundered entry, or null for an older sender's place with no look (never Waiting or the intro: they draw no mark).
+// Never the phone's own look: this is a picture of the big screen. Every value is a laundered one (a palette hex, a
 // data address that passed the crest check, an emoji that passed safeEmoji), and each is escaped on the way in anyway.
 function revealUiTvMarkHtml(id, brand, size) {
   const spec = revealMarkSpec(CAMP, id, brand);
@@ -543,9 +543,9 @@ function revealUiRule(el, entries) {
   if (hex) el.style.setProperty('--team-rule', hex); else el.style.removeProperty('--team-rule');
 }
 
-// ids → the printed look (Waiting, the intro); entries → each shown place's own look (the hero, the champions).
+// Each shown place's own look (the hero, the champions). Waiting and the intro draw no mark.
 function revealUiMarksHtml(items, size) {
-  return items.map((it) => (typeof it === 'string' ? revealUiTvMarkHtml(it, null, size) : revealUiTvMarkHtml(it.id, it, size))).join('');
+  return items.map((it) => revealUiTvMarkHtml(it.id, it, size)).join('');
 }
 
 // The board as the big screen draws it (current-standings.js paintBoard): one sheet, best place first, a faint "Still to
@@ -588,9 +588,6 @@ function revealUiPaintTv(m) {
   const frame = tvFrame(node && node.ctl, node && node.pub, serverNow, { denied: m.mode === 'real' ? revealDenied : revealPracticeDenied });
   revealUiData(tv, 'frame', frame.mode);
   revealUiData(tv, 'beat', frame.mode === 'hero' ? frame.beat : null);
-  const ids = teamIds();
-  setHtmlIfChanged(revealUiEl('mtv-wait-marks'), revealUiMarksHtml(ids, 40));
-  setHtmlIfChanged(revealUiEl('mtv-intro-marks'), revealUiMarksHtml(ids, 36));
   if (frame.mode === 'hero') {
     const g = frame.groups.find((x) => x.idx === frame.heroIdx);
     if (g) {

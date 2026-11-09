@@ -369,14 +369,19 @@ test('the mini TV is tvFrame: waiting, intro, a place\'s hero (the name alone, t
   afterDirector();
 });
 
-test('the mini TV is a picture of the big screen: a shown place draws its own look (photo, colour, number tile), Waiting and the intro the printed look, hostile values inert', async () => {
+test('the mini TV is a picture of the big screen: a shown place draws its own look (photo, colour, number tile), Waiting and the intro no mark, hostile values inert', async () => {
   await bootDirector();
   await openRemote();
   const PHOTO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
   const brand = (g, o) => { g.entries[0] = Object.assign({}, g.entries[0], o); };
   // Waiting and the intro: the camp's printed marks, whatever any team has picked
   await setNode({ phase: 'intro', cur: -1, shown: 0, at: T0 - 1000 }, 0); renderRevealRemote();
-  assert.ok(!/tm-photo|data-num/.test(el('mtv-intro-marks').innerHTML + el('mtv-wait-marks').innerHTML), 'no team look before a place is shown');
+  // The stub page has no layout, so pin the real markup and the painter: the waiting and intro frames hold no mark slot,
+  // and revealUiPaintTv never fills one (owner's decisions item 11).
+  const html = readFixture('../index.html');
+  const frames = html.replace(/<!--[\s\S]*?-->/g, '').match(/<div class="mtv-f mtv-wait"[\s\S]*?<div class="mtv-f mtv-hero"/)[0];
+  assert.ok(!/mtv-marks|class="tm\b|<img|<svg/.test(frames), 'the mini TV\'s waiting and intro frames are words only');
+  assert.ok(!/mtv-(wait|intro)-marks/.test(readFixture('../reveal-ui.js')), 'nothing paints a mark into those frames');
   // a shown place: the node carries the look in its entry
   const ctl = mkCtl({ cur: 0, shown: 1, at: T0 - 1000, sa: T0 - 1000 });
   const top = groupsOf(N)[0];
