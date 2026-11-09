@@ -3380,6 +3380,20 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
   color: #373d72;
   font-size: calc(var(--mk) * .5);
 }
+/* R2 (big-screen branding): the mini TV draws what the big screen draws for a shown place (reveal-core revealMarkSpec,
+   through reveal-ui revealUiTvMarkHtml). A photo a director picked is the TV's .tv-photo: the shield's 480:667 shape,
+   a rounded card with a hairline. Only the mini TV's own marks carry tm-photo; a phone's teamMarkHtml never does. */
+.mtv .tm-photo {
+  aspect-ratio: 480 / 667;
+  object-fit: cover;
+  border-radius: 8% / 5.76%;
+  box-shadow: 0 0 0 max(1px, calc(var(--u) * .6)) rgba(20, 26, 72, .26);
+}
+/* A tie that mixes a photo with a square tile or flag: the marks centre on one line, as the big screen's do. */
+.mtv-hero-marks,
+.mtv-champ-marks {
+  align-items: center;
+}
 .mtv-marks {
   --mk: calc(var(--u) * 40);
 }

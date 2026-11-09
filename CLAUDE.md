@@ -5712,6 +5712,9 @@ directors…" (mockup 11).
   off both sides: the six-way tie is what a Practice shows before any score exists).
   Measured at 1024×768, 1280×720, 1366×768 and 1920×1080 with 3, 4 and 6 teams on one
   place and the longest real names, both camps; a two-way tie keeps its own sizes.
+  A shared title (2 to 6 champions) sizes its marks by their count on one row and steps
+  the names down (`.champ-shields:has(> :nth-child(n))`): two junior champions used to
+  run off the top and the bottom of every screen.
 - **The words are the phones' words**: "2 gold · 1 silver · 1 bronze" then
   "verse 4 · cleanup 3 · quick 2" (the second line only when one is non-zero; a
   negative reads with a minus sign), in the hero (`.hero-break .words`) and on the
@@ -5728,7 +5731,12 @@ directors…" (mockup 11).
   appearance goes through it — waiting, intro, the hero, the board's rows (a node put
   into each row's empty `.em` after the markup: `paintBoard`) and the champions — and a
   mascot emoji is never drawn beside a name (§8.6); the mascots fly only as confetti.
-  No P2 team photo, colour or emoji a director typed ever reaches this public page.
+  No P2 team photo, colour or emoji a director typed reaches this public page yet: R2
+  (Part 2 of the team look + branding run) will carry them in each shown place, and the
+  page's CSS already styles the marks it will draw (`img.tv-photo`, the phones' tile
+  `.crest-tile` with `[data-num] > span` and `[data-edge]`, a flag's inline
+  `--flag-fill`; a tie mixing a 480:667 picture with square marks keeps its names on
+  one line).
 - **One visual system with the phones** (§8): sentence case and Inter 850 with a
   slightly negative track, never letter-spaced capitals ("Current standings", "3rd
   place", "points", "Camp champions" — the markup's "Camp Champions" and "TIE" are

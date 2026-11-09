@@ -222,7 +222,7 @@
     .wait-shields > :nth-child(2n) { animation-delay: -1.6s; }
     .wait-shields > :nth-child(3n) { animation-delay: -0.8s; }
     .wait-shields .tv-flag { height: clamp(64px, 10vw, 210px); filter: none; }
-    .wait-shields .crest-tile { font-size: clamp(36px, 5.6vw, 118px); border-width: 3px; }
+    .wait-shields .crest-tile { font-size: clamp(36px, 5.6vw, 118px); }
     @keyframes waitBob { 50% { transform: translateY(-0.6vh) rotate(-1.5deg); } }
     .wait-foot { margin: 0; font: 650 clamp(0.85rem, 1.35vw, 1.65rem)/1.35 var(--sans); color: var(--ink-3); }
     /* A refused or failing feed (rules not published, or a network that blocks
@@ -239,6 +239,37 @@
     .tv-flag[data-flag="blue"] { --flag-fill: #2f6fd0; }
     .tv-flag[data-flag="green"] { --flag-fill: #2f8a35; }
     .tv-flag[data-flag="gold"] { --flag-fill: #e0a100; }
+
+    /* ── A team's mark, in the phones' order (R2, owner's decisions item 7) ──
+       current-standings.js teamMark(id, slot, brand) draws what reveal-core's
+       revealMarkSpec says, the order app.js teamMarkSpec follows on every phone:
+         img.tv-photo      the photo directors picked on the Teams screen: a small
+                           copy the director's phone made when the place was
+                           shown (never before). The shield's 480:667 shape, a
+                           rounded card with a hairline so a pale photo still holds
+                           its edge on the paper.
+         img               the camp's shipped shield (junior), unless the team
+                           was cleared by the new-year setup (decisions item 8).
+         svg.tv-flag       the camp's flag (senior), unless cleared; a colour a
+                           director picked arrives as an inline --flag-fill, a
+                           palette value (a database string only SELECTS one).
+         div.crest-tile    everything else, the phones' tile (.tm-tile): the flat
+                           well and a hairline, a label and never a key.
+           [data-num] > span  a cleared team's number, in type, quieter than the
+                              place beside it (ink-2 at 600, 7.9:1 on the well)
+           [data-edge]        a picked colour: --tile-edge, the palette's light value
+                              (4.2:1 or more on the well for all twelve: the
+                              boundary rule asks 3:1)
+       Each slot (hero-shield, intro-crest, wait-crest, row-crest, champ-crest) sets
+       the size. The tile's edges are in em of its own font size, which every slot
+       keeps near 0.6 of the tile's width, so the line has one weight everywhere. */
+    .tv-photo { aspect-ratio: 480 / 667; object-fit: cover; background: var(--sheet);
+      border-radius: 8% / 5.76%; box-shadow: 0 0 0 clamp(1px, 0.16vmin, 2.5px) var(--line-2); }
+    .crest-tile { aspect-ratio: 1; display: grid; place-items: center; line-height: 1; border-radius: 22%;
+      background: var(--well); box-shadow: inset 0 0 0 max(1px, 0.03em) var(--line-2); box-sizing: border-box; }
+    .crest-tile[data-edge] { box-shadow: inset 0 0 0 max(2px, 0.07em) var(--tile-edge, var(--ink-3)); }
+    .crest-tile[data-num] > span { font-weight: 600; font-size: 0.9em; color: var(--ink-2);
+      font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 
     /* ── Intro ───────────────────────────────────────────── */
     #intro {
@@ -262,9 +293,7 @@
     .intro-shields > * { width: clamp(46px, 9vw, 170px); height: auto; opacity: 0;
       filter: drop-shadow(0 6px 12px rgba(20,26,72,0.22)); animation: floatIn 0.8s forwards, bob 3s ease-in-out infinite; }
     .intro-shields .tv-flag { height: clamp(46px, 9vw, 170px); filter: none; }
-    .crest-tile { aspect-ratio: 1; display: grid; place-items: center; line-height: 1; border-radius: 22%;
-      background: var(--card); border: 4px solid var(--card-line); box-sizing: border-box; }
-    .intro-shields .crest-tile { font-size: clamp(26px, 5.4vw, 100px); border-width: 3px; }
+    .intro-shields .crest-tile { font-size: clamp(26px, 5.4vw, 100px); }
     /* Under the shields while the intro holds. It says "Get ready…" and never
        names the first place: a tie at the bottom makes that place not the last
        team's number, and the node carries no group count on purpose (a count
@@ -365,6 +394,12 @@
     .hero.many .hero-points .num { font-size: clamp(2rem, min(9vh, calc(var(--cw) * 0.3)), 7rem); }
     .hero.many .hero-break .words { white-space: nowrap; font-size: clamp(0.65rem, calc(var(--cw) * 0.07), 3.6rem); }
     .hero.many .hero-break .words + .words { font-size: clamp(0.6rem, calc(var(--cw) * 0.06), 2.8rem); }
+    /* A tie that mixes a picture (a photo or a shipped shield, 480:667) with square marks (a flag, a tile): the
+       square ones take the picture's extra height as space above and below them ((667 / 480 - 1) / 2 = 0.1948 of
+       the width), so every name in the row starts on one line. Only when the tie has a picture in it: an all-flag
+       senior tie keeps its compact height on a 720p projector. */
+    .hero.tied:has(img.hero-shield) .hero-shield:not(img) { margin-block: calc(clamp(140px, 30vh, 360px) * 0.1948); }
+    .hero.many:has(img.hero-shield) .hero-shield:not(img) { margin-block: calc(min(clamp(140px, 30vh, 360px), calc(var(--cw) * 0.85)) * 0.1948); }
 
     /* ── Tie fight 🥊: during the solo spotlight the two shields wind up,
        charge, and CLASH in the middle (twice), with a 💥 burst at each
@@ -449,7 +484,10 @@
     .row .em { grid-area: em; display: grid; place-items: center; width: 1.55em; height: 1.55em; font-size: clamp(1.3rem, min(3.4vw, 5.2vh), 3.6rem); }
     .row-crest { display: block; max-width: 100%; max-height: 100%; width: auto; height: 100%; filter: drop-shadow(0 2px 3px rgba(20, 26, 72, .25)); }
     .row-crest.tv-flag { width: 100%; filter: none; }
-    .row-crest.crest-tile { width: 100%; font-size: 0.85em; border-width: 2px; filter: none; }
+    .row-crest.crest-tile { display: grid; width: 100%; font-size: 0.85em; filter: none; }
+    /* A photo's height is the slot's own (1.55em of .em's font): its fixed 480:667 shape took the slot's WIDTH and
+       grew a third taller than the row, over the hairline into the next one. */
+    .row-crest.tv-photo { width: auto; height: 1.55em; max-height: none; }
     .row .nm { grid-area: nm; align-self: end; font-size: clamp(1.3rem, min(3.4vw, 5.2vh), 3.6rem); font-weight: 900; color: var(--ink); line-height: 1.05; letter-spacing: -0.015em; }
     .row .pts { grid-area: pts; font-size: clamp(1.7rem, min(4.4vw, 7vh), 4.4rem); font-weight: 900; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
     .row .pts small { font-size: 0.42em; font-weight: 800; color: var(--ink-2); margin-left: 0.15em; }
@@ -471,11 +509,27 @@
     .champ .crown svg { width: clamp(2.6rem, 10vh, 8.5rem); height: clamp(2.6rem, 10vh, 8.5rem); fill: var(--gold); stroke: var(--gold-edge); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
     /* Sentence case (§8.2): the DOM already says "Camp champions". */
     .champ .lead { font-size: clamp(1.2rem, 3.8vw, 3.6rem); font-weight: 850; letter-spacing: -0.015em; color: var(--ink); }
-    .champ-shields { display: flex; gap: clamp(1rem, 3vw, 2.5rem); justify-content: center; flex-wrap: wrap; }
+    .champ-shields { display: flex; gap: clamp(1rem, 3vw, 2.5rem); justify-content: center; align-items: center; flex-wrap: wrap; }
     .champ-shields > * { width: clamp(150px, 40vh, 520px); height: auto;
       filter: drop-shadow(0 12px 22px rgba(20,26,72,0.28)); animation: bob 3s ease-in-out infinite; }
     .champ-shields .tv-flag { height: clamp(150px, 40vh, 520px); filter: none; }
     .champ-shields .crest-tile { font-size: clamp(90px, 24vh, 312px); }
+    /* A shared title (a tie at 1st on a finale day; six of them in a practice crowned before any score): the marks
+       shrink by their count and stay on one row, and the names step down, so the crown, the marks, the names and the
+       points still fit a 720p projector. One champion keeps the sizes above. (Two junior champions ran off the top and
+       the bottom of every screen before, shields and photos alike: both are 480:667.) */
+    .champ-shields:has(> :nth-child(2)) { flex-wrap: nowrap; }
+    .champ-shields:has(> :nth-child(2)) > * { width: clamp(100px, 25vh, 330px); }
+    .champ-shields:has(> :nth-child(2)) > .tv-flag { height: clamp(100px, 25vh, 330px); }
+    .champ-shields:has(> :nth-child(2)) > .crest-tile { font-size: clamp(60px, 15vh, 198px); }
+    .champ-shields:has(> :nth-child(3)) > * { width: clamp(80px, 19vh, 250px); }
+    .champ-shields:has(> :nth-child(3)) > .tv-flag { height: clamp(80px, 19vh, 250px); }
+    .champ-shields:has(> :nth-child(3)) > .crest-tile { font-size: clamp(48px, 11.4vh, 150px); }
+    .champ-shields:has(> :nth-child(4)) > * { width: clamp(64px, 14vh, 190px); }
+    .champ-shields:has(> :nth-child(4)) > .tv-flag { height: clamp(64px, 14vh, 190px); }
+    .champ-shields:has(> :nth-child(4)) > .crest-tile { font-size: clamp(38px, 8.4vh, 114px); }
+    .champ:has(.champ-shields > :nth-child(2)) .name { font-size: clamp(1.6rem, min(5vw, 8.5vh), 5.5rem); text-wrap: balance; }
+    .champ:has(.champ-shields > :nth-child(4)) .name { font-size: clamp(1.3rem, min(3.4vw, 6vh), 4rem); }
     .champ .name { font-size: clamp(2rem, 8vw, 8rem); font-weight: 900; line-height: 1.02; color: var(--ink); letter-spacing: -0.02em; }
     .champ .pts { font-size: clamp(1.4rem, 5vw, 4.5rem); font-weight: 900; color: var(--ink); }
     @keyframes champIn { from { opacity: 0; transform: scale(0.5) translateY(-40px); } to { opacity: 1; transform: none; } }
