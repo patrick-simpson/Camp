@@ -47,7 +47,9 @@ const APP_VERSION = 217;
 // moment as CODE_UPDATED_AT, and MOVES every note whose hour is over out of CHANGES and into WHATS_NEW_RETIRED (ids only), so an
 // id is never reused (the lint in tests/whats-new.test.js checks both lists).
 const WHATS_NEW_SHIPPED_AT = '2026-11-09T20:05:13Z';
-const CHANGES = [];
+const CHANGES = [
+  { id: 'big-screen-logos', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['reveal'], text: 'Revealed teams show their logo and colour on the big screen.' },
+];
 const WHATS_NEW_RETIRED = Object.freeze([
   'four-tabs', 'score-from-games', 'games-tab-results', 'reveal-remote', 'chat-tab', 'tell-everyone', 'phone-alerts',
   'award-points', 'reveal-on-now', 'set-up-the-week', 'preview-counselor', 'days-and-backup', 'new-year-setup', 'remove-tells-followers',

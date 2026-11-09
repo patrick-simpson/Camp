@@ -37,6 +37,16 @@ test('the shipped lists: every note is well formed, plain English, with a Show m
   assert.ok(!CHANGES.some((n) => WHATS_NEW_RETIRED.includes(n.id)), 'a retired id is not in CHANGES');
 });
 
+test('the big-screen note is for directors who can open the reveal, promises no emoji, and carries no Show me (the big screen cannot be opened from the app)', () => {
+  const n = CHANGES.find((x) => x.id === 'big-screen-logos');
+  assert.ok(n, 'shipped with the switch');
+  assert.equal(n.for, 'directors');
+  assert.deepEqual(Array.from(n.needs), ['reveal']);
+  assert.equal(n.at, WHATS_NEW_SHIPPED_AT, 'the deploy stamps it');
+  assert.ok(/logo/.test(n.text) && /colour/.test(n.text) && !/emoji|mascot/i.test(n.text), n.text);
+  assert.equal(n.show, undefined);
+});
+
 test('the hour: nothing before `at`, live from `at`, still live at +59:59.999, gone at +60:00, and never again', () => {
   const n = [mkNote('aaa')];
   assert.deepEqual(live(n, AT - 1), [], 'a millisecond early');
