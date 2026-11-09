@@ -220,6 +220,7 @@ function nowNoticePreviewHtml(n, opts) {
 function nowNotesHtml(notes) {
   return (notes || []).map((n) => {
     if (n.kind === 'double') return `<p class="nw-note" data-note="double">${nowIcon('i-bolt')}<span>${esc(n.text)}</span></p>`;
+    if (n.kind === 'start') return `<p class="nw-note" data-note="start">${nowIcon('i-clock')}<span>${esc(n.text)}</span></p>`;
     if (n.kind === 'rain') return `<p class="nw-note" data-note="rain">${nowIcon('i-rain')}<span>${esc(n.text)}</span></p>`;
     // All four matches played (the four-team bracket waiting to be saved) wears a check: the clock means a result being checked.
     if (n.kind === 'hold') return `<p class="nw-note" data-note="${n.played ? 'played' : 'hold'}">${nowIcon(n.played ? 'i-check' : 'i-clock')}<span>${esc(n.text)}</span></p>`;
@@ -418,7 +419,7 @@ function nowPaintHead(model) {
   // A card that IS one game wears its Live / Done tag on the title line (its row, which carried it, is folded in).
   const tag = nowEl('now-card-tag');
   setHiddenIfChanged(tag, !c.status);
-  if (c.status) { setDataIfChanged(tag, 'tag', c.status); setTextIfChanged(tag, c.status === 'done' ? 'Done' : 'Live'); }
+  if (c.status) { setDataIfChanged(tag, 'tag', c.status); setTextIfChanged(tag, c.status === 'done' ? 'Done' : c.status === 'todo' ? 'Not started' : 'Live'); }
 }
 
 function nowPaintFoot(model) {

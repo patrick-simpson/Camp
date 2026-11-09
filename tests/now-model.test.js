@@ -894,6 +894,50 @@ test('nowModel: the four-team bracket reads state.brackets4 (Step 22\'s shape) a
 });
 
 
+test('nowModel: a four-team bracket game that has not started is "not started": fixed pairs may show as four cells, pairs from the standings or a pick never reach anyone (the points guard throwing)', () => {
+  boot('viewer', T()[0]);
+  state.teams = state.teams.slice(0, 4);
+  const { nb, games } = gamesBlockOf(WED, 1);
+  const g = games[0];
+  g.format = 'tournament';
+  delete state.brackets4;
+  const keep = { seed: g.bracketSeed, pairs: g.roundOneMatchups };
+  const look = () => at(WED, nb.start + 1);
+  setStandingsGuardThrows(true); // fourSeedPlan reads points: Now must never call it
+  const roles = [() => { setMemberRole('viewer'); counselorPreviewOn = false; }, () => { setMemberRole('editor'); counselorPreviewOn = false; }, () => { setMemberRole('editor'); counselorPreviewOn = true; }];
+  roles.forEach((role, i) => {
+    role();
+    g.bracketSeed = 'standings'; g.roundOneMatchups = undefined;
+    let m = look();
+    assert.equal(m.body.bracket4, null, 'role ' + i + ': pairs from the standings are never drawn');
+    assert.equal(m.body.startNote, true);
+    assert.ok(m.card.notes.some((n) => n.kind === 'start' && /director picks the semifinals/.test(n.text)), 'role ' + i + ': the note says who picks');
+    g.bracketSeed = 'pick';
+    assert.equal(look().body.bracket4, null);
+    g.bracketSeed = 'fixed'; g.roundOneMatchups = [[T()[0], T()[3]], [T()[1], T()[2]]];
+    m = look();
+    const b4 = m.body.bracket4;
+    assert.ok(b4 && b4.preview && !m.body.startNote, 'role ' + i + ': fixed pairs show the cells');
+    assert.deepEqual(b4.cells.map((c) => c.status), ['todo', 'todo', 'todo', 'todo'], 'nothing is live');
+    assert.deepEqual(b4.cells.filter((c) => c.next).map((c) => c.slot), ['s1'], 'the first semifinal is next');
+    assert.equal(b4.note, null);
+    assert.equal(b4.played, false);
+  });
+  // once the bracket starts, the preview gives way to the real thing
+  setMemberRole('viewer'); counselorPreviewOn = false;
+  state.brackets4 = { [g.id]: { at: 1, m: { s1: { a: T()[0], b: T()[1] }, s2: { a: T()[2], b: T()[3] } } } };
+  assert.ok(!look().body.bracket4.preview && !look().body.startNote);
+  delete state.brackets4;
+  // a result saved: neither a preview nor a note
+  state.results[g.id] = medals(T()[0], T()[1], T()[2]);
+  assert.equal(look().body.bracket4, null);
+  assert.ok(!look().body.startNote);
+  delete state.results[g.id];
+  setStandingsGuardThrows(false);
+  g.bracketSeed = keep.seed; g.roundOneMatchups = keep.pairs;
+  done();
+});
+
 // ════════════════════════════════════════════════════════════════════
 // the messages strip, Still to do today, the tick
 // ════════════════════════════════════════════════════════════════════

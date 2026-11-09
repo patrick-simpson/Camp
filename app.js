@@ -1786,14 +1786,23 @@ function nowMatchBoard(ctx, g, pair, phase, nextPair) {
 // fourRead (every team a roster id; third place is the two semifinal losers and the final the two winners until a match records
 // its own); null while no bracket exists or this build cannot read the one that does. While a recorded match disagrees with the
 // semifinals it came from (`hold`) no cell is live and no team is told what is next: a director is settling it.
-function nowBracket4(ctx, g) {
+// `pending` (the Now card only) also draws a bracket that has not been started, from a game whose pairs are FIXED in its setup:
+// every cell "not started", the first semifinal next. Pairs that come from the standings or a director's pick are never drawn
+// here (the standings' pairs would tell a counselor the order), and fourSeedPlan, which reads points, is never asked.
+function nowBracket4(ctx, g, pending) {
   const ids = teamIds();
-  const v = fourRead(state.brackets4 && state.brackets4[g.id], ids);
+  let v = fourRead(state.brackets4 && state.brackets4[g.id], ids);
+  let preview = false;
+  if (!v && pending && nowFourPending(g)) {
+    const pairs = fourSeedMode(g, ids) === 'fixed' ? fourSeeds('fixed', g, [], ids) : null;
+    v = pairs ? fourRead(fourStart(pairs, ids, 1), ids) : null;
+    preview = !!v;
+  }
   if (!v) return null;
   const m = v.m;
   const hold = !!v.recheck;
   const tbd = { third: ['Semifinal 1 loser', 'Semifinal 2 loser'], final: ['Semifinal 1 winner', 'Semifinal 2 winner'] };
-  const live = hold ? undefined : FOUR_ORDER.find((k) => !m[k].winner);
+  const live = hold || preview ? undefined : FOUR_ORDER.find((k) => !m[k].winner);
   // While a result is being checked the picture must never show an impossible chain (Semifinal 1 "Blue won" beside a final
   // that Blue also plays): the questioned match says Checking and shows no winner, and the side of the 3rd place match and the
   // final that comes from it is the dashed "Semifinal 1 winner / loser" again, as it was before that semifinal was played.
@@ -1812,7 +1821,7 @@ function nowBracket4(ctx, g) {
     return {
       key: 'b4-' + k, slot: k, name: FOUR_NAMES[k],
       status: isCheck ? 'check' : settled ? 'todo' : c.winner ? 'done' : k === live ? 'live' : 'todo',
-      next: !!live && FOUR_ORDER[FOUR_ORDER.indexOf(live) + 1] === k,
+      next: preview ? k === 's1' : !!live && FOUR_ORDER[FOUR_ORDER.indexOf(live) + 1] === k,
       teams: [0, 1].map((j) => {
         const id = settled ? (fromSemi(k, j) === v.recheck.semi ? '' : other(j)) : [c.a, c.b][j];
         const shown = !isCheck && !settled;
@@ -1826,7 +1835,7 @@ function nowBracket4(ctx, g) {
   // The line for MY team, from the bracket's own order (never "the last game today": the block can hold other games).
   let note = null;
   const me = ctx.myTeam;
-  if (me && !hold && !m.final.winner) {
+  if (me && !hold && !preview && !m.final.winner) {
     const word = nowTeamWord(me);
     const inSemi = ['s1', 's2'].find((k) => m[k].a === me || m[k].b === me);
     const thirdLeft = !m.third.winner;
@@ -1834,8 +1843,13 @@ function nowBracket4(ctx, g) {
     else if (inSemi && m[inSemi].winner === me) note = { lead: word, rest: ' plays in the final next' + (thirdLeft ? ' · 3rd place match first' : '') };
     else if (inSemi && thirdLeft) note = { lead: word, rest: ' plays the 3rd place match next' };
   }
-  const played = !hold && FOUR_ORDER.every((k) => !!m[k].winner); // every match recorded, the result not saved yet
-  return { cells, hold, played, note: note ? Object.assign({ team: me, mine: true }, note) : null };
+  const played = !hold && !preview && FOUR_ORDER.every((k) => !!m[k].winner); // every match recorded, the result not saved yet
+  return { cells, hold, played, preview, note: note ? Object.assign({ team: me, mine: true }, note) : null };
+}
+
+// A four-team bracket game nobody has started: a four-team camp, a bracket game, no result, no bracket node.
+function nowFourPending(g) {
+  return !!g && g.format === 'tournament' && bracketKindFor(teamIds().length) === 'four' && !(state.results && state.results[g.id]) && !fourBracketOf(g);
 }
 
 // One game as a row of the Now card (and, later, the Games tab).
@@ -1895,10 +1909,12 @@ function nowGamesBody(ctx, nb) {
   const lead = ordered.find((r) => r.status === 'live') || firstTodo;
   ordered.forEach((r) => { if (r.score) r.score.gold = r === lead; });
   const left = ordered.filter((r) => r.status !== 'done').length;
-  const b4 = games.map((g) => nowBracket4(ctx, g)).find(Boolean) || null;
+  const b4 = games.map((g) => nowBracket4(ctx, g, true)).find(Boolean) || null;
+  // A four-team game that has not started and whose semifinals are not fixed: the card says who picks them, never the pairs.
+  const startNote = !b4 && games.some((g) => nowFourPending(g) && gameRowStatus(g, ctx.ms) === 'todo');
   return {
     rows: ordered, total: ordered.length, stillToScore: ctx.director ? left : null,
-    doubled: games.some((g) => g.messtival), bracket4: b4,
+    doubled: games.some((g) => g.messtival), bracket4: b4, startNote,
     // ONE game named like its block (senior's Legacy Game): the card IS that game (mockup 13), so the renderer folds its row into
     // the card instead of repeating the name under the title.
     solo: games.length === 1 && nowSameName(games[0].name, nb.head),
@@ -2303,7 +2319,7 @@ function nowBlockCard(ctx, blocks, nb, held) {
     }
     else if (solo) card.sub = nowGameKindLine(solo); // the card's own Score (a director's) says what is left
     else if (ctx.director && body.stillToScore) card.sub = nowStillToScoreText(body.stillToScore, body.total);
-    if (solo && solo.status !== 'todo') card.status = solo.status; // the Live / Done tag rides the title
+    if (solo) card.status = solo.status; // the Not started / Live / Done tag rides the title
   } else if (kind === 'elective') {
     body = nowElectiveBody(ctx, nb, blocks);
     card.tag = 'Elective ' + ((Number(nb.slot) || 0) + 1);
@@ -2345,6 +2361,7 @@ function nowBlockCard(ctx, blocks, nb, held) {
   if (kind === 'games' && body.doubled) card.notes.push({ kind: 'double', text: 'Double points until the end of Friday' });
   const rain = kind === 'night' || kind === 'over' ? null : upcomingRain(ctx.minutes, ctx.date);
   if (rain) card.notes.push({ kind: 'rain', text: rain.precip + '% chance of rain ' + rain.when });
+  if (kind === 'games' && body.startNote) card.notes.push({ kind: 'start', text: FOUR_START_NOTE });
   if (kind === 'games' && body.bracket4 && body.bracket4.note) card.notes.push(Object.assign({ kind: 'team' }, body.bracket4.note));
   // A result being checked: said in the slot the team's line sits in, so the cells are never left to explain themselves.
   else if (kind === 'games' && body.bracket4 && body.bracket4.hold) card.notes.push({ kind: 'hold', text: FOUR_HOLD_NOTE });
@@ -10328,6 +10345,7 @@ const FOUR_ORDER = ['s1', 's2', 'third', 'final'];
 // What each match is called on every screen (the step bar, the Now card's four cells, a live row's line, a toast).
 const FOUR_NAMES = { s1: 'Semifinal 1', s2: 'Semifinal 2', third: '3rd place', final: 'Final' };
 // The one line everybody but the deciding director reads while a result is being checked (Now's card and the game view).
+const FOUR_START_NOTE = 'A director picks the semifinals when the bracket starts';
 const FOUR_PLAYED_NOTE = 'All four matches are played. The result shows once a director saves it.';
 const FOUR_HOLD_NOTE = 'A director is double-checking a result. The bracket carries on soon.';
 

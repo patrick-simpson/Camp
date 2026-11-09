@@ -317,6 +317,34 @@ test('a four-team bracket paints four cells in the order of play, my team marked
   done();
 });
 
+test('a four-team game that has not started: fixed pairs paint four "not started" cells, standings pairs paint only the note, and a card that is the game wears "Not started"', () => {
+  boot('viewer', T()[0]);
+  state.teams = state.teams.slice(0, 4);
+  const { nb, games } = gamesBlockOf(WED, 1);
+  const g = games[0];
+  g.format = 'tournament';
+  delete state.brackets4;
+  g.bracketSeed = 'standings';
+  let m = paintAt(WED, nb.start + 5);
+  assert.ok(!/class="b4-m"/.test(html('now-card-body')), 'no cells for pairs the standings would pick');
+  assert.ok(/data-note="start"/.test(html('now-card-notes')) && /A director picks the semifinals when the bracket starts/.test(html('now-card-notes')));
+  g.bracketSeed = 'fixed';
+  g.roundOneMatchups = [[T()[0], T()[3]], [T()[1], T()[2]]];
+  m = paintAt(WED, nb.start + 5);
+  const b = html('now-card-body');
+  assert.equal((b.match(/class="b4-m"/g) || []).length, 4);
+  assert.ok(!/data-status="live"|data-status="done"/.test(b), 'nothing has started');
+  assert.ok(!/data-note="start"/.test(html('now-card-notes')));
+  // a card that IS the game (its name is the block's) says Not started on its title
+  if (m.body.solo) {
+    assert.equal(m.card.status, 'todo');
+    assert.equal(el('now-card-tag').textContent, 'Not started');
+    assert.equal(el('now-card-tag').hidden, false);
+  }
+  delete g.roundOneMatchups;
+  done();
+});
+
 test('elective (junior): my station first, "Not Sam? Change", then the next blocks and a Who\'s where row; ask once; every station for a director', () => {
   if (!CAMP.features.electives) { return; }
   const when = kindTime('elective');

@@ -787,9 +787,9 @@ link, because a director's key in the moment still writes for the DISPLAYED day.
 
 **One game named like its block** (senior's Legacy Game, mockup 13: `body.solo`, `nowSameName`): the row is folded into the card — the sub is
 its format and place ("4-team bracket · Main field", `nowGameKindLine`; a "TBA" / "TBD" place is never shown, `nowPlaceWord`), a director's Score sits at
-the sub's right, the tag rides the title (`card.status`), and the body is a `.gr-solo` piece keyed like the row (own-team reason, board or podium) then
+the sub's right, the tag rides the title (`card.status`: Not started / Live / Done), and the body is a `.gr-solo` piece keyed like the row (own-team reason, board or podium) then
 the bracket. A games card has ONE gold Score (the live game's, else the one up next), and its sub counts "Not scored yet" / "3 games still to score" /
-"2 of 3 games still to score". The kicker's range is the run sheet's bare clock ("10:00–11:45", `.nw-range`, one line), and "finished 10:31" too.
+"2 of 3 games still to score". A four-team bracket game nobody has started draws its four cells all "not started" (the first semifinal next) only when its pairs are FIXED in the game's setup (`nowBracket4(ctx, g, true)`, `preview`); pairs from the standings or a director's pick are never drawn on Now, for anyone: the card says "A director picks the semifinals when the bracket starts" (`startNote`, `nowFourPending`), and `fourSeedPlan` (which reads points) is never asked. The kicker's range is the run sheet's bare clock ("10:00–11:45", `.nw-range`, one line), and "finished 10:31" too.
 
 **What counselors see** (More → Director → What counselors see: `nowHiddenSections()` → `ctx.hidden`, read through `viewRole()` so a counselor preview
 honours it and a director's own screen never does). Games off: a games block is a plain `activity` card (`nowBlocks(dow, ctx)` maps the kind, so no rows,
