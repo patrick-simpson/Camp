@@ -248,7 +248,7 @@ function hubStatus(section, view) {
         // A cleared team (the new-year setup's Clear) wears its number until a director gives it a colour or a photo: a gentle,
         // uncounted note, like the weak colours (the hub can still reach "all ready").
         const bare = teams.filter((t) => { const x = t && info[t.id]; return x && x.plainNoColor; });
-        if (bare.length) row.note = bare.length === 1 ? nameOf(bare[0], teams.indexOf(bare[0])) + ' has no colour yet' : bare.length + ' teams have no colour yet';
+        if (bare.length) row.note = bare.length === 1 ? teamNumJoin(nameOf(bare[0], teams.indexOf(bare[0]))) + ' has no colour yet' : bare.length + ' teams have no colour yet';
       }
       return row;
     }
@@ -1412,7 +1412,7 @@ function renderSetupSheet(id) {
   else if (id === 'sec-person') renderSecPersonSheet();
   else if (id === 'sec-station') renderSecStationSheet();
   else if (id === 'sec-verse') renderSecVerseSheet();
-  else if (id === 'team-edit') renderTeamSheet();
+  else if (id === 'team-edit') renderTeamEditSheet();
   else if (id === 'team-colors') renderTeamColorsSheet();
   else if (PEOPLE_SHEETS.indexOf(id) !== -1) renderPeopleSheetById(id);
   else if (id === 'camper-edit') renderCamperEditSheet();
@@ -5649,8 +5649,11 @@ function teamsModel() {
 
 // "Pumpkins and Pilgrims are hard to read in dark mode" / "Pumpkins is hard to read in light mode, Pilgrims in dark mode": the weak
 // colours, NAMED (the screen's note and its link must point at teams the director can find on the list above). Short names, in team order.
+// "Team 4" held together (U+00A0) in a sentence the code writes: a cleared team's name must never break between the word and its number.
+function teamNumJoin(s) { return String(s).replace(/\bTeam (\d)/g, 'Team\u00a0$1'); }
+
 function teamsWeakSentence(ids) {
-  const nameOf = (id) => teamShort(id) || teamName(id) || id;
+  const nameOf = (id) => teamNumJoin(teamShort(id) || teamName(id) || id);
   const modes = (id) => hubJoin(teamColorInfo(id).weak);
   const byModes = {};
   ids.forEach((id) => { (byModes[modes(id)] = byModes[modes(id)] || []).push(nameOf(id)); });
@@ -5693,10 +5696,16 @@ function renderTeamsScreen() {
   const bareShort = bareIds.map((id) => teamShort(id) || teamName(id) || id);
   const weakOnly = m.weak.filter((id) => bareIds.indexOf(id) === -1);
   const weakWords = weakOnly.length ? teamsWeakSentence(weakOnly) : '';
-  const bareWords = bareIds.length ? (bareIds.length === 1 ? bareShort[0] + ' has no colour yet.' : bareIds.length === m.rows.length ? 'No team has a colour yet.' : hubJoin(bareShort) + ' have no colour yet.') : '';
+  // Every team bare says it as the hub's note does ("6 teams have no colour yet"); a few are named, as the link under it names them.
+  const bareWords = bareIds.length ? (bareIds.length === 1 ? bareShort[0] + ' has no colour yet.' : bareIds.length === m.rows.length ? bareIds.length + ' teams have no colour yet.' : hubJoin(bareShort) + ' have no colour yet.') : '';
   setTextIfChanged(setupEl('teams-weak-text'), [weakWords, bareWords].filter(Boolean).join(' '));
-  setTextIfChanged(setupEl('teams-weak-btn-text'), !weakShort.length ? '' : weakShort.length === m.rows.length && m.rows.length > 2 ? 'Pick colours for all ' + m.rows.length + ' teams' : 'Pick ' + (bareIds.length ? '' : 'new ') + 'colours for ' + hubJoin(weakShort));
+  // More than two teams: a count, not a list ("Pick colours for Team 1, Team 2, Team 3 and Team 4" ran to three lines at 200%). Two or one
+  // are named, each "Team 4" held together (U+00A0) so the number never starts a line alone.
+  const pickWho = weakShort.length > 2 ? (weakShort.length === m.rows.length ? 'all ' : '') + weakShort.length + ' teams' : teamNumJoin(hubJoin(weakShort));
+  setTextIfChanged(setupEl('teams-weak-btn-text'), !weakShort.length ? '' : 'Pick ' + (bareIds.length ? '' : 'new ') + 'colours for ' + pickWho);
   setHiddenIfChanged(setupEl('teams-weak'), !weakShort.length);
+  // Only cleared teams in the block (no colour that is hard to read): a plain note, no gold "!" (styles.css, .tms-weak[data-tone]).
+  setAttrIfChanged(setupEl('teams-weak'), 'data-tone', weakShort.length && !weakOnly.length ? 'note' : null);
   if (teamUi.colors && !m.flag.length) { teamUi.colors = false; if (shell.sheets.includes('team-colors')) shellSheetClose('team-colors'); }
 }
 
@@ -5771,7 +5780,7 @@ function teamDirty() {
   return f.name !== o.name || f.short !== o.short || f.emoji !== o.emoji || f.counselor !== o.counselor || f.color !== o.color;
 }
 
-function renderTeamSheet() {
+function renderTeamEditSheet() {
   const e = teamUi.edit;
   if (!e) return;
   teamFillForm();
@@ -5834,6 +5843,8 @@ function renderTeamSheet() {
   // Dimmed is never the only signal: one line under the grid says whose each dimmed emoji is.
   const taken = TEAM_EMOJI_CHOICES.filter((em) => takenBy[em]).map((em) => em + ' ' + takenBy[em]);
   setTextIfChanged(setupEl('team-emoji-taken'), taken.length ? 'Dimmed ones are taken: ' + taken.join(', ') + '.' : '');
+  // A cleared team: an emoji picked here replaces its number, and nothing else on the sheet says how to get the number back.
+  setHiddenIfChanged(setupEl('team-emoji-plain'), !teamPlain(e.id));
   // The rename question, inline (never a dialog over the sheet): shown by Save when the name changed and nothing else of its identity did.
   const q = e.ask;
   setHiddenIfChanged(setupEl('team-rename-q'), !q);
@@ -5867,14 +5878,14 @@ function teamTouched() {
   e.touched = true;
   e.error = {};
   if (e.ask) e.ask = null;
-  renderTeamSheet();
+  renderTeamEditSheet();
 }
 
 function teamPickColor(cid) {
   const e = teamUi.edit;
   if (!e || !teamColorValid(cid)) return;
   e.color = cid;
-  renderTeamSheet();
+  renderTeamEditSheet();
   const b = setupEl('team-swatches') && setupEl('team-swatches').querySelector ? setupEl('team-swatches').querySelector('.tms-swatch[data-team-color="' + cid + '"]') : null;
   if (b && typeof JellyMotion !== 'undefined') JellyMotion.play(b, 'press', (x) => ({ transform: 'scale(' + (0.93 + 0.07 * x) + ')' }), { calm: false });
 }
@@ -5884,11 +5895,11 @@ function teamPickEmoji(em) {
   const el = teamFieldEl('emoji');
   if (!e || !el || !teamEmojiValid(em)) return;
   const taken = teamIds().filter((x) => x !== e.id && teamEmojiOwn(x) === em).map((x) => teamShort(x) || teamName(x));
-  if (taken.length) { e.error = { emoji: taken[0] + ' already uses ' + em + '.' }; renderTeamSheet(); return; }
+  if (taken.length) { e.error = { emoji: taken[0] + ' already uses ' + em + '.' }; renderTeamEditSheet(); return; }
   el.value = em;
   e.error = {};
   e.touched = true;
-  renderTeamSheet();
+  renderTeamEditSheet();
 }
 
 // Save: validate, ask the rename question once, then ONE stateEdit of only the changed fields (looked up by id when it runs).
@@ -5900,7 +5911,7 @@ function teamSave() {
   if (Object.keys(probs).length) {
     e.touched = true;
     e.error = probs;
-    renderTeamSheet();
+    renderTeamEditSheet();
     const first = ['name', 'short', 'emoji'].find((n) => probs[n]);
     const el = first && teamFieldEl(first);
     if (el && el.focus) el.focus();
@@ -5917,7 +5928,7 @@ function teamSave() {
     };
     // Nothing to suggest (a name with no usable last word): the question has one honest answer.
     if (!e.ask.suggestLabel) { e.ask = null; e.asked = true; teamSave(); return; }
-    renderTeamSheet();
+    renderTeamEditSheet();
     return;
   }
   teamCommit(f);
@@ -6007,7 +6018,7 @@ function teamSetPane(pane) {
   const was = e.pane;
   e.pane = pane;
   if (pane === 'form') e.crop = null;
-  renderTeamSheet();
+  renderTeamEditSheet();
   if (was !== pane && typeof document !== 'undefined' && document.querySelector) setupPaneArrive(document.querySelector('#sheet-team-edit [data-team-pane="' + pane + '"]'), pane === 'form');
   const body = setupEl('team-form');
   if (pane === 'form' && body && body.scrollTo) { try { body.scrollTo(0, 0); } catch (x) { /* fine */ } }
@@ -6168,11 +6179,11 @@ async function teamPhotoUse() {
   try { enc = teamPhotoEncode(canvas, teamTint(tintSrc ? tintSrc[1] : '', 0.88)); } catch (err) { enc = null; }
   if (!enc) { setupSay(TEAM_PHOTO_WHY.format); return; }
   e.busy = true;
-  renderTeamSheet();
+  renderTeamEditSheet();
   const r = await teamPhotoUpload(e.id, enc.data);
   if (teamUi.edit !== e) return;
   e.busy = false;
-  if (!r.ok) { setupSay(TEAM_PHOTO_WHY[r.reason] || TEAM_PHOTO_WHY.failed); renderTeamSheet(); return; }
+  if (!r.ok) { setupSay(TEAM_PHOTO_WHY[r.reason] || TEAM_PHOTO_WHY.failed); renderTeamEditSheet(); return; }
   teamSetPane('form');
   setupSay('Photo saved.');
   renderAll();
@@ -6183,7 +6194,7 @@ function teamPhotoRemove() {
   if (!e) return;
   const id = e.id;
   stateEdit('Removed the photo of ' + (teamName(id) || id), () => { const t = teamRecord(id); if (!t || t.photoV === undefined) return false; delete t.photoV; return true; });
-  renderTeamSheet();
+  renderTeamEditSheet();
   renderAll();
 }
 
@@ -10221,6 +10232,8 @@ function paintNywStep1(a, m, out) {
 
 function paintNywStep2(a) {
   const electives = !!(CAMP.features && CAMP.features.electives);
+  // The Clear line names this camp's own marks ("shields" junior, "flags" senior), which a cleared team never wears again.
+  setTextIfChanged(setupEl('nyw-teams-crest'), (CAMP.crestNoun || 'shield') + 's');
   document.querySelectorAll('.nyw-carry .nyw-item').forEach((row) => {
     const k = row.dataset.nywItem;
     if (row.hasAttribute('data-feature')) setHiddenIfChanged(row, !electives);
@@ -10300,7 +10313,7 @@ function nywClearRows(a) {
     if (a.carry[k] !== 'clear' || !NYW_CARRY_WORDS[k]) return;
     if ((k === 'stations' || k === 'stationPeople') && !(CAMP.features && CAMP.features.electives)) return;
     if (k === 'stationPeople' && a.carry.stations === 'clear') return;
-    add('c-' + k, { mark: 'item' }, NYW_CARRY_WORDS[k], k === 'teams' ? 'Teams become Team 1 to Team ' + CAMP.teamCount + ', each marked by its number' : '');
+    add('c-' + k, { mark: 'item' }, NYW_CARRY_WORDS[k], k === 'teams' ? 'Teams become Team 1 to Team ' + CAMP.teamCount + ', each with its number for its emoji' : '');
   });
   if (c.noticePosted) add('notice', { mark: 'item' }, 'Notice board · back to a draft', '');
   const mem = nywUi.members;
@@ -10343,7 +10356,7 @@ function paintNywStep5(out, next) {
   if (nywUi.a1Ran) add('a1', 'Editing turned on for the schedule', '');
   add('saved', (out || 'Last year') + ' saved', 'In Restore points, under Past years');
   add('cleared', 'Scoreboard cleared', '');
-  if (d ? d.teams : dd.teams) add('teams', 'Teams renamed Team\u00a01 to Team\u00a0' + CAMP.teamCount, 'Each is marked by its number until it gets a colour, emoji or photo'); // no break: the count never ends a line alone
+  if (d ? d.teams : dd.teams) add('teams', 'Teams renamed Team\u00a01 to Team\u00a0' + CAMP.teamCount, 'Each shows its number until you give it an emoji or a photo'); // no break: the count never ends a line alone
   if (cleared) add('members', cleared + ' ' + nywWord(cleared, 'counselor taken off their team', 'counselors taken off their teams'), '');
   setHtmlIfChanged(setupEl('nyw-done-list'), rows);
   const failed = d ? d.members.failed.concat(d.members.incomplete.filter((p) => !d.members.failed.some((f) => f.key === p.key))) : [];

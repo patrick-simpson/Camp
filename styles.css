@@ -1870,11 +1870,12 @@ html.view-only #more-director {
   width: var(--tm, 34px);
   height: var(--tm, 34px);
   border-radius: 28%;
-  background: var(--paper-2);
-  /* No colour (a cleared team before a director picks one): a thin edge in INK, the text colour, which is no team's
-     colour in either theme (navy-black in light, near-white in dark; 14:1 on paper, so the boundary clears §8.1's 3:1),
-     and 1.5px, thinner than a team's own 2px colour, so a plain tile reads as plain, never as a twelfth swatch. */
-  box-shadow: inset 0 0 0 1.5px var(--ink);
+  /* No colour (a cleared team before a director picks one): the flat well and a HAIRLINE, a label and never a control.
+     An ink outline round a numeral on the well is exactly a points key (.aw-pt: the chosen 0 is the well, an ink edge,
+     an ink digit), and a tile drawn that way above a row of keys read as one more key. The well, not --paper-2: in dark
+     --paper-2 is the sheet's own colour, the well is recessed below it. The numeral carries the meaning (7:1 by itself). */
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--line);
   font-size: calc(var(--tm, 34px) * .56);
   line-height: 1;
 }
@@ -1887,9 +1888,10 @@ html.view-only #more-director {
    tile's text): the platform's keycap glyph is a tinted box of its own (blue-grey on phones), which would nest a box in
    the tile and lend the team a colour it does not have. In px like every mark, so it never grows with the text size. */
 .tm-tile[data-num] {
-  color: var(--ink);
-  /* 700, a step under the 800 of a place number, so "2 [1] Team 1" in the standings reads as a place beside a team's box. */
-  font: 700 calc(var(--tm, 34px) * .5)/1 var(--font-ui);
+  /* Quieter than any rank beside it (a place number, a medal disc: 800 in ink): 600 in ink-2, 7.9:1 on the light well and
+     11.8:1 on the dark one, so "2 [1] Team 1" in the standings and "① [3]" on a podium read as a place, then a team's box. */
+  color: var(--ink-2);
+  font: 600 calc(var(--tm, 34px) * .5)/1 var(--font-ui);
   font-variant-numeric: tabular-nums;
   letter-spacing: -.02em;
 }
@@ -3360,17 +3362,22 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
   font-size: calc(var(--mk) * .56);
   filter: drop-shadow(0 calc(var(--u) * 2) calc(var(--u) * 2) rgba(20, 26, 72, .28));
 }
+/* .tm.tm-tile, not .tm-tile: the size rule above is three classes (.mtv .mtv-rows .tm) and its `height: auto` beat a
+   two-class height, so a tile (it has no picture to take its height from) was drawn as a flat capsule in every frame. */
 .mtv .tm.flag,
-.mtv .tm-tile {
+.mtv .tm.tm-tile {
   height: var(--mk);
 }
-/* The TV is always light (its own literal colours), so a tile in it is too: the well and the ink edge / numeral of the
-   light theme, whatever the phone's theme. */
+/* The TV is always light (its own literal colours), so a tile in it is too: the well, the hairline and the numeral of
+   the light theme, whatever the phone's theme. */
 .mtv .tm-tile {
   --ink: #141a48;
+  --line: rgba(20, 26, 72, .13);
   background: #ebe2cf;
 }
+/* The light theme's ink-2, as a literal: a second --ink-2 declaration would read as a fourth palette block. */
 .mtv .tm-tile[data-num] {
+  color: #373d72;
   font-size: calc(var(--mk) * .5);
 }
 .mtv-marks {
@@ -12646,6 +12653,11 @@ html.counselor-preview .sheet {
 .tms-weak .sched-add {
   margin-top: var(--s-1);
 }
+/* Only cleared teams with no colour yet: a plain line, as the hub's uncounted note says it (the gold "!" is for a colour that
+   is hard to read, a real problem; "no colour yet" is not one). */
+.tms-weak[data-tone="note"] .setup-bang::before {
+  content: none;
+}
 .tms-weak .sched-add .gl-chev {
   width: 16px;
   height: 16px;
@@ -12757,7 +12769,8 @@ html.counselor-preview .sheet {
   opacity: .4;
   cursor: default;
 }
-.tms-emoji-taken {
+.tms-emoji-taken,
+.tms-emoji-plain {
   margin-top: 6px;
 }
 /* Twelve swatches, two to a row: each a pill with the team on a light chip and a dark chip at once, so the director sees both
@@ -14509,6 +14522,16 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
   align-self: center;
   display: grid;
   place-items: center;
+}
+/* A number tile (a cleared team) stays at row size here: at the 52px a shield is drawn it was the height of the keys
+   under it, and a square with a digit beside a row of digit keys read as one more key. A shield or flag keeps 52. */
+.nm-mark .tm-tile {
+  width: 36px;
+  height: 36px;
+  font-size: 20px;
+}
+.nm-mark .tm-tile[data-num] {
+  font-size: 18px;
 }
 .nm-name {
   grid-area: name;

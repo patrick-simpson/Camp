@@ -673,9 +673,12 @@ never rebuilds a segmented control under a finger.
   `--flag-fill:var(--team)` beside `teamAccentVars`' pair, so one team wears one
   colour everywhere; the TV page has no team records and keeps the built-in hue), else an
   emoji **tile** (its accent goes into `style` only if it is a plain hex; with none
-  the tile wears a 1.5px INK edge, never a team's colour; styles.css reads the
-  inline `--tm-accent` for the 2px colour edge, and `.tm-tile[data-num]` draws a keycap
-  emoji as its numeral in type).
+  the tile is the flat well with a 1px `--line` hairline, never a team's colour and
+  never an ink outline: a numeral on the well inside an ink edge IS a points key
+  (`.aw-pt`), and a tile drawn that way above a row of keys read as one more; styles.css
+  reads the inline `--tm-accent` for the 2px colour edge, and `.tm-tile[data-num]` draws
+  a keycap emoji as its numeral in type, 600 in ink-2, quieter than any place or medal
+  beside it. The cleanup moment keeps a tile at 36px, under the keys' height).
   `teamMarkHtml(id, {size, label})` is the markup (`.tm`, sized by `--tm`);
   **`paintTeamMark(el, id, opts)` writes through `setHtmlIfChanged`**, so the
   `<img>` of a long-lived spot (header, Your team sheet, More's team row) is
@@ -4537,7 +4540,9 @@ field, to the camp's own constant while the record doesn't carry it.
   (`teamsWeakSentence`: "Pumpkins is hard to read in light mode, Pilgrims in dark mode.") and a plain link "Pick new
   colours for Pumpkins and Pilgrims ›". **No Add, Delete or reorder** (the slots `t0…tN` key results, the rota, alerts
   and the rules; a test pins that the code never assigns `state.teams`). A row opens ONE sheet,
-  `#sheet-team-edit` (`teamUi.edit`; a shell sheet, one at a time, `data-pane` form | crop):
+  `#sheet-team-edit` (`teamUi.edit`; a shell sheet, one at a time, `data-pane` form | crop; painted by `renderTeamEditSheet`: the classic
+  scripts share ONE global scope, and this renderer once carried app.js's name `renderTeamSheet`, replaced the Your team sheet's and left that
+  sheet empty, so never reuse a top-level name across shipped scripts):
   **Team name** (1–60), **Short name** (1–20), **Emoji** (an input and a grid; one another team uses is
   dimmed and says whose), **Colour** (twelve swatches, `role=radio`, each a pill with the team's short
   name on a light chip and a dark chip at once, a hairline round the pair; an unpicked swatch is a hairline
@@ -4619,11 +4624,13 @@ field, to the camp's own constant while the record doesn't carry it.
   photo, else the number TILE (never the senior flag). A later pick shows as usual (a colour is the tile's 2px edge, an emoji its glyph, a photo beats
   everything) and never clears the marker; emptying a field on the team sheet falls back to the slot's number, not the printed look. Any tile whose
   emoji is a keycap is drawn as its digit in type (`data-num`, never the platform's boxed glyph); `bracketMarkHtml` does the same for a keycap, and
-  confetti / board cannons use `teamMascot` (the party emoji for a keycap). styles.css keys the neutral ink edge on the ABSENCE of an inline
-  `--tm-accent` / `--team-accent`, so those are written inline only for a team that has a colour (`frame.test.js`, `team-branding.test.js` pin it).
+  confetti / board cannons use `teamMascot` (the party emoji for a keycap). styles.css keys the plain look (a tile's well and hairline, a Big
+  Board column with no wash) on the ABSENCE of an inline `--tm-accent` / `--team-accent`, so those are written inline only for a team that has a colour (`frame.test.js`, `team-branding.test.js` pin it).
   The Teams row leaves out a short name equal to the name and the emoji beside its own tile; the hub row gets a gentle uncounted note ("Team 2 has
   no colour yet" / "6 teams have no colour yet") while a plain team has neither colour nor photo, and Pick colours (`teamsModel().flag`: weak
-  colours and these) serves them. Not built, an owner question: a way back to the camp's own printed look for a cleared team.
+  colours and these) serves them. The Teams screen says it in the same words, as a plain line with no gold "!" (`#teams-weak[data-tone="note"]`)
+  while only such teams are in it (the "!" is for a colour that is hard to read), and its link counts more than two teams ("Pick colours for
+  4 teams"); a plain team's sheet says under the emoji grid "Leave it empty to show the team’s number." Not built, an owner question: a way back to the camp's own printed look for a cleared team.
 - **Known limit, recorded: the big screen keeps the camp's original look (a cleared team still shows its printed shield or flag there until Part 2's R2).** The TV page (`current-standings.js`) is public and reads only
   `revealPublic`, which has no colour, emoji or photo field (and the rules must not change for this), so a director's new colour, emoji or
   photo shows on every phone but the big screen still draws the camp's built-in crest, flag colour and mascot emoji (`teamEmojiOf`). A

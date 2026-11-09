@@ -1335,7 +1335,7 @@
                      colour, emoji or photo. So the row sits here under Keep |
                      Clear, not with the schedule and games ("App's own"). -->
                 <div class="wk-day nyw-item" data-nyw-item="teams" data-choice="keep">
-                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Each team becomes Team&nbsp;1, Team&nbsp;2 and so on, with its number for its emoji and no colour, shield or flag, until you pick new ones on the Teams screen.</span></span>
+                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Each team becomes Team&nbsp;1, Team&nbsp;2 and so on, with its number for its emoji and no colour. The camp’s own <span id="nyw-teams-crest">shields</span> don’t come back.</span></span>
                   <div class="wk-ticks" role="radiogroup" aria-label="Team names, emoji and colours"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
                 </div>
                 <div class="wk-day nyw-item" data-nyw-item="counselors" data-choice="clear">
@@ -1937,7 +1937,9 @@
           <!-- Original colours that are hard to read on a theme, NAMED ("Pumpkins is hard to read in light mode, Pilgrims in dark mode."):
                the gold "!" (never the pennant, which is the Teams icon and senior's own marks) and a plain link named for the same teams.
                The same block lists the teams the new-year setup cleared that have no colour yet ("6 teams have no colour yet." ·
-               "Pick colours for all 6 teams" / "Pick colours for Team 2 and Team 4"), into the same #sheet-team-colors. -->
+               "Pick colours for all 6 teams" / "Pick colours for Team 2 and Team 4"), into the same #sheet-team-colors. With ONLY
+               such teams in it the block is data-tone="note": a plain ink-2 line with no gold "!", because the hub counts the same
+               fact as a gentle note, never a problem; the "!" stays for a colour that is hard to read. -->
           <div class="tms-weak" id="teams-weak" hidden>
             <p class="setup-note setup-bang"><span id="teams-weak-text"></span></p>
             <button type="button" class="sched-add tms-weak-btn" id="teams-weak-btn"><span id="teams-weak-btn-text"></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
@@ -4810,6 +4812,8 @@
           <label class="fld-label" for="team-emoji">Emoji</label>
           <input type="text" class="fld-input tms-emoji-input" id="team-emoji" maxlength="16" placeholder="🦊">
           <div class="tms-emoji-grid" id="team-emoji-grid" role="group" aria-label="Pick an emoji"></div>
+          <!-- A cleared team only: how to get its number back after picking an emoji (setup-ui.js shows it from teamPlain). -->
+          <p class="tms-hint tms-emoji-plain" id="team-emoji-plain" hidden>Leave it empty to show the team’s number.</p>
           <p class="tms-hint tms-emoji-taken" id="team-emoji-taken"></p>
         </div>
         <p class="fld-error" id="team-emoji-error" role="alert" hidden></p>
