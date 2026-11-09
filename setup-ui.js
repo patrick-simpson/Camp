@@ -3239,6 +3239,7 @@ async function schedRemoveItem() {
   const fromTypical = it.origin === 'typical' || it.origin === 'changed';
   const note = (games) => (games.length ? [hubPlural(games.length, 'game sits', 'games sit') + ' on it. ' + (games.length === 1 ? 'It keeps its results and is' : 'They keep their results and are') + ' listed as not on the schedule.'] : []);
   const tellOffer = schedRemoveTell(it, name, fromTypical);
+  const m0 = tellOffer ? (schedItemModel(it) || {}).item : null;
   let ticked = false;
   const ask = async (o) => {
     if (!tellOffer) return askDialog(o);
@@ -3254,6 +3255,8 @@ async function schedRemoveItem() {
     const pick = await ask({ title: it.dayKey === 'typical' ? 'Remove ' + name + ' from the typical day?' : 'Remove ' + name + '?', body: it.dayKey === 'typical' ? ['Every day that follows the typical day loses it.'].concat(note(allGamesOn)) : ['Skipping it affects only ' + day + ', and you can bring it back. Removing it takes it off every day that follows the typical day.'].concat(note(dayGames)), actions });
     if (pick !== 'day' && pick !== 'typical') return;
     scope = pick;
+    // The tick was offered before the scope was chosen: "Skip just <day>" is told only when THAT day's occurrence is tellable.
+    if (ticked && scope === 'day' && fromTypical && it.dayKey !== 'typical' && !(m0 && pushScheduleTimeTellable(SETUP_DK.indexOf(it.dayKey), m0.start))) ticked = false;
   } else {
     const ok = await ask({ title: 'Remove ' + name + '?', body: ['It is only on ' + word + '.'].concat(note(dayGames)), actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Remove it', value: 'go', kind: 'danger' }] });
     if (ok !== 'go') return;
