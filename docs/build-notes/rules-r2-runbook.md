@@ -73,8 +73,10 @@ R2 is additive, so a rollback loses nothing; the client then sends places plain.
 ## 6. Tell the agent
 
 Say "R2 is published and read back". The next deploy flips `REVEAL_BRANDING_LIVE = true` and adds the What's new
-note. Then run a Practice on the real big screen and check a team's picked colour, emoji and photo, and a cleared
-team's number tile, appear as each place is shown.
+note, which must say exactly what reaches the big screen: a team's photo; a picked colour (a line under the team's name,
+and the flag or tile filled or edged with it); a picked emoji (the confetti, or a cleared team's tile); a cleared team's
+number. Then run a Practice on the real big screen and check each of those appears as each place is shown, and nothing
+before it.
 
 ## The kill switch (unchanged)
 

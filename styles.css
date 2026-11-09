@@ -3582,6 +3582,22 @@ html.calm-motion .mtv-hero-name {
   font: 900 calc(var(--u) * 24)/1.02 var(--font-ui);
   letter-spacing: -0.02em;
 }
+/* A colour a director picked, as the big screen draws it beside a mark that may not wear it (a junior shield, a photo):
+   a rule under a one-team name line, and a bar under a board row's shield or photo (reveal-ui.js revealUiRule /
+   revealUiBarAttr).
+   The palette's light value on the TV's light paper, a boundary, never text. */
+.mtv-hero-name[data-accent],
+.mtv-champ-name[data-accent] {
+  text-decoration: underline var(--team-rule);
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.1em;
+  text-decoration-skip-ink: none;
+}
+.mtv-mk[data-accent] {
+  display: grid;
+  padding-bottom: calc(var(--u) * 1.5);
+  border-bottom: calc(var(--u) * 1.6) solid var(--team-rule);
+}
 /* The same tag the big screen wears for a practice (current-standings.html). */
 .mtv-tag {
   position: absolute;

@@ -2843,10 +2843,14 @@
              <li class="mtv-row" data-key="still-<n>" data-state="still"><span
              class="mtv-still">Still to come</span></li> per TEAM not shown yet, then
              <li class="mtv-row" data-key="g<place>-<team>" data-pl="5" [data-now]>
-             <span class="mtv-pl">[crown svg]5th</span><span class="mtv-mk">teamMarkHtml</span>
+             <span class="mtv-pl">[crown svg]5th</span><span class="mtv-mk"[ data-accent
+             style="--team-rule:#hex"]>teamMarkHtml</span>
              <span class="mtv-nm">Pilgrims</span><span class="mtv-pts">18</span></li>,
              the best place first; data-now = the place just shown (the gold edge), the
-             crown only on 1st at a finale's final table. A picture: aria-hidden;
+             crown only on 1st at a finale's final table; data-accent = a colour a director
+             picked (the big screen's bar under the mark; a one-team name line in the hero
+             and the crowning carries it as #mtv-hero-name / #mtv-champ-name[data-accent]
+             with --team-rule). A picture: aria-hidden;
              #reveal-tv-now says the same in words. -->
         <div class="mtv" id="reveal-tv" data-frame="waiting" aria-hidden="true">
           <div class="mtv-screen">

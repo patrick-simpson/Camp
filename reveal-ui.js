@@ -519,6 +519,30 @@ function revealUiTvMarkHtml(id, brand, size) {
   return '<span class="tm tm-tile"' + (spec.num ? ' data-num="' + esc(spec.num) + '"' : '') + ' style="' + tm + (spec.edge ? ';--tm-accent:' + esc(spec.edge) : '') + '" aria-hidden="true">' + esc(spec.num || spec.emoji) + '</span>';
 }
 
+// A colour a director picked for a shown place, as the big screen draws it (current-standings.js accentOf): the palette's
+// light value, selected by the entry's laundered `k`, or ''.
+function revealUiAccent(e) {
+  const k = e && e.k;
+  return typeof k === 'string' && Object.prototype.hasOwnProperty.call(CAMP_TEAM_PALETTE, k) ? CAMP_TEAM_PALETTE[k].l : '';
+}
+
+// The big screen's bar under a board row's mark, where the mark does not wear the colour (a shield, a photo).
+function revealUiBarAttr(e) {
+  const hex = revealUiAccent(e);
+  const kind = hex ? revealMarkSpec(CAMP, e.id, e).kind : '';
+  return kind === 'shield' || kind === 'photo' ? ' data-accent style="--team-rule:' + esc(hex) + '"' : '';
+}
+
+// The rule under a name line that is ONE team's (the hero, the crowning), as the big screen draws it; a tie's joined
+// line carries none. Written only when it changes, so an idle repaint writes nothing.
+function revealUiRule(el, entries) {
+  if (!el || !el.style) return;
+  const hex = entries && entries.length === 1 ? revealUiAccent(entries[0]) : '';
+  revealUiData(el, 'accent', hex ? true : null);
+  if ((el.style.getPropertyValue('--team-rule') || '') === hex) return;
+  if (hex) el.style.setProperty('--team-rule', hex); else el.style.removeProperty('--team-rule');
+}
+
 // ids → the printed look (Waiting, the intro); entries → each shown place's own look (the hero, the champions).
 function revealUiMarksHtml(items, size) {
   return items.map((it) => (typeof it === 'string' ? revealUiTvMarkHtml(it, null, size) : revealUiTvMarkHtml(it.id, it, size))).join('');
@@ -539,7 +563,7 @@ function revealUiBoardHtml(groups, o) {
     g.entries.forEach((e) => {
       const crown = o.crown && g.place === 1 ? '<svg class="ico mtv-row-crown" aria-hidden="true"><use href="#i-crown"/></svg>' : '';
       rows.push('<li class="mtv-row" data-key="g' + g.place + '-' + esc(e.id) + '" data-pl="' + g.place + '"' + (o.nowIdx === g.idx ? ' data-now' : '') + '><span class="mtv-pl">' + crown + esc(ordinal(g.place)) + '</span>' +
-        '<span class="mtv-mk">' + revealUiTvMarkHtml(e.id, e, 24) + '</span><span class="mtv-nm">' + esc(e.nm) + '</span><span class="mtv-pts">' + e.p + '</span></li>');
+        '<span class="mtv-mk"' + revealUiBarAttr(e) + '>' + revealUiTvMarkHtml(e.id, e, 24) + '</span><span class="mtv-nm">' + esc(e.nm) + '</span><span class="mtv-pts">' + e.p + '</span></li>');
     });
   });
   return rows.join('');
@@ -573,6 +597,7 @@ function revealUiPaintTv(m) {
       setTextIfChanged(revealUiEl('mtv-hero-place'), ordinal(g.place) + ' place' + (g.entries.length > 1 ? ' · tie' : ''));
       setHtmlIfChanged(revealUiEl('mtv-hero-marks'), revealUiMarksHtml(g.entries, 112));
       setTextIfChanged(revealUiEl('mtv-hero-name'), g.entries.map((e) => e.nm).join(' & '));
+      revealUiRule(revealUiEl('mtv-hero-name'), g.entries);
       setTextIfChanged(revealUiEl('mtv-hero-points'), String(g.entries[0].p));
       setTextIfChanged(revealUiEl('mtv-hero-break'), g.entries.length === 1 ? g.entries[0].g + ' gold · ' + g.entries[0].s + ' silver · ' + g.entries[0].b + ' bronze' : '');
     }
@@ -587,6 +612,7 @@ function revealUiPaintTv(m) {
     const first = frame.groups.find((x) => x.place === 1);
     setHtmlIfChanged(revealUiEl('mtv-champ-marks'), first ? revealUiMarksHtml(first.entries, 64) : '');
     setTextIfChanged(revealUiEl('mtv-champ-name'), first ? first.entries.map((e) => e.nm).join(' & ') : '');
+    revealUiRule(revealUiEl('mtv-champ-name'), first ? first.entries : null);
   }
   setTextIfChanged(revealUiEl('reveal-tv-now'), revealUiTvWords(frame, m));
   // The picture moves with the show: a new place's shield drops and its name arrives, the score pops at its beat, the

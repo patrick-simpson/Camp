@@ -84,13 +84,32 @@
   }
   // A team slot's own mascot (camps.js), laundered like every string that becomes markup.
   function teamEmojiOf(id) { return safeEmoji(CAMP.teamEmoji && CAMP.teamEmoji[id], '🏕️'); }
+  // A colour a director picked for a SHOWN place, as the palette's light value, or ''. The entry's `k` only SELECTS
+  // a swatch (an own-property lookup, so '__proto__' or a style payload selects nothing); the value is the constant's.
+  // A junior shield and a photo do not wear the colour, so it is drawn beside the mark: a rule under the name in the
+  // spotlight and the crowning for every picked colour (one team, one colour), and on the board a bar under a shield or
+  // a photo (the page's CSS: .tn, .em[data-accent]).
+  function accentOf(e) {
+    var k = e && e.k;
+    return typeof k === 'string' && Object.prototype.hasOwnProperty.call(CAMP_TEAM_PALETTE, k) ? CAMP_TEAM_PALETTE[k].l : '';
+  }
+  // A shown team's name as markup, escaped; with its picked colour as a rule under it. The colour is a palette hex,
+  // never a database string, so it may ride a style attribute.
+  function nameHtml(e) {
+    var acc = accentOf(e);
+    return acc ? '<span class="tn" style="--team-rule:' + acc + '">' + esc(e.nm) + '</span>' : esc(e.nm);
+  }
+  // Senior's printed mascots are colour dots (🔴🔵🟢🟡): a team that picked another colour must not fly its old one
+  // beside a flag in the new colour, so it gets the party set unless it picked an emoji of its own.
+  var COLOUR_DOTS = ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫', '⚪'];
   // The emoji that fly for a set of entries: a team's own, nothing of a cleared team's (the party set instead),
   // else the camp's printed mascot.
   function confettiFor(entries) {
     var out = [];
     entries.forEach(function (e) {
       var m = revealMascot(CAMP, e.id, e);
-      if (m) out.push(m); else if (e.pl === true || e.em) out.push.apply(out, PARTY);
+      var recoloured = !!m && !e.em && !!accentOf(e) && COLOUR_DOTS.indexOf(m) >= 0;
+      if (m && !recoloured) out.push(m); else if (e.pl === true || e.em || recoloured) out.push.apply(out, PARTY);
     });
     return out.length ? out : PARTY;
   }
@@ -553,7 +572,14 @@
     boardHtml = html;
     boardEl.innerHTML = html;
     var slots = boardEl.querySelectorAll ? boardEl.querySelectorAll('.em') : [];
-    for (var k = 0; k < slots.length && k < ids.length; k++) slots[k].appendChild(teamMark(ids[k].id, 'row-crest', ids[k]));
+    for (var k = 0; k < slots.length && k < ids.length; k++) {
+      slots[k].appendChild(teamMark(ids[k].id, 'row-crest', ids[k]));
+      // The bar stands in for the colour only where the mark does not wear it (a shield, a photo): a flag or a tile
+      // in that colour already says it, and a second line under it was noise in a dense row.
+      var acc = accentOf(ids[k]);
+      var kind = acc ? revealMarkSpec(CAMP, ids[k].id, ids[k]).kind : '';
+      if (kind === 'shield' || kind === 'photo') { slots[k].setAttribute('data-accent', ''); slots[k].style.setProperty('--team-rule', acc); }
+    }
   }
 
   // The beat inside one place's moment: the name alone, then the place and score, then the breakdown.
@@ -580,7 +606,7 @@
       entry.appendChild(teamMark(e.id, 'hero-shield', e));
       var extra = extraWords(e);
       entry.appendChild(box('hero-info',
-        '<div class="hero-name">' + esc(e.nm) + '</div>' +
+        '<div class="hero-name">' + nameHtml(e) + '</div>' +
         '<div class="hero-stats">' +
           '<div class="hero-points"><span class="num">' + esc(String(e.p)) + '</span><span class="lbl">points</span></div>' +
           '<div class="hero-break"><div class="words">' + esc(medalWords(e)) + '</div>' +
@@ -642,7 +668,7 @@
 
   // The champions' celebration (a finale day): a full-screen crowning, a sustained barrage while it is fresh.
   function paintChampion(g, animate) {
-    var names = g.entries.map(function (e) { return esc(e.nm); }).join(' &amp; ');
+    var names = g.entries.map(nameHtml).join(' &amp; ');
     var emojis = confettiFor(g.entries); // the confetti only, never beside a name
     var pts = g.entries[0].p;
     var champ = $('champ');

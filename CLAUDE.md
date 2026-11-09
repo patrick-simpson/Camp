@@ -4673,8 +4673,9 @@ field, to the camp's own constant while the record doesn't carry it.
   4 teams"); a plain team's sheet says under the emoji grid "Leave it empty to show the team’s number." Not built, an owner question: a way back to the camp's own printed look for a cleared team.
 - **The big screen draws a team's own look for a SHOWN place only (R2, see the R1 notes; live once the owner publishes R2 and the switch is
   flipped).** Waiting and the intro keep the camp's printed marks, because no team's look may be public before its place is shown. The
-  Teams sheet's photo note says the photo shows on the big screen once `REVEAL_BRANDING_LIVE` is on. **Owner question, open:** whether Waiting
-  and the intro should show no team marks at all for a cleared or re-branded team.
+  Teams sheet's photo note says, once `REVEAL_BRANDING_LIVE` is on, that the photo shows on the big screen and that anyone can open it.
+  **Owner question, open:** what Waiting and the intro show after a new-year clear or a re-brand: the printed marks (as built), no marks,
+  or plain numbered tiles 1…N (a slot number names no team, place or look).
 - **A backup file or a restore point can only bring in well-formed branding** (`teamsFromBackup`, used by
   `tryImport`, the restore preview and `restoreApply`): id, name and counselor as they were, the other
   fields only if they pass the checks above, and `photoV` NEVER from the file, because `teamPhotos/<tid>`
@@ -5753,7 +5754,18 @@ directors…" (mockup 11).
   place and the longest real names, both camps; a two-way tie keeps its own sizes.
   A shared title (2 to 6 champions) sizes its marks by their count on one row and steps
   the names down (`.champ-shields:has(> :nth-child(n))`): two junior champions used to
-  run off the top and the bottom of every screen.
+  run off the top and the bottom of every screen. ONE champion's mark is sized by its
+  HEIGHT whatever it is (`.champ-shields > :only-child`, 39vh) and the name, crown and
+  points by the screen's height too, so a photo (a fifth taller than a shield at one width)
+  or a name on two lines fits a 720p projector (both ran off it). In the hero a photo
+  takes the shield's height (`.hero:not(.tied) .hero-shield.tv-photo`, 41vh wide), and in
+  a tie every picture takes the photo's 480:667 box (`object-fit: contain`: a shipped
+  shield, about 0.87:1, sits centred in it) while flags and tiles take its extra height as
+  margin, so every name in a tie starts on one line whatever the marks.
+  `docs/build-notes/verify/r2-design.cjs` (the real drawing: every look, ties of a photo or
+  a tile beside shields, 3 and 6 on one place, the crowning 1–6, the table; fails on a
+  clipped frame or a tie whose names are not level) and `r2-champions-fit.cjs` (one
+  champion with a photo and a two-line name) are the checks to re-run.
 - **The words are the phones' words**: "2 gold · 1 silver · 1 bronze" then
   "verse 4 · cleanup 3 · quick 2" (the second line only when one is non-zero; a
   negative reads with a minus sign), in the hero (`.hero-break .words`) and on the
@@ -5773,10 +5785,18 @@ directors…" (mockup 11).
   never falls back to the printed look. A database string never becomes markup or a style: colours only SELECT a palette value,
   the photo is a laundered data address set as a `src` property, the emoji and numeral are `textContent`, and every mark is built
   as DOM. A mascot emoji is never drawn beside a name (§8.6); confetti flies a team's own emoji (not a keycap), the party set
-  for a cleared team, else the printed mascot (`confettiFor`). EVERY appearance goes through it (the hero, the board's rows
+  for a cleared team and for a senior team that picked a colour but no emoji (its printed mascot is a colour dot), else the
+  printed mascot (`confettiFor`). So a picked emoji is on the mark only as a cleared team's tile, and otherwise flies as its
+  confetti. **A picked colour also shows beside a mark that does not wear it** (a junior shield, a photo): a rule under the
+  team's name in the hero and the crowning for every picked colour (`.tn`, drawn behind the letters, one under each line of a
+  wrapped name; its `--team-rule` is the palette's light value in a style attribute, a constant selected by `k`, never a
+  database string) and, on the board, a bar under a shield's or photo's row mark (`.em[data-accent]`); the mini TV draws both
+  (`revealUiRule` on a one-team name line, `revealUiBarAttr`). A tile is flat (no drop shadow) and its edges are capped at the
+  photo card's weights (a hairline; a picked colour at most 6px). EVERY appearance goes through it (the hero, the board's rows
   put into each row's empty `.em` after the markup, the champions); `groupsSig` carries the look so a changed one repaints.
-  A tie mixing a 480:667 picture with square marks keeps its names on one line. An older sender's node (no look) draws exactly
-  as before. `tests/tv.test.js` pins it per frame and per camp, hostile values inert, and the paths, no-write and CSP pins
+  An older sender's node (no look) draws exactly as before. With the OS reduced-motion setting nothing moves (the marks and the
+  crown stop bobbing; the intro's marks, letters and "Get ready…" fade in; the spotlight, breakdown and board come and go as
+  fades). `tests/tv.test.js` pins it per frame and per camp, hostile values inert, and the paths, no-write and CSP pins
   unchanged (no new host).
 - **One visual system with the phones** (§8): sentence case and Inter 850 with a
   slightly negative track, never letter-spaced capitals ("Current standings", "3rd
