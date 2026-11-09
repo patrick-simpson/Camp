@@ -7711,24 +7711,6 @@ body.builder-open .sync-status-footer {
   display: none;
 }
 
-.copy-matchup-btn {
-  width: 100%;
-  margin-top: 0.6rem;
-  background: transparent;
-  border: 1.5px dashed var(--color-bronze);
-  color: var(--color-bronze);
-  border-radius: var(--radius-md);
-  padding: 0.6rem 0.75rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.copy-matchup-btn:disabled {
-  opacity: 0.7;
-}
-
 /* Forecast badge next to a future elective (schedule sheet). */
 .wx-badge {
   font-size: 0.78rem;
@@ -19243,4 +19225,133 @@ jelly-chip.sched-day-chip[data-today][selected] {
 .nbs-down-s {
   font: 600 0.8125rem/1.2 var(--font-ui);
   color: var(--ink-2);
+}
+/* ============================================================
+   STEP 29, FINISHED: the bracket's keys, score entry's Save in the
+   dock, the four-team card before it starts (the design pass; each
+   note names the markup a build session writes)
+   ============================================================ */
+
+/* ── The bracket's "… won" keys and the copy line (matchupCalloutHTML: the six-team wizard AND the four-team bracket) ──
+   <div class="winner-btn-row">
+     <button type="button" class="btn winner-btn" data-winner="t0" data-joy>
+       <span class="winner-mark" aria-hidden="true">bracketMarkHtml(t0, 28)</span><span class="winner-t">Ferocious Foxes won</span></button>
+     … the other team's key …</div>
+   <button type="button" class="btn-quiet copy-matchup-btn"><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg>Copy matchup for text</button>
+   Two EQUAL choices in the app's chunky key: the sheet face with the team's mark beside its words, never a fill (gold is Save's
+   alone, camp blue is focus: §8.3), left-aligned so a long name wraps under itself instead of re-centring. Stacked on a phone,
+   side by side once both fit 15rem. The ladder's "reached 21" spotlight (`.winner-ready`, bindLadderMatch) is the key filled
+   ink: the app's "chosen" look, one key out of two, without a medal colour (nothing is won until it is tapped). Copy is a quiet
+   link-coloured line under them: a utility, not a third choice. */
+.winner-btn-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 10px;
+}
+button.winner-btn {
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 14px;
+  font: 800 1.0625rem/1.2 var(--font-ui);
+  text-align: left;
+  white-space: normal;
+}
+.winner-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  font-size: min(1.75rem, 30px); /* a shield camp's emoji (bracketMarkHtml), capped so large text grows the words, not the mark; a flag or tile sizes itself by --tm */
+  line-height: 1;
+}
+.winner-t {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+button.winner-btn.winner-ready {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+button.copy-matchup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+button.copy-matchup-btn .ico {
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+  stroke-width: 2.3;
+}
+
+/* ── Score entry (renderTally): the team's mark BESIDE its name ──
+   The mark used to sit on a line of its own above the name (a .tm is a block). A two-column grid: the mark spans the name and
+   the counselor line, so every row starts at the same left edge as the podium picker's keys and Now's rows. */
+.score-input-row .score-team {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+  font: 750 1rem/1.25 var(--font-ui);
+}
+.score-input-row .score-team > .chip-emoji {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+}
+.score-input-row .score-team > .chip-sub {
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+/* The tally's medal picks: native selects in the app's field look (the phone's own wheel, as Camp week's), never Jelly
+   selects. <select class="fld-input medal-pick" data-medal="gold" aria-label="Gold medal team"><option value="">Pick a team</option>…
+   A tally's medals follow its scores; the picks only settle a tie, so three compact rows under the ranking, not the podium
+   picker's eighteen keys (the scores already put the teams in order above them). */
+.medal-slot select.medal-pick {
+  font: 750 1rem/1.2 var(--font-ui);
+}
+
+/* ── The game takeover's dock while a result is being made (gamesDock tones `tally` and `six`, games-ui.js gamesDockHtml) ──
+   Score entry and the six-team bracket's summary save from the dock exactly as the podium picker and the four-team bracket do:
+     tally, not ready  <button type="button" class="btn btn-big btn-block gd-save" id="game-save" data-tone="tally"
+                         aria-disabled="true">Type the scores first</button>
+                       ("Pick bronze, then save" · "Pick silver and bronze" when fewer than three teams have a score;
+                       "Each medal needs a different team" when two medals name one team: a tap scrolls to that row)
+     tally, ready      <p class="gd-left" id="game-save-note">4 of 6 teams have a score</p>   (only while a team has none)
+                       <button type="button" class="btn btn-big btn-block btn-gold gd-save" id="game-save" data-tone="tally" data-joy>Save result</button>
+     six, at Results   <button type="button" class="btn btn-big btn-block btn-gold gd-save" id="save-bracket-btn" data-kind="six" data-joy>Save result</button>
+                       (the four-team one gains data-kind="four"; before Results neither bracket has a dock)
+     after a save      the Next game dock, unchanged.
+   The note is the dock's own small line (.gd-left), so nothing new is drawn here; the dock hides under the keyboard
+   (data-kb-hide), so the score boxes keep the whole screen while a score is typed. The six-team summary's body is the
+   four-team one's: "Ready to save", its meta line, the result list, then "Eliminated in Round 1: …" a step below the list. */
+#bracket-body .gres + .four-meta {
+  margin-top: 12px;
+}
+
+/* ── Now: a card that IS one game, before it starts ──
+   #now-card-tag gains data-tag="todo" with the words "Not started": the empty ring a game row draws, said in words on the title
+   (the row that carried the ring is folded into the card). An outline in ink-3 around ink-2 words: quieter than Live and Done,
+   never a fill (nothing has happened yet). The four-team card under it: fixed pairs show the four cells as usual (both
+   semifinals named, 3rd place and the final "Semifinal 1 winner"…); pairs that come from the standings or a director's pick
+   show none and the card's note slot says so instead:
+     <p class="nw-note" data-note="start"><svg class="ico"><use href="#i-clock"/></svg><span>A director picks the semifinals when the bracket starts</span></p>
+   A counselor's card and a director's are the same here: semifinals seeded from the points are a director's, in the takeover only. */
+.gr-tag[data-tag="todo"] {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
+  color: var(--ink-2);
+}
+
+/* ── The podium picker: a team holding another medal can be MOVED (redesign §5.5, decided by the design pass) ──
+   A tap on that team's key in another row moves it there in ONE draft update (the other medal's leaf cleared in the same
+   update), so a director fixing "Foxes were gold, not silver" taps once. The key is no longer aria-disabled: it is an ordinary
+   key carrying its "② has silver" tab, and its spoken label ends ", has silver. Tap to make them gold". A key in a row that is
+   still WAITING for the medal above keeps the dashed well. Nothing here needs new CSS beyond the tab staying legible over an
+   ordinary key's edge: */
+.pp-team[data-taken]:not([aria-disabled="true"]) .pp-taken {
+  color: var(--ink);
 }
