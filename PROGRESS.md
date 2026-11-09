@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Nov 9, 10:55 AM ET** (update this line every time the file changes)
+Last updated: **Mon Nov 9, 1:15 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -144,6 +144,7 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
+- **RUNNING (team look + branding run, started Mon Nov 9, 1:15 PM ET):** run `wf_e4885e49-ca1` (script copy `docs/build-notes/runs/build-run12.js`). Part 1: a team cleared by the new-year setup becomes "Team N" with a number emoji and no old shield, emoji or colour (owner, Nov 9, item 8); What's new notes show only during the hour after an update goes live (item 9); junior's starter notice loses its repeated line; the tests v215's reviews asked for. Deployed as one version. Part 2: big-screen branding (item 7) with its rules release R2, deployed with the branding switch OFF, then a Cloud Shell runbook for the owner (`docs/build-notes/rules-r2-runbook.md`). If it stops, resume with `Workflow({scriptPath: <the run's script>, resumeFromRunId: 'wf_e4885e49-ca1'})`.
 - **Owner answers built, LIVE** (v215, commit 71128b5, Monday Nov 9, 10:55 AM ET) — What's new is back (role-sorted banners at the top of Now, one an hour, 7 AM–9 PM, starting with a short catch-up set), the new-year setup clears team names to Team 1…N, a to-be-announced verse is a plain card for counselors, Remove… can tell the phones that follow an item, the starter notice reads better; owner action: none (on a real phone, glance at one note an hour and Show me).
 - **Old setup tools back, LIVE** (v214, commit dd529c8, Mon Nov 9, 8:05 AM ET) — Games days can be renamed, moved to another weekday (their games and results go with them) and deleted when empty; Restore points has Copy the backup and Restore from pasted text beside the file restore; Restore default games & days stays gone by the owner's choice; plus the Step 29 leftovers (copy, missing tests, Big Board long names); owner action: none.
 - **OWNER DECISIONS (Mon Nov 9, about 6:30 AM ET): every open owner question is answered** — see `docs/build-notes/owner-decisions-2026-11-09.md`. To build next, after the run above: the new-year Clear makes "Team 1…N"; a single to-be-announced verse is a plain card for counselors; a tell-followers tick on Remove…; the starter notice's copy polished (fixture regenerated once, on purpose); **What's new comes back** (banners one an hour, sorted by role, written with each update, a catch-up set); and **the big screen shows teams' new colour, emoji and photo** (a rules change the owner publishes from Cloud Shell first). Everything else stays as built.
