@@ -34,33 +34,24 @@ const CODE_UPDATED_AT = '2026-11-09T15:50:28Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
 const APP_VERSION = 215;
 
-// "What's new" notes (owner's answer of Nov 9, 2026; engine under "What's new notes" below, design in CLAUDE.md). Each entry
-// is a short, plain-English note about a change people would notice, shown ONE AN HOUR per phone in Now's message strip.
-// Add notes to the END; an id is never reused. Shape: { id (^[a-z0-9-]{3,40}$), at (UTC ISO: the time the deploy that ships it
-// went live), for ('everyone' | 'counselors' | 'directors' | 'owner'), camp? ('junior' | 'senior'; none = both), needs? (gate
+// "What's new" notes (owner's answer of Nov 9, 2026, item 9; engine under "What's new notes" below, design in CLAUDE.md). Each
+// entry is a short, plain-English note about a change people would notice. A note is LIVE for ONE HOUR from its `at`, by the
+// server's clock, on every phone that has Camp open in that hour, and never again: no pacing, no catch-up, no waking-hours rule.
+// An update that goes live at night has notes nobody sees. All of one update's notes show together.
+// Shape: { id (^[a-z0-9-]{3,40}$, never reused: see WHATS_NEW_RETIRED), at (UTC ISO: the time the deploy that ships it went
+// live), for ('everyone' | 'counselors' | 'directors' | 'owner'), camp? ('junior' | 'senior'; none = both), needs? (gate
 // names in WHATS_NEW_NEEDS: a screen the reader must be able to open), text (one or two lines on a 360px phone, no emoji, no
 // "!", never "update" / "feature" / "version", never a point or a place), show?: { to, where } (a WHATS_NEW_SHOW key and
 // its words: "Show me the Games tab") }.
-// THE DEPLOY MUST SET `WHATS_NEW_SHIPPED_AT` (the one `at` every note of this deploy carries) to the deploy's UTC time, the
-// same moment as CODE_UPDATED_AT; the next deploy's notes carry their own constant or literal `at`.
+// THE DEPLOY sets `WHATS_NEW_SHIPPED_AT` (the one `at` every note of this deploy carries) to the deploy's UTC time, the same
+// moment as CODE_UPDATED_AT, and MOVES every note whose hour is over out of CHANGES and into WHATS_NEW_RETIRED (ids only), so an
+// id is never reused (the lint in tests/whats-new.test.js checks both lists).
 const WHATS_NEW_SHIPPED_AT = '2026-11-09T15:50:28Z';
-const CHANGES = [
-  { id: 'four-tabs', at: WHATS_NEW_SHIPPED_AT, for: 'counselors', text: 'Camp now has four tabs: Now, Games, Chat and More.' },
-  { id: 'score-from-games', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['games'], text: 'Score each game from its row on the Games tab.', show: { to: 'games', where: 'the Games tab' } },
-  { id: 'games-tab-results', at: WHATS_NEW_SHIPPED_AT, for: 'counselors', needs: ['games'], text: 'Every game and its winners are on the Games tab.', show: { to: 'games', where: 'the Games tab' } },
-  { id: 'reveal-remote', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['reveal'], text: 'Run the reveal from More. Your phone is the remote.', show: { to: 'reveal', where: 'the reveal remote' } },
-  { id: 'chat-tab', at: WHATS_NEW_SHIPPED_AT, for: 'everyone', needs: ['chat'], text: 'Tap the bell in Chat to hear about every message.', show: { to: 'chat', where: 'the Chat tab' } },
-  { id: 'tell-everyone', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['tell'], text: 'Send a banner, a buzz or the notice from Tell everyone.', show: { to: 'tell', where: 'Tell everyone' } },
-  { id: 'phone-alerts', at: WHATS_NEW_SHIPPED_AT, for: 'everyone', needs: ['alerts'], text: 'Alerts in More can buzz your phone when Camp is closed.', show: { to: 'alerts', where: 'Alerts' } },
-  { id: 'award-points', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['award'], text: 'Give verse, cleanup and quick points in Award points.', show: { to: 'award', where: 'Award points' } },
-  { id: 'reveal-on-now', at: WHATS_NEW_SHIPPED_AT, for: 'counselors', needs: ['reveal'], text: 'When the directors reveal the standings, they show here.' },
-  { id: 'set-up-the-week', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['setup'], text: 'Change the schedule, games and teams in Set up the week.', show: { to: 'setup', where: 'Set up the week' } },
-  { id: 'preview-counselor', at: WHATS_NEW_SHIPPED_AT, for: 'directors', text: 'Preview Camp as a counselor from What counselors see.', show: { to: 'counselors', where: 'What counselors see' } },
-  { id: 'days-and-backup', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['setup'], text: 'Set up the week can rename games days and copy the backup.', show: { to: 'setup', where: 'Set up the week' } },
-  { id: 'new-year-setup', at: WHATS_NEW_SHIPPED_AT, for: 'owner', needs: ['setup'], text: 'The new-year setup is in Set up the week’s menu.', show: { to: 'setup-menu', where: 'Set up the week’s menu' } },
-  // Written for this deploy's Remove… tick (build session 2). It releases only during camp week, when the tick can appear.
-  { id: 'remove-tells-followers', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['schedule-alerts'], text: 'You can now tell people who follow an item you remove.' },
-];
+const CHANGES = [];
+const WHATS_NEW_RETIRED = Object.freeze([
+  'four-tabs', 'score-from-games', 'games-tab-results', 'reveal-remote', 'chat-tab', 'tell-everyone', 'phone-alerts',
+  'award-points', 'reveal-on-now', 'set-up-the-week', 'preview-counselor', 'days-and-backup', 'new-year-setup', 'remove-tells-followers',
+]);
 
 // ── Sign-in & roles (Firebase Authentication) ────────────────────
 // The old 4-digit PIN gate is gone (2026-07-25). It only ever locked the
@@ -12608,45 +12599,15 @@ function toggleSound() {
 
 // ── "What's new" notes ───────────────────────────────────────────
 // A short note about a change people would notice, in Now's message strip (the CHANGES list at the top of this file; the design
-// is in CLAUDE.md "What's new notes"). The MODEL is pure and takes the clock and this phone's memory as arguments
-// (whatsNewDue), so the pacing is testable minute by minute; the renderer (whatsNewItem, called by renderAnnouncements) only
-// asks it and draws. Everything it remembers is device-local (localStorage, never synced, never camp data, no database call).
+// is in CLAUDE.md "What's new notes"). The MODEL is pure and takes the clock and this phone's dismissals as arguments
+// (whatsNewDue), so the one-hour rule is testable to the millisecond; the renderer (whatsNewNotes, called by renderAnnouncements)
+// only asks it and draws. All it remembers is which notes this phone dismissed: device-local (localStorage, never synced, never
+// camp data, no database call).
 // Legacy: the per-camp key of the retired badge banners. Nothing reads it any more; it stays in clearLocalData's list so an old
 // phone's leftover is wiped at sign-out.
 const CHANGE_DISMISS_KEY = lsKey('campScoreboardDismissedChanges');
-const WHATS_NEW_KEY = 'campScoreboardWhatsNew'; // device-wide on purpose (no camp suffix): kept across sign-out, or every note would come back after each sign-in
-const WN_GAP_MS = 60 * 60 * 1000;            // one new note per hour, per phone
-const WN_STAY_AWAKE_MS = 4 * 60 * 60 * 1000; // a shown note stays this many awake hours unless dismissed
-const WN_STALE_MS = 365 * 24 * 60 * 60 * 1000; // never released more than a year after it shipped
-const WN_BACKLOG_MAX = 10;                   // a phone that was away longer is handed the newest ten, never the whole list
-
-// Quiet hours are camp-local (America/New_York, like every timestamp here), never device time.
-const QUIET_START_HOUR = 21; // 9pm
-const QUIET_END_HOUR = 7;    // 7am
-
-function campHour(ms) {
-  const h = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false }).format(new Date(ms));
-  return parseInt(h, 10) % 24; // some engines format midnight as "24"
-}
-
-function isAwakeHours(ms) {
-  const h = campHour(ms);
-  return h >= QUIET_END_HOUR && h < QUIET_START_HOUR; // 7am–9pm
-}
-
-// Awake (non-quiet) milliseconds elapsed between two instants, sampled at a coarse step (minute accuracy is plenty); stops at capMs.
-function awakeElapsedMs(fromMs, toMs, capMs) {
-  if (toMs <= fromMs) return 0;
-  const STEP = 5 * 60 * 1000;
-  let awake = 0;
-  for (let t = fromMs; t < toMs; t += STEP) {
-    if (isAwakeHours(t)) {
-      awake += Math.min(STEP, toMs - t);
-      if (capMs != null && awake >= capMs) return awake;
-    }
-  }
-  return awake;
-}
+const WHATS_NEW_KEY = 'campScoreboardWhatsNew'; // device-wide on purpose (no camp suffix): kept across sign-out, or a dismissed note would return after each sign-in
+const WN_LIVE_MS = 60 * 60 * 1000;              // a note is live for one hour from its `at`
 
 // A note's own shape (the lint in tests/whats-new.test.js pins the rest of the rules).
 function whatsNewValid(n) {
@@ -12666,53 +12627,37 @@ function whatsNewAudienceOk(n, who) {
   return (n.needs || []).every((k) => typeof who.has === 'function' && who.has(k) === true);
 }
 
-// The pure model. notes = CHANGES, mem = { last, n: { id: { s: released ms, d: dismissed, k: skipped } } } (null reads as empty),
-// nowMs, who (above, plus afterEnd: the camp week's end in ms once it is over), opts.mayRelease (the strip is on screen, with
-// nothing over it). Returns { current, release, skip }: `current` is the note this phone already released and may still show (not
-// dismissed, under four awake hours old; the newest), `release` the oldest due note when one may come out now (awake hours, an hour
-// after this phone's last release), `skip` ids of due notes beyond the backlog cap. Show release || current.
-function whatsNewDue(notes, mem, nowMs, who, opts) {
-  mem = mem || {};
-  const rec = (id) => (mem.n && mem.n[id]) || {};
-  const list = (Array.isArray(notes) ? notes : []).map((n, i) => ({ n, i })).filter((x) => whatsNewValid(x.n));
-  let current = null;
-  let curAt = -1;
-  list.forEach((x) => {
-    const r = rec(x.n.id);
-    if (!(r.s > 0) || r.d || r.k || !whatsNewAudienceOk(x.n, who)) return;
-    if (awakeElapsedMs(r.s, nowMs, WN_STAY_AWAKE_MS) >= WN_STAY_AWAKE_MS) return;
-    if (r.s >= curAt) { current = x.n; curAt = r.s; }
-  });
-  const due = list.filter((x) => {
-    const r = rec(x.n.id);
-    if (r.s || r.d || r.k) return false;
+// The pure model: every note that is live (at <= nowMs < at + one hour), that `who` may read and that this phone has not
+// dismissed (`dismissed`: a Set or an object keyed by id). CHANGES order, the newer `at` first if two updates' hours overlap.
+// `nowMs` is the SERVER's time (serverNow), so a phone whose own clock is wrong cannot stretch or shorten the hour.
+function whatsNewDue(notes, dismissed, nowMs, who) {
+  const gone = (id) => !!dismissed && (typeof dismissed.has === 'function' ? dismissed.has(id) : !!dismissed[id]);
+  if (!Number.isFinite(nowMs)) return [];
+  return (Array.isArray(notes) ? notes : []).map((n, i) => ({ n, i })).filter((x) => {
+    if (!whatsNewValid(x.n) || gone(x.n.id)) return false;
     const at = Date.parse(x.n.at);
-    if (at > nowMs || nowMs - at > WN_STALE_MS) return false;
-    if (who && Number.isFinite(who.afterEnd) && at < who.afterEnd) return false; // shipped before a camp week that is over
-    return whatsNewAudienceOk(x.n, who);
-  }).sort((a, b) => (Date.parse(a.n.at) - Date.parse(b.n.at)) || (a.i - b.i));
-  const skip = due.length > WN_BACKLOG_MAX ? due.slice(0, due.length - WN_BACKLOG_MAX).map((x) => x.n.id) : [];
-  const first = due[skip.length];
-  const last = Number(mem.last) || 0;
-  const may = !!(opts && opts.mayRelease) && isAwakeHours(nowMs) && (!last || last > nowMs || nowMs - last >= WN_GAP_MS);
-  return { current, release: may && first ? first.n : null, skip };
+    return at <= nowMs && nowMs < at + WN_LIVE_MS && whatsNewAudienceOk(x.n, who);
+  }).sort((a, b) => (Date.parse(b.n.at) - Date.parse(a.n.at)) || (a.i - b.i)).map((x) => x.n);
 }
 
-// This phone's memory. Read lazily (never at load); a store that cannot be read or written shows NOTHING (null), so a blocked
-// browser never loops one note. Ids no longer in CHANGES are dropped on write.
-function whatsNewRead() {
+// This phone's dismissals: { v: 2, d: { id: 1 } }. Read lazily (never at load) into an in-memory Set, which is the truth for the
+// page's life, so a store that cannot be written still hides a dismissed note until the page is reloaded. Anything else in the
+// key (the old v1 pacing memory) reads as empty. Ids no longer in CHANGES are dropped on write.
+let whatsNewGone = null;
+function whatsNewDismissed() {
+  if (whatsNewGone) return whatsNewGone;
+  whatsNewGone = new Set();
   try {
-    const raw = localStorage.getItem(WHATS_NEW_KEY);
-    if (!raw) return { v: 1, last: 0, n: {} };
-    const m = JSON.parse(raw);
-    return m && typeof m === 'object' && m.n && typeof m.n === 'object' ? m : { v: 1, last: 0, n: {} };
-  } catch (e) { return null; }
+    const m = JSON.parse(localStorage.getItem(WHATS_NEW_KEY) || 'null');
+    if (m && m.v === 2 && m.d && typeof m.d === 'object') Object.keys(m.d).forEach((id) => { if (m.d[id]) whatsNewGone.add(id); });
+  } catch (e) { /* unreadable: empty */ }
+  return whatsNewGone;
 }
-function whatsNewWrite(mem) {
+function whatsNewWrite() {
   try {
-    const keep = {};
-    CHANGES.forEach((c) => { if (c && mem.n[c.id]) keep[c.id] = mem.n[c.id]; });
-    localStorage.setItem(WHATS_NEW_KEY, JSON.stringify({ v: 1, last: mem.last || 0, n: keep }));
+    const d = {};
+    CHANGES.forEach((c) => { if (c && whatsNewGone && whatsNewGone.has(c.id)) d[c.id] = 1; });
+    localStorage.setItem(WHATS_NEW_KEY, JSON.stringify({ v: 2, d }));
     return true;
   } catch (e) { return false; }
 }
@@ -12749,13 +12694,8 @@ const WHATS_NEW_SHOW = {
 };
 
 function whatsNewWho() {
-  let afterEnd = null;
-  try {
-    const w = campWeek();
-    if (w.phase === 'after' && w.start) { const p = w.start.split('-').map(Number); afterEnd = Date.UTC(p[0], p[1] - 1, p[2] + 8); }
-  } catch (e) { /* no camp week known */ }
   return {
-    confirmed: !!memberRoleConfirmed, role: viewRole(), owner: isOwner(), camp: CAMP.id, afterEnd,
+    confirmed: !!memberRoleConfirmed, role: viewRole(), owner: isOwner(), camp: CAMP.id,
     has: (k) => { try { return typeof WHATS_NEW_NEEDS[k] === 'function' && !!WHATS_NEW_NEEDS[k](); } catch (e) { return false; } },
   };
 }
@@ -12772,49 +12712,27 @@ function whatsNewHtml(n) {
     `<button type="button" class="msg-x" data-wn-x="${esc(n.id)}" aria-label="Dismiss this note on this phone"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>`;
 }
 
-// The strip's note, as markup ('' = none). `items` are the strip's other messages (markup): the note rides LAST and only when
-// the strip has room for it as well. Never in a counselor preview (a note is this phone's own reading list, not camp content),
-// never while a reveal is live, never before the role is confirmed. A release is written to memory BEFORE it is drawn.
-let whatsNewReleased = false; // set by the paint that released a note (renderAnnouncements reads it to unfold it in place)
-// The moments a note gives way to (it neither shows nor comes out): the send-off notice that IS the Now card, a cleanup or verse
-// moment, a block running over or a director's "Still on this" question — the strip's least important line must not push the most
-// important card of the hour down.
+// The live notes, as markup (one string each; [] = none). Never in a counselor preview (a note is this phone's own reading
+// list, not camp content), never while a reveal is live, never before the role is confirmed or after the SDK failed (a director's
+// phone then reads as a viewer), never before this phone knows the server's clock (fails closed, like the reveal), and never while
+// Now's card is something a note would push down.
+// The moments a note gives way to: the send-off notice that IS the Now card, a cleanup or verse moment, a block running over or
+// a director's "Still on this" question — the strip's least important line must not push the most important card of the hour down.
 function whatsNewGivesWay() {
   const m = nowLast;
   if (!m || !m.card) return false;
   return m.card.kind === 'notice' || !!m.moment || !!m.card.over || !!m.card.hold;
 }
-function whatsNewItem(items, mayRelease) {
-  // A role painted by a fallback (the SDK never loaded: a director's phone reads as a viewer) is not a role to spend the hour on.
-  if (!CHANGES.length || counselorPreviewOn || !memberRoleConfirmed || sdkLoadFailed) return '';
-  if (typeof revealLiveView === 'function' && revealLiveView()) return '';
-  if (whatsNewGivesWay()) return '';
-  const mem = whatsNewRead();
-  if (!mem) return '';
-  const now = Date.now();
-  const plan = whatsNewDue(CHANGES, mem, now, whatsNewWho(), { mayRelease });
-  if (plan.skip.length) {
-    plan.skip.forEach((id) => { mem.n[id] = Object.assign({}, mem.n[id], { k: 1 }); });
-    whatsNewWrite(mem);
-  }
-  const pick = plan.release || plan.current;
-  if (!pick) return '';
-  const html = whatsNewHtml(pick);
-  if (annStripRoom(items.concat([html]), true) < items.length + 1) return '';
-  if (plan.release) {
-    mem.n[pick.id] = Object.assign({}, mem.n[pick.id], { s: now });
-    mem.last = now;
-    if (!whatsNewWrite(mem)) return '';
-    whatsNewReleased = true;
-  }
-  return html;
+function whatsNewNotes() {
+  if (!CHANGES.length || counselorPreviewOn || !memberRoleConfirmed || sdkLoadFailed || !serverOffsetKnown) return [];
+  if (typeof revealLiveView === 'function' && revealLiveView()) return [];
+  if (whatsNewGivesWay()) return [];
+  return whatsNewDue(CHANGES, whatsNewDismissed(), serverNow(), whatsNewWho()).map(whatsNewHtml);
 }
 // A note ends (× or Show me): remembered as dismissed on this phone only.
 function whatsNewEnd(id) {
-  const mem = whatsNewRead();
-  if (!mem) return;
-  mem.n[id] = Object.assign({}, mem.n[id], { d: 1 });
-  whatsNewWrite(mem);
+  whatsNewDismissed().add(id);
+  whatsNewWrite();
 }
 
 // ── Broadcast announcements: banners (📣) ────────────────────────
@@ -12979,12 +12897,13 @@ function annStripCap() {
 // notice plus the messages shown fit in a third of the window. The messages are measured at the strip's own width in a hidden
 // copy that is added and removed at once, and only when the messages or the width changed (`annFit`), so an idle render writes
 // nothing. With no layout (the test harness, Now not on screen) the count stands. With no notice the newest message always shows,
-// except under `strict` (a What's new note asks with itself added: it is the lowest thing in the strip, so it waits for room rather
-// than take more than a third of the screen at large text). The last few measurements are kept by their key (`annFit`): a strip with a
-// note measures twice per paint (with and without it), and one remembered key would re-measure, i.e. write the page, on every paint.
+// except under `strict` (What's new notes ask with themselves added: they are the lowest thing in the strip, so they wait for room rather
+// than take more than a third of the screen at large text). The last few measurements are kept by their key (`annFit`): a strip with notes measures twice per paint (the banners alone,
+// then with the notes), and one remembered key would re-measure, i.e. write the page, on every paint.
 let annFit = [];
-function annStripRoom(items, strict) {
-  const cap = Math.min(items.length, annStripCap());
+function annStripRoom(items, strict, noteCount) {
+  // `noteCount` What's new notes ride the end of `items`: all of them are ONE message against the count cap.
+  const cap = Math.min(items.length, annStripCap() + Math.max(0, (noteCount || 0) - 1));
   const tab = document.getElementById('tab-now');
   if (!cap || !tab || typeof tab.getBoundingClientRect !== 'function' || typeof window === 'undefined') return cap;
   const box = tab.getBoundingClientRect();
@@ -13032,19 +12951,25 @@ function renderAnnouncements() {
   // (`shell.dirty.now` is still true on the paint that brings Now into view: its whole panel arrives then, so that paint moves nothing).
   const shown = activeTab() === 'now' && !shellTakeoverOpen() && !builderOpen();
   const onScreen = shown && shell.dirty.now === false;
-  // A What's new note rides LAST, only when everything above it fits too (never behind "N more", never in the messages sheet). It
-  // may come out on the paint that brings Now into view (`shell.arriving`: it is then part of the panel's arrival, so nothing moves
-  // under a reader a tick later) and on any later paint with nothing over the strip.
-  whatsNewReleased = false;
-  const inView = onScreen || (shown && shell.arriving === 'now');
-  const note = items.length <= room
-    ? whatsNewItem(items, inView && shell.sheets.length === 0 && (typeof document.visibilityState !== 'string' || document.visibilityState !== 'hidden')) : '';
-  const html = items.slice(0, room).join('') + note;
-  const count = Math.min(items.length, room) + (note ? 1 : 0);
-  annOverflow = { n: items.length - Math.min(items.length, room), html: items.slice(Math.min(items.length, room)).join('') };
-  // A note released while Now was already on screen (an hour mark, the member record answering after boot) always unfolds behind
-  // whenHandsOff, never a plain write that pushes the card down under the reader, even before the first server snapshot.
-  const moving = onScreen && (wrap.__annLive === true || whatsNewReleased) && typeof wrap.animate === 'function' && typeof JellyMotion !== 'undefined';
+  // What's new notes (one hour each, all of an update's together) follow the banners, MEASURED strictly: all of them count as ONE
+  // message against the count cap (like the notice) and the rest is the third-of-the-window height. Banners that overflow push every
+  // note into the overflow too; a note with no room goes behind "N more messages" after the banners, so it never silently vanishes
+  // while its hour runs.
+  const notes = whatsNewNotes();
+  let room2 = room;
+  if (notes.length && items.length <= room && items.length + 1 <= annStripCap()) room2 = Math.min(items.length + notes.length, annStripRoom(items.concat(notes), true, notes.length));
+  const shownNotes = items.length <= room && notes.length ? Math.max(0, Math.min(notes.length, room2 - items.length)) : 0;
+  const all = items.concat(notes);
+  const cut = items.length <= room ? items.length + shownNotes : room;
+  const html = all.slice(0, cut).join('');
+  const count = cut;
+  annOverflow = { n: all.length - cut, html: all.slice(cut).join('') };
+  // A note that is new to the paint while Now was already on screen (the 30 s tick, the member record answering after boot)
+  // unfolds in place behind whenHandsOff, never a plain write that pushes the card down under the reader, even before the first
+  // server snapshot. On the arrival paint nothing moves: the note is part of the panel.
+  const noteKeys = notes.slice(0, shownNotes).map((h) => (h.match(/data-key="([^"]+)"/) || [])[1]).filter(Boolean);
+  const noteNew = noteKeys.some((k) => !Array.prototype.some.call(wrap.children, (c) => c.dataset && c.dataset.key === k));
+  const moving = onScreen && (wrap.__annLive === true || noteNew) && typeof wrap.animate === 'function' && typeof JellyMotion !== 'undefined';
   wrap.__annLive = shown && remoteReady;
   if (!moving) {
     wrap.__keyedWant = html;
@@ -13122,7 +13047,8 @@ function annPaintMoving(wrap, html, n) {
     } else wrap.innerHTML = html;
     wrap.__html = html;
     wrap.__dom = wrap.innerHTML;
-    Array.prototype.forEach.call(wrap.children, (c) => { if (c.dataset && c.dataset.key && !had[c.dataset.key]) { if (/^wn-/.test(c.dataset.key)) wnUnfold(c); else annArrive(c); } });
+    let wi = 0;
+    Array.prototype.forEach.call(wrap.children, (c) => { if (c.dataset && c.dataset.key && !had[c.dataset.key]) { if (/^wn-/.test(c.dataset.key)) wnUnfold(c, 60 * wi++); else annArrive(c); } });
     if (!calmMotion()) annGlideBelow(below);
   };
   if (listGlideNow) run(); else JellyMotion.whenHandsOff(run);
@@ -13149,12 +13075,12 @@ function annGlideBelow(below) {
 }
 // A What's new note is released: it unfolds in place from its top (scaleY .6 → 1) with no drop, so it is never as loud as a
 // banner. Calm: a fade.
-function wnUnfold(node) {
+function wnUnfold(node, delay) {
   JellyMotion.play(node, 'glide', (x) => ({
     transform: 'scaleY(' + (0.6 + 0.4 * Math.min(1, x)) + ')',
     transformOrigin: '50% 0%',
     opacity: Math.min(1, x * 2),
-  }), { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160 });
+  }), { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160, delay: delay || 0 });
 }
 // A banner arrives: it drops 56px from above and spends its overshoot as a ~6% landing squash, anchored at its foot
 // (scale(1+.18o, 1−.5o); arrive overshoots ~12%). Calm: a fade.

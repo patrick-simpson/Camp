@@ -269,68 +269,73 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    to the `Content-Security-Policy` meta tag in `index.html` too, or the
    browser silently blocks the request.
 4. **Add a plain-English "What's new" note, with its audience, for each change people would notice** (a new screen, a moved
-   control, a new way to do a job; not a bug fix nobody saw). Append it to `CHANGES` at the top of `app.js` and set its `at` to
-   this deploy's UTC time (the shipped catch-up set shares `WHATS_NEW_SHIPPED_AT`: the deploy sets it, with `CODE_UPDATED_AT`,
-   to the same moment). How to write one: pick the audience (`everyone`, `counselors`, `directors`, `owner`; a camp only if the
-   change is only there); say what changed and where to find it in one or two short lines (see "What's new notes" below);
-   true to the screens as built; plain words a teen counselor or a non-programmer director understands; no jokes, no point or
-   place, no emoji, no "!"; add `needs` when a switch or a missing screen should hide it, and `show` only for a place that
-   audience can open. A change with no one to read it (a rules or test change) gets no note.
+   control, a new way to do a job; not a bug fix nobody saw). Append it to `CHANGES` at the top of `app.js` with `at` = this
+   deploy's UTC time (`WHATS_NEW_SHIPPED_AT`, set with `CODE_UPDATED_AT` to the same moment), and MOVE every note of an earlier
+   deploy out of `CHANGES` into `WHATS_NEW_RETIRED` (ids only: an id is never reused). **A note is shown for ONE HOUR from its
+   `at`, by the server's clock, to the phones that have Camp open in that hour, and never again**: a phone that is closed in
+   that hour never sees it, an update that goes live at night has notes nobody sees (so ship an update people need to read
+   during the day), and GitHub Pages' lag eats part of the hour (`at` is the deploy's time, the page is live a minute or two
+   later). How to write one: pick the audience (`everyone`, `counselors`, `directors`, `owner`; a camp only if the change is
+   only there); say what changed and where to find it in one or two short lines (see "What's new notes" below); true to the
+   screens as built; plain words a teen counselor or a non-programmer director understands; no jokes, no point or place, no
+   emoji, no "!"; add `needs` when a switch or a missing screen should hide it, and `show` only for a place that audience can
+   open. A change with no one to read it (a rules or test change) gets no note.
 
 ## What's new banners & auto-reload
 
-**"What's new" notes** (owner's answer of Nov 9, 2026, reversing the July 21 "discontinued"; built in app.js under "What's new
-notes", pinned by `tests/whats-new.test.js` + `.senior`). The retired badge banners (`renderWhatsNew`, `#whats-new`, `.whats-new-*`,
-the 15-minute queue) are gone; the legacy `campScoreboardDismissedChanges` key stays only in `clearLocalData`'s wipe list.
+**"What's new" notes** (owner's answers of Nov 9, 2026, items 5 and 9; built in app.js under "What's new notes", pinned by
+`tests/whats-new.test.js` + `.senior`). The retired badge banners (`renderWhatsNew`, `#whats-new`, `.whats-new-*`) are gone; the
+legacy `campScoreboardDismissedChanges` key stays only in `clearLocalData`'s wipe list. Markup: NOTE MARKUP in index.html; look:
+`.msg[data-kind="new"]`, `.msg-show`, `#i-signpost`.
 
-**How it works** (markup: NOTE MARKUP in index.html; look: `.msg[data-kind="new"]`, `.msg-show`, `#i-signpost`).
 1. **A note** is an entry of `CHANGES` (app.js): `{ id, at, for, camp?, needs?, text, show? }`. `id` `^[a-z0-9-]{3,40}$`, unique
-   forever (a phone's memory is keyed by it); `at` the UTC deploy time that ships it; `for` `everyone | counselors | directors |
-   owner`; `camp` `junior | senior` (absent: both); `needs` gate names (5); `text` plain, at most 60 characters (two lines at 360px), sentence case, curly apostrophes, no emoji, no `!`, never "update", "feature" or "version", saying what changed and
-   where to find it, never a point or a place; `show` `{ to, where }` (6). Written by the agent who ships the change; no jokes.
-2. **One at a time, the strip's last**: the note rides `#announcements` after the join bar and every banner, only while the
-   strip has room for it, MEASURED strictly (`annStripRoom(items, true)`: the note and everything above it within a third of the
-   window, with no "the newest always shows" exception; it never counts in "N more messages" and never goes to `#sheet-messages`),
-   never under a live reveal, never in a counselor preview (a note is this phone's own reading list, not camp content), and it
-   GIVES WAY (neither shows nor comes out, `whatsNewGivesWay`) while Now's card is the send-off notice, a cleanup / verse moment
-   is up, or a block is running over or holding a director's "Still on this" question. nowModel stays pure: it is
-   `renderAnnouncements`' own item, not in `nowMessages`. Large text (the strip under 18rem across, `container: annstrip`): the
-   "What’s new" word is visually hidden, Show me rides the words' last line and the words stop at 24px, so a note fits.
-3. **Pacing is per phone.** A note is DUE when `at` ≤ now, it passes (4)–(5) and this phone has no record of it. One is
-   RELEASED only while Now is on screen with nothing over it — including the paint that brings Now into view (`shell.arriving`,
-   set by `renderTab` while a dirty tab renders), so it arrives with the panel instead of pushing the card down a tick later; a
-   bare `renderAnnouncements()` while Now is still dirty releases nothing —, the page visible, inside waking hours (`isAwakeHours`, 7 AM–9 PM
-   camp time, all year), no live reveal, the strip has room, and 60 minutes or more since this phone's last release: the oldest
-   due note (by `at`, then list order). The CURRENT note is the newest released one, not dismissed, under 4 awake hours old
-   (`awakeElapsedMs`); the next release supersedes it and it never comes back. × or Show me ends it on this phone.
-4. **Stale and capped**: never released once `now − at` > 365 days, or this phone's camp week has ended (`campWeek().phase ===
-   'after'`) and `at` is before that week's end; when more than 10 are due at once the oldest beyond 10 are skipped for good.
-5. **Who reads it** (render time, nothing stored): only with a confirmed role (`memberRoleConfirmed`) and never while the SDK
-   failed to load (`sdkLoadFailed`: a director's phone then reads as a viewer, and a counselor note would spend its hour); `everyone` any role,
-   `counselors` `viewRole() === 'viewer'`, `directors` `viewRole() === 'editor'`, `owner` `isOwner()`; `camp` = `CAMP.id`;
-   every `needs` gate passes (`WHATS_NEW_NEEDS`: `games` / `verse` / `cleanup` = not in `nowHiddenSections()`, `chat` = chat.js
-   loaded and `!chatHiddenFromMe()`, `alerts` = `pushConfigured()`, `electives` = `CAMP.features.electives`, `reveal` = reveal-ui.js
-   loaded (a director's note also `revealRemoteMayOpen()`), `tell` / `award` = `toolMayOpen(id)`, `setup` = `canEdit()` and
-   setup-ui.js loaded, `schedule-alerts` = `pushScheduleAlertOffered()`).
-6. **Show me** (`WHATS_NEW_SHOW`, each `{ ok(), go() }`, drawn only while `ok()`): `games` / `chat` → `showTab`; `alerts` →
+   forever across `CHANGES` and `WHATS_NEW_RETIRED` (the lint checks); `at` the UTC deploy time; `for` `everyone | counselors |
+   directors | owner`; `camp` `junior | senior` (absent: both); `needs` gate names (3); `text` plain, at most 60 characters
+   (two lines at 360px), sentence case, curly apostrophes, no emoji, no `!`, never "update", "feature" or "version", saying what
+   changed and where to find it, never a point or a place; `show` `{ to, where }` (4). Written by the agent who ships the change;
+   no jokes.
+2. **The hour**: a note is LIVE while `at` <= `serverNow()` < `at` + 60 minutes (`whatsNewDue`, pure over the clock it is given),
+   on every phone with Camp open, then never again: no pacing, no catch-up over later weeks, no camp-week or staleness rule, no
+   waking-hours gate. The SERVER's clock decides (a wrong phone clock cannot stretch it), and nothing shows before this phone
+   knows it (`serverOffsetKnown`: fails closed). The 30 s tick paints the strip, so a note appears or leaves within 30 s of the
+   minute. All of one update's notes a reader may see show together, each its own banner (CHANGES order; with two updates' hours
+   overlapping, the newer first). A note whose hour ends during a moment is simply never seen.
+3. **Who reads it** (render time, nothing stored): only with a confirmed role (`memberRoleConfirmed`) and never while the SDK
+   failed to load (`sdkLoadFailed`: a director's phone then reads as a viewer); `everyone` any role, `counselors` `viewRole() ===
+   'viewer'`, `directors` `viewRole() === 'editor'`, `owner` `isOwner()`; `camp` = `CAMP.id`; every `needs` gate passes
+   (`WHATS_NEW_NEEDS`: `games` / `verse` / `cleanup` = not in `nowHiddenSections()`, `chat` = chat.js loaded and
+   `!chatHiddenFromMe()`, `alerts` = `pushConfigured()`, `electives` = `CAMP.features.electives`, `reveal` = reveal-ui.js loaded
+   (a director's note also `revealRemoteMayOpen()`), `tell` / `award` = `toolMayOpen(id)`, `setup` = `canEdit()` and setup-ui.js
+   loaded, `schedule-alerts` = `pushScheduleAlertOffered()`). Never in a counselor preview (a dismissal list is this phone's own,
+   not camp content), never under a live reveal, and notes GIVE WAY (`whatsNewGivesWay`) while Now's card is the send-off notice,
+   a cleanup / verse moment is up, or a block is running over or holding a director's "Still on this" question.
+4. **Show me** (`WHATS_NEW_SHOW`, each `{ ok(), go() }`, drawn only while `ok()`): `games` / `chat` → `showTab`; `alerts` →
    `openPushDrawer()`; `reveal` → `openReveal({from: 'now'})`; `tell` / `award` → `openTool(id, {from: 'now'})`; `setup` →
-   `openBuilder()`; `setup-menu` → `openBuilder()` then the hub's ⋯ sheet (`setupSheet('setup-menu')`, the owner's new-year
-   row); `counselors` → `shellSheetOpen('counselors')`. A tap ends the note, then opens the place. Its spoken name is
-   "Show me " + `where`.
-7. **Memory**: `localStorage.campScoreboardWhatsNew` (device-wide, no camp suffix, never synced, not camp data, never in a
-   backup) `{ v: 1, last, n: { id: { s?, d?, k? } } }` (released, dismissed, skipped), read lazily (never at load), every access
-   in try/catch (a blocked store shows nothing and loops nothing). Sign-out KEEPS it (a wiped list would bring every note back
-   after each sign-in). Ids no longer in `CHANGES` are dropped on write.
-8. **Motion**: a release on a paint while Now was ALREADY on screen (an hour mark, the member record answering after boot)
-   always UNFOLDS in place behind `whenHandsOff` (`glide`, scaleY .6 → 1 from its top, no drop: a note is never as loud as a
-   banner) and the sections under the strip glide (`annGlideBelow`), even before the first server snapshot (`whatsNewReleased`
-   forces `annPaintMoving`); a release on the arrival paint is part of the panel's own arrival (a plain write, and that paint
-   marks the strip live so the next change moves); × squashes it out (`playRowOut`) and the rest glide up; calm: fades
-   (`wnUnfold`). A note is quieter than a banner in words too: regular weight (500) where a banner is bold, Show me 600.
-9. **The model is `whatsNewDue(notes, mem, nowMs, who, {mayRelease})`** (pure: `{ current, release, skip }`); `whatsNewItem(items, mayRelease)`
-   is the strip's one call (it writes the release to memory BEFORE drawing it, and draws nothing when the write fails). The
-   catch-up set is 14 notes (counselors 5, directors 9 and one more in camp week, the owner those plus one); a preview's fidelity
-   tests seed both phones' memory as read, since a note is a phone's own reading list.
+   `openBuilder()`; `setup-menu` → `openBuilder()` then the hub's ⋯ sheet (`setupSheet('setup-menu')`); `counselors` →
+   `shellSheetOpen('counselors')`. A tap ends the note, then opens the place. Its spoken name is "Show me " + `where`.
+5. **The strip**: the notes ride `#announcements` after the join bar and every banner, MEASURED strictly
+   (`annStripRoom(items, true, noteCount)`: all the notes count as ONE message against the count cap, like the notice, and the
+   third-of-the-window height decides how many fit, with no "the newest always shows" exception). Banners that overflow push
+   every note into the overflow; a note with no room goes into `annOverflow` AFTER the banners, is counted in "N more messages"
+   and is drawn (joined, the same markup) in `#sheet-messages`, so a note never silently vanishes while its hour runs.
+   `annStripClick` serves both. The notes are `renderAnnouncements`' own items, not in `nowMessages`. They are JOINED: the second
+   and later sit 2px under the first, the signpost and "What’s new" word only on the first (the word visually hidden for screen
+   readers), each with its own × and Show me. Large text (the strip under 18rem across): Show me rides the words' last line.
+6. **Memory**: `localStorage.campScoreboardWhatsNew` = `{ v: 2, d: { id: 1 } }` (the notes this phone dismissed with × or Show me;
+   device-wide, no camp suffix, never synced, not camp data, never in a backup), read lazily (never at load) into an in-memory Set
+   that is the truth for the page's life (a blocked store still hides a dismissed note until reload), every access in try/catch;
+   anything else in the key (the old v1 pacing memory) reads as empty. Sign-out KEEPS it. Ids no longer in `CHANGES` are dropped
+   on write.
+7. **Motion**: a note new to a paint while Now was ALREADY on screen (the 30 s tick, the member record answering after boot)
+   UNFOLDS in place behind `whenHandsOff` (`wnUnfold`: scaleY .6 → 1 from its top, no drop; several 60 ms apart, top first) and
+   the sections under the strip glide (`annGlideBelow`), even before the first server snapshot (`renderAnnouncements` forces
+   `annPaintMoving` for a new note key); on the arrival paint (`shell.dirty.now`) nothing moves; × squashes it out
+   (`playRowOut`); at the end of the hour it leaves like any dropped keyed row; calm: fades. A note is quieter than a banner in
+   words too: regular weight (500) where a banner is bold, Show me 600.
+8. **Between updates `CHANGES` is empty** and the strip is just the banners. Tests walk the hour on a fake clock (before `at`,
+   `at`, +59:59.999, +60:00, a wrong phone clock, no known server clock), two notes together, the gates, a preview, dismissal,
+   room and overflow, the reveal, giving way, `sdkLoadFailed`, the arrival paint, render stability with `annFit` keeping its
+   measurements, the empty list and the retired-ids lint.
 
 **Auto-reload on deploy.** Open phones refresh themselves when a newer
 build ships. Each client polls the deployed `index.html` (same-origin,
@@ -2553,10 +2558,11 @@ What's covered, and why each file exists:
   that nothing is stored, every way out, the walk through every tab / sheet / takeover with the points guard throwing, FIDELITY
   against a real counselor's phone (with a negative control), the write gates (no database write from any tap), the engines
   staying a director's (a config snapshot mid-preview, `reloadBlocked`, a source pin of the engine list).
-- `whats-new.test.js` (+ `.senior`) — What's new notes (see "What's new notes"): the shipped list's lint, the pacing truth table on a fake
-  clock (before `at`, 6:59 / 7:00 / 20:59 / 21:00 across both clock changes, one an hour, a phone opening weeks later, the stay,
-  staleness, the cap), the role / camp / gate filter, the strip (last, room, reveal, quiet hours, takeover, preview), render
-  stability, Show me, a dismissal surviving, sign-out keeping the memory, a blocked store, the app with `CHANGES` empty.
+- `whats-new.test.js` (+ `.senior`) — What's new notes (see "What's new notes"): the shipped lists' lint (ids never reused), the
+  one-hour truth table on a fake clock (to the millisecond, a wrong phone clock, no known server clock), two notes together, the
+  role / camp / gate filter, the strip (after the banners, the strict measure, overflow into Messages, reveal, preview, giving way,
+  `sdkLoadFailed`, the arrival paint), render stability with `annFit`, Show me, a dismissal surviving, sign-out keeping the memory,
+  a blocked store, the app with `CHANGES` empty.
 - `tell.test.js` (+ `.senior`) — Tell everyone (see "Tell everyone: behaviour"): the channel combinations, partial failure,
   the notice replace question and an Undo that checks first, quick alerts, Buzz disabled until phone alerts are live,
   the draft, `reloadBlocked`, the shell stack, and a counselor reaching none of it.

@@ -511,7 +511,7 @@ function NOW_ID_MARKUP() {
 // A What's new note is THIS PHONE's own reading list, not camp content, and a preview never draws one (see "What's new notes"). Both
 // phones of a fidelity comparison therefore start with every note read, so the comparison is about the camp's page alone.
 function pvRead(m) {
-  vm.runInContext("localStorage.setItem(WHATS_NEW_KEY, JSON.stringify({ v: 1, last: Date.now(), n: Object.fromEntries(CHANGES.map((c) => [c.id, { d: 1 }])) }))", m.ctx);
+  vm.runInContext("localStorage.setItem(WHATS_NEW_KEY, JSON.stringify({ v: 2, d: Object.fromEntries(CHANGES.map((c) => [c.id, 1])) }))", m.ctx);
   return m;
 }
 test('FIDELITY, Now at every kind of card: a director in a preview paints, node for node, what a real counselor\'s phone paints', () => {
