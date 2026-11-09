@@ -9066,7 +9066,9 @@ function gamesModel(opts) {
     m.empty = { text: 'No competition days are set up yet.', add: ctx.director };
   } else {
     m.day = { id: chosen.id, dow: chosen.dow, name: String(chosen.name || ''), today: !!today && today.id === chosen.id };
-    m.dayNote = today && today.id !== chosen.id ? m.day.name + ' · not today' : '';
+    // The chip says the weekday, so a renamed day ("Messtival") says its name in this line, on its own day too.
+    const chosenWk = Number.isInteger(chosen.dow) ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][chosen.dow] || '' : '';
+    m.dayNote = today && today.id !== chosen.id ? m.day.name + ' · not today' : (m.day.name && m.day.name !== chosenWk ? m.day.name : '');
     const games = gamesForDayId(chosen.id);
     m.notes = gamesDayNotes(chosen, games);
     m.blocks = gamesDayRows(ctx, chosen, today);
@@ -11037,7 +11039,8 @@ function renderTournament(container, g) {
   if (b.phase !== 'summary') container.__liveKey = null;
   // Where the bracket is, as ONE quiet line (the four-team bracket's: "Step 1 of 5 · Round 1"), never a row of pills and arrows.
   const order = ['round1', 'bye', 'semifinal', 'championship', 'summary'];
-  const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship', championship: 'Final', summary: 'Results' };
+  // One name per step: the step line says what the heading under it says ("Championship game", the six-team wizard's word).
+  const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' };
   const at = order.indexOf(b.phase);
   let html = `<div class="bracket-steps">${at === -1 ? '' : `<p class="four-steps" data-six-step="${esc(b.phase)}">Step ${at + 1} of ${order.length} · ` +
     `<span aria-current="step" class="wizard-step active">${labels[b.phase]}</span></p>`}</div><div id="bracket-body"></div>

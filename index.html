@@ -2113,22 +2113,23 @@
             <div class="gl cb-list sg-list" id="sg-bn-list"></div>
           </div>
 
-          <!-- Games days with no weekday (an older build's "Add day" made them): the Games tab lists them, but the strip above is
-               the week, so they have no chip. Shown whichever day is open, hidden when there are none. A row opens the day's
-               sheet (#sheet-sg-day, by its id), where it is given a weekday, renamed or deleted. Renderer, one row per day:
-                 <button type="button" class="cb-row sg-game" data-key="d-<id>" data-sg-dayid="<id>" data-warn>
-                   <span class="cb-main"><span class="cb-title"><span>Field day</span></span>
-                   <span class="cb-sub">3 games · Give it a weekday to see them here</span></span>
-                   <span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button> -->
-          <div class="more-sec sg-nodow" id="sg-sec-nodow" hidden>
-            <div class="gl-head"><h3 class="gl-label">Days with no weekday</h3></div>
-            <div class="gl cb-list sg-list" id="sg-nodow-list"></div>
-          </div>
-
           <!-- Add to the day, wherever it fits (opens #sheet-game; the When
                line starts on the day's first Games item): "Add a game to
                Wednesday". -->
           <button type="button" class="sched-add sg-add" id="sg-add" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span id="sg-add-text">Add a game to Wednesday</span></button>
+
+          <!-- Games days with no weekday (an older build's "Add day" made them): the Games tab lists them, but the strip above is
+               the week, so they have no chip. Shown whichever day is open, last (under "Add a game to …", which belongs to the open day), hidden when there are none. A row opens the day's
+               sheet (#sheet-sg-day, by its id), where it is given a weekday, renamed or deleted. Renderer, one row per day:
+                 <button type="button" class="cb-row sg-game" data-key="nd-<id>" data-sg-dayid="<id>" data-warn>
+                   <span class="cb-main"><span class="cb-title"><span>Field day</span></span>
+                   <span class="cb-sub">3 games · Give it a weekday to see them in the strip</span></span>
+                   <span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>
+               With no games the sub is "No games · Give it a weekday"; with one, "1 game · Give it a weekday to see it in the strip". -->
+          <div class="more-sec sg-nodow" id="sg-sec-nodow" hidden>
+            <div class="gl-head"><h3 class="gl-label">Days with no weekday</h3></div>
+            <div class="gl cb-list sg-list" id="sg-nodow-list"></div>
+          </div>
         </section>
 
         <!-- ── Notice board (P2 §11.16; Step 30) ──
@@ -3842,8 +3843,12 @@
         <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
       </header>
       <div class="sheet-body bp-body">
-        <p class="setup-sheet-lede" id="bp-lede">Paste everything “Copy the backup” copied. Nothing changes until you pick what to put back.</p>
+        <p class="setup-sheet-lede" id="bp-lede">Paste the whole backup you copied. Nothing changes until you pick what to put back.</p>
         <label class="fld"><span class="fld-label">The backup</span><textarea class="fld-input bp-text" id="bp-text" rows="6" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" placeholder="Paste it here"></textarea></label>
+        <!-- What the pasted text IS, in words, once it reads as a whole backup naming its camp (the box itself shows the backup's
+             raw text, which says nothing to a director): "A Junior camp backup from Mon Nov 9, 7:10 AM · 23 games · 6 teams".
+             Counts and a date only, never a name. -->
+        <p class="tms-hint bp-sum" id="bp-sum" role="status" hidden></p>
         <p class="fld-error" id="bp-why" role="alert"></p>
       </div>
       <div class="sheet-dock">
@@ -4666,14 +4671,18 @@
            #sg-day-name-hint: "The Games tab shows it. Clear it to go back to “Wednesday”." (the renderer names the weekday).
          Day of the week (#sg-day-dows): the app's day strip as a radiogroup (the When pane's .rain-move-days), labelled by
            #sg-day-dow-label. The day's own weekday is aria-checked; a weekday that is ALREADY a games day is
-           aria-disabled="true" + data-taken (a dashed edge: unavailable in this app) and its aria-label says so ("Thursday,
-           already a games day"); a tap on one shows #sg-day-dow-why (the gold "!": "Thursday is already a games day. Move or
-           delete that one first."), a tap on a free day moves the day (asks first when it has games, see CLAUDE.md "Set up
-           the week: Games"). With no weekday, nothing is checked and the hint asks for one. #sg-day-dow-hint: "Its games and
-           their results go with it. A dashed day already has games."
+           aria-disabled="true" + data-taken and carries that day's game count under its name ([data-dow-n], the Games
+           screen's own strip vocabulary: a number = a games day; the free days, the real choices, carry none), and its
+           aria-label says so ("Thursday, already a games day"); a tap on one wobbles it and unfolds #sg-day-dow-why (the gold
+           "!": "Thursday is already a games day. Move or delete that one first."), a tap on a free day moves the day (asks
+           first when it has games, see CLAUDE.md "Set up the week: Games"). With no weekday, nothing is checked and the hint
+           asks for one. #sg-day-dow-hint: "Its games and their results go with it. A day with a number is already a games
+           day."; with no free weekday left: "Every day of the week already has a games day, so this one can’t move." (a day
+           with no weekday: "…delete one first, or keep this day without one.").
          Note (#sg-day-note, unchanged hooks).
          Delete this games day (data-sg-day-act="off", the one existing write path gmTakeDayOff): #sg-day-off-title /
-           #sg-day-off-sub "Wednesday stops being a games day" with no games; "First asks where its 5 games go" with some. -->
+           #sg-day-off-sub "Wednesday becomes a day with no games" with no games ("It has no games" for a day with no
+           weekday); "First asks where its 5 games go" with some. -->
   <div id="sheet-sg-day" class="sheet-overlay" hidden>
     <div class="sheet-backdrop" data-sheet-close></div>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-sg-day-title">
@@ -4690,15 +4699,15 @@
         <div class="sg-day-fld">
           <p class="fld-label" id="sg-day-dow-label">Day of the week</p>
           <div class="daypick rain-move-days sg-day-dows" id="sg-day-dows" role="radiogroup" aria-labelledby="sg-day-dow-label">
-            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="sun" aria-label="Sunday"><span class="daypick-name">Sun</span></button>
-            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="mon" aria-label="Monday"><span class="daypick-name">Mon</span></button>
-            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="tue" aria-label="Tuesday"><span class="daypick-name">Tue</span></button>
-            <button type="button" class="daypick-btn" role="radio" aria-checked="true" data-dk="wed" aria-label="Wednesday"><span class="daypick-name">Wed</span></button>
-            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="thu" aria-label="Thursday"><span class="daypick-name">Thu</span></button>
-            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="fri" aria-label="Friday"><span class="daypick-name">Fri</span></button>
-            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="sat" aria-label="Saturday"><span class="daypick-name">Sat</span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="sun" aria-label="Sunday"><span class="daypick-name">Sun</span><span class="daypick-n" aria-hidden="true"><span data-dow-n></span></span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="mon" aria-label="Monday"><span class="daypick-name">Mon</span><span class="daypick-n" aria-hidden="true"><span data-dow-n></span></span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="tue" aria-label="Tuesday"><span class="daypick-name">Tue</span><span class="daypick-n" aria-hidden="true"><span data-dow-n></span></span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="true" data-dk="wed" aria-label="Wednesday"><span class="daypick-name">Wed</span><span class="daypick-n" aria-hidden="true"><span data-dow-n></span></span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="thu" aria-label="Thursday"><span class="daypick-name">Thu</span><span class="daypick-n" aria-hidden="true"><span data-dow-n></span></span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="fri" aria-label="Friday"><span class="daypick-name">Fri</span><span class="daypick-n" aria-hidden="true"><span data-dow-n></span></span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="sat" aria-label="Saturday"><span class="daypick-name">Sat</span><span class="daypick-n" aria-hidden="true"><span data-dow-n></span></span></button>
           </div>
-          <p class="tms-hint" id="sg-day-dow-hint">Its games and their results go with it. A dashed day already has games.</p>
+          <p class="tms-hint" id="sg-day-dow-hint">Its games and their results go with it. A day with a number is already a games day.</p>
           <p class="fld-warn" id="sg-day-dow-why" role="status" hidden>Thursday is already a games day. Move or delete that one first.</p>
         </div>
         <div class="sg-day-fld">

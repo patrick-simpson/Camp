@@ -91,22 +91,19 @@ function backupJSON() {
   return JSON.stringify(payload, null, 2);
 }
 
+// Every check a backup must pass before anything is asked or changed. The Restore points screen runs it
+// BEFORE its own "Replace this camp’s setup?" question (rpRestoreText), so a backup that would be refused is
+// never asked about and its sentence lands where the director is looking. Answers `{ why }` for a refusal,
+// else what tryImport needs. Pure over the text and the page's state: it writes nothing.
 // `opts.copyFromOtherCamp`: the backup is the OTHER camp's, and only its Schedule, Games and Teams are
-// taken (the "copy from the other camp" tick). Without it another camp's backup is refused.
-function tryImport(text, opts) {
-  // `opts.say(message)` takes the complaint where the caller shows it (Set up the week's Restore points
-  // screen: a toast); `opts.confirmed` says the caller already asked (its own dialog).
-  const say = (opts && opts.say) || ((msg) => { if (msg) showToast(msg); });
-  if (!configEditable()) {
-    say('The games list is still loading. Try again in a moment.');
-    return;
-  }
+// taken. Without it another camp's backup is refused.
+function tryImportRead(text, opts) {
+  if (!configEditable()) return { why: 'The games list is still loading. Try again in a moment.' };
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    say('That isn’t a whole backup. Copy it again and paste all of it.');
-    return;
+    return { why: 'That isn’t a whole backup. Copy it again and paste all of it.' };
   }
 
   // Backups v3 (setup-sync.js) nest the synced keys under `state` and carry the camp they came from; v2
@@ -117,14 +114,12 @@ function tryImport(text, opts) {
   // readable camp is refused outright — restoreParseBody does the same for restore points.
   const campOf = parsed && typeof parsed === 'object' ? parsed.camp : undefined;
   if ((campOf !== undefined || (parsed && parsed.app === 'campScoreboardV3')) && typeof campOf !== 'string') {
-    say('That backup doesn’t say which camp it’s from, so it can’t be put back.');
-    return;
+    return { why: 'That backup doesn’t say which camp it’s from, so it can’t be put back.' };
   }
   const otherCamp = typeof campOf === 'string' && campOf !== CAMP.id;
   const copyMode = !!(otherCamp && opts && opts.copyFromOtherCamp);
   if (otherCamp && !copyMode) {
-    say('That backup is from ' + (CAMPS[parsed.camp] ? CAMPS[parsed.camp].label : 'another camp') + ', not ' + CAMP.label + '. Nothing was changed.');
-    return;
+    return { why: 'That backup is from ' + (CAMPS[parsed.camp] ? campWord(CAMPS[parsed.camp]) : 'another camp') + ', not ' + campWord() + '. Nothing was changed.' };
   }
   const src = v3 ? Object.assign({}, parsed.state, { config: parsed.config }) : parsed;
 
@@ -135,10 +130,7 @@ function tryImport(text, opts) {
     config = src; // legacy backup: the whole object IS the config
   }
 
-  if (!config) {
-    say('That isn’t a whole backup. Copy it again and paste all of it.');
-    return;
-  }
+  if (!config) return { why: 'That isn’t a whole backup. Copy it again and paste all of it.' };
   // The Teams tab can no longer add or delete a team (S0j), so a restore must not
   // be the back door that does: it would swap in the OTHER camp's roster (or a
   // hand-edited / t-<timestamp> one) with no UI left to repair it, and every
@@ -149,16 +141,25 @@ function tryImport(text, opts) {
     const ids = src.teams.map((t) => t && t.id);
     const wellFormed = ids.length === CAMP.teamCount && ids.every(isTeamId) && new Set(ids).size === ids.length;
     if (!wellFormed) {
-      if (!copyMode) {
-        say('That backup has ' + src.teams.length + ' teams, but ' + CAMP.label + ' has ' + CAMP.teamCount + '. Nothing was changed.');
-        return;
-      }
+      if (!copyMode) return { why: 'That backup has ' + src.teams.length + ' teams, but ' + campWord() + ' has ' + CAMP.teamCount + '. Nothing was changed.' };
       teamsOk = false; // copying from the other camp: a roster that doesn't fit is simply left out
     }
   }
+  return { parsed, v3, copyMode, src, config, teamsOk };
+}
+function tryImportCheck(text, opts) { const r = tryImportRead(text, opts); return r.why || null; }
+
+// Answers false when the backup was refused (its sentence went to `say`), true once it is put back.
+function tryImport(text, opts) {
+  // `opts.say(message)` takes the complaint where the caller shows it (Set up the week's Restore points
+  // screen: a toast or the paste sheet's own line); `opts.confirmed` says the caller already asked (its own dialog).
+  const say = (opts && opts.say) || ((msg) => { if (msg) showToast(msg); });
+  const read = tryImportRead(text, opts);
+  if (read.why) { say(read.why); return false; }
+  const { parsed, v3, copyMode, src, config, teamsOk } = read;
   say('');
 
-  if (!(opts && opts.confirmed) && !confirm("Replace this device's entire setup (teams, days, games) AND saved scores? This syncs to every device. Consider downloading a backup first.")) return;
+  if (!(opts && opts.confirmed) && !confirm("Replace this device's entire setup (teams, days, games) AND saved scores? This syncs to every device. Consider downloading a backup first.")) return false;
   // The week as it is NOW, kept as a `pre-import` restore point before anything changes (written in the
   // background: the import goes ahead, and a restore point can put this back).
   if (typeof restoreAuto === 'function') restoreAuto('pre-import', 'Before importing a backup');
@@ -206,6 +207,7 @@ function tryImport(text, opts) {
 
   saveState();
   renderAll();
+  return true;
 }
 
 // Drop results/brackets/drafts/clocks/… for game ids that no longer exist in the

@@ -16282,9 +16282,14 @@ button.gs-row:focus-visible {
 #sg-empty-text {
   display: none;
 }
-/* The day's own add, under everything. */
+/* The day's own add, under the day's lists. */
 .sg-add {
   margin-top: var(--s-4);
+}
+/* Days with no weekday come after it, set a section further down so "Add a game to Monday" reads as the open day's. */
+.sg-add + .sg-nodow,
+.sg-add[hidden] + .sg-nodow {
+  margin-top: var(--s-6);
 }
 .sg-off .gl-note {
   font-variant-numeric: tabular-nums;
@@ -16828,16 +16833,23 @@ button.gs-row:focus-visible {
 }
 .sg-day-dows .daypick-btn {
   min-width: 44px;
-  padding-inline: 0.25em; /* in em: the dashed edge below must clear the letters at 200% too */
+  padding-inline: 0.25em;
 }
-/* A weekday that is already a games day: still a real button (a tap says why, in the gold "!" line under the hint), drawn as
-   the app's "unavailable" — a dashed ink-3 edge inside the chip (an outline, so the chip keeps its size) and the name a step
-   quieter in weight, never lighter than ink-2. */
+/* A weekday that is already a games day: still a real button (a tap wobbles it and says why, in the gold "!" line under the
+   hint), drawn in the Games screen strip's own vocabulary right behind the sheet: its game count under the name (a number = a
+   games day), the name a step quieter in weight. No edge or box: the free days, which carry nothing, are the choices and must
+   read as the plainest, never the unavailable ones (a dashed box made them the loudest chips in the strip, in dark most of all). */
+.sg-day-dows .daypick-n {
+  color: var(--ink-2);
+  font-weight: 700;
+}
 .sg-day-dows .daypick-btn[data-taken]:not([aria-checked="true"]) {
-  outline: 1.5px dashed var(--ink-3);
-  outline-offset: -4px;
   color: var(--ink-2);
   font-weight: 600;
+}
+/* A tap on a taken day under calm: a 200 ms dim instead of the wobble (gmRefused). */
+html.calm-motion .sg-day-dows .daypick-btn[data-refused] {
+  opacity: .6;
 }
 .sg-day-acts {
   margin-top: var(--s-2);
@@ -18280,6 +18292,39 @@ jelly-chip.sched-day-chip[data-today][selected] {
 }
 .board-dash {
   align-self: center;
+}
+/* The dash sits on the SCORES' line, never at the middle of two stretched columns (at 200% the names wrap and the director's
+   steppers stack, which floated it below the scores on the tracker and up by the names on the counselor's board). Each column
+   is a subgrid of the board's four rows (mark, name, score, steppers), so both teams' rows line up and the dash takes the
+   score row. A board with no scores (a plain bracket call-up) keeps it centred on the columns. */
+@supports (grid-template-rows: subgrid) {
+  .board-cols {
+    grid-template-rows: repeat(4, auto);
+    row-gap: 0.15rem;
+  }
+  .board-cols > .board-col {
+    display: grid;
+    grid-row: 1 / span 4;
+    grid-template-rows: subgrid;
+    justify-items: center;
+    align-content: start;
+  }
+  .board-cols > .board-col:first-child {
+    grid-column: 1;
+  }
+  .board-cols > .board-col:last-child {
+    grid-column: 3;
+  }
+  .board-cols > .board-dash {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  .board-cols:not(:has(.board-score)) > .board-dash {
+    grid-row: 1 / span 4;
+  }
+  .board-cols > .board-col > .board-name {
+    justify-self: stretch;
+  }
 }
 .board-name {
   flex: 1 0 auto;

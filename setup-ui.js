@@ -1835,10 +1835,13 @@ function wireHold(btn, onDone, onReveal) {
 }
 
 // A backup picked as a file, or pasted as text: ONE path for both (`rpRestoreText`). A v3 backup of THIS camp opens the same restore
-// sheet (you pick what to put back); another camp's, or an older flat one, asks once in a dialog and then goes through tryImport's own
-// checks (which write a pre-import restore point first). `opts.say(message)` takes a refusal where the caller shows it (a toast for a
-// file, the sheet's own line for pasted text); `opts.name` names the backup on the restore sheet. Answers true once the backup was
-// handed on (the paste sheet closes itself then), false when it was refused or the director said "Not now".
+// sheet (you pick what to put back); another camp's, or an older flat one, asks once in a dialog and then goes through tryImport (which
+// writes a pre-import restore point first). tryImport's refusals are checked BEFORE that question (`rpImportWhy`): a backup that would
+// be refused is never asked about, and its sentence lands while the paste sheet is still up. `opts.say(message)` takes a refusal where
+// the caller shows it (a toast for a file, the sheet's own line for pasted text); `opts.name` names the backup on the restore sheet.
+// Answers true once the backup was handed on (the paste sheet closes itself then), false when it was refused or the director said
+// "Not now". `opts.beforeOpen` runs only once the backup is accepted, so a refusal never closes the sheet that shows it.
+function rpImportWhy(text, opts) { return typeof tryImportCheck === 'function' ? tryImportCheck(text, opts) : null; }
 async function rpRestoreText(text, opts) {
   const say = (opts && opts.say) || ((m) => showToast(m));
   const name = (opts && opts.name) || 'Backup file';
@@ -1851,13 +1854,19 @@ async function rpRestoreText(text, opts) {
     const res = restoreParseBody(text);
     if (res.ok) { if (opts && opts.beforeOpen) opts.beforeOpen(); openRestoreSheetForFile(res.body, name); return true; }
     if (res.reason === 'other-camp' && typeof res.camp === 'string') {
+      const why = rpImportWhy(text, { copyFromOtherCamp: true });
+      if (why) { say(why); return false; }
       const them = CAMPS[res.camp] ? campWord(CAMPS[res.camp]) : 'another camp';
       const choice = await askDialog({
         title: 'That backup is from ' + them, body: 'Copy its schedule, games and teams into ' + campWord() + '? Its scores and everything else are left out.',
         actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Copy them', value: 'copy', kind: 'gold' }],
       });
       // Asked once, here: tryImport must not ask again with a native confirm.
-      if (choice === 'copy' && typeof tryImport === 'function') { if (opts && opts.beforeOpen) opts.beforeOpen(); tryImport(text, { copyFromOtherCamp: true, confirmed: true, say }); return true; }
+      if (choice === 'copy' && typeof tryImport === 'function') {
+        if (tryImport(text, { copyFromOtherCamp: true, confirmed: true, say }) === false) return false;
+        if (opts && opts.beforeOpen) opts.beforeOpen();
+        return true;
+      }
       return false;
     }
     say(opts && opts.pasted ? 'That backup doesn’t say which camp it’s from, so it can’t be put back.' : 'That backup couldn’t be read.');
@@ -1875,13 +1884,15 @@ async function rpRestoreFile(file) {
 
 async function rpImportLegacy(text, opts, outer) {
   if (typeof tryImport !== 'function') return false;
+  const why = rpImportWhy(text, {});
+  if (why) { if (opts && opts.say) opts.say(why); else showToast(why); return false; }
   const choice = await askDialog({
     title: 'Replace this camp’s setup?', body: 'The teams, days, games and saved scores on every phone become what the backup holds. A restore point of the week as it is now is saved first.',
     actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Put it back', value: 'go', kind: 'danger' }],
   });
   if (choice !== 'go') return false;
+  if (tryImport(text, Object.assign({ confirmed: true, say: (msg) => { if (msg) showToast(msg); } }, opts)) === false) return false;
   if (outer && outer.beforeOpen) outer.beforeOpen();
-  tryImport(text, Object.assign({ confirmed: true, say: (msg) => { if (msg) showToast(msg); } }, opts));
   return true;
 }
 
@@ -1890,7 +1901,7 @@ async function rpImportLegacy(text, opts, outer) {
 // memory only (never storage), holds the deploy's auto-reload while it has text, and asks before it closes with text in it.
 const backupPasteUi = { open: false, text: '' };
 function backupPasteBusy() { return !!(backupPasteUi.open && backupPasteUi.text.trim()); }
-function backupPasteReset() { backupPasteUi.open = false; backupPasteUi.text = ''; }
+function backupPasteReset() { backupPasteUi.open = false; backupPasteUi.text = ''; backupPasteUi.refused = false; backupPasteUi.sumFor = null; backupPasteUi.sum = ''; }
 function rpCopyBackup(btn) {
   if (!canEdit() || typeof backupJSON !== 'function') return;
   copyTextToClipboard(backupJSON(), btn);
@@ -1899,6 +1910,7 @@ function openBackupPaste(opener) {
   if (!canEdit()) return;
   backupPasteUi.open = true;
   backupPasteUi.text = '';
+  backupPasteUi.refused = false;
   setupSheet('backup-paste', opener);
   const box = setupEl('bp-text');
   if (box) { box.value = ''; setAttrIfChanged(box, 'aria-invalid', null); }
@@ -1906,27 +1918,72 @@ function openBackupPaste(opener) {
 }
 function renderBackupPasteSheet() {
   const has = !!backupPasteUi.text.trim();
-  setHiddenIfChanged(setupEl('bp-wait'), has);
-  setHiddenIfChanged(setupEl('bp-check'), !has);
+  // After a refusal the dock is the dashed well again until the text changes: the same text would only be refused again.
+  const ready = has && !backupPasteUi.refused;
+  setHiddenIfChanged(setupEl('bp-wait'), ready);
+  setHiddenIfChanged(setupEl('bp-check'), !ready);
+  setTextIfChanged(setupEl('bp-wait-text'), !backupPasteUi.refused ? 'Paste a backup first' : backupPasteUi.refused === 'whole' ? 'Paste the whole backup' : 'Paste a different backup');
+  const sum = backupPasteSummary(backupPasteUi.text);
+  setTextIfChanged(setupEl('bp-sum'), sum);
+  setHiddenIfChanged(setupEl('bp-sum'), !sum);
+}
+// What the pasted text is, in words (a camp, a date and counts: never a name), so the director checks the summary, not the
+// backup's raw text. Only for a whole backup that names a camp this app has; otherwise nothing. Read once per text.
+function backupPasteSummary(text) {
+  if (backupPasteUi.sumFor === text) return backupPasteUi.sum;
+  let out = '';
+  const t = String(text || '').trim();
+  if (t.charAt(0) === '{' && t.charAt(t.length - 1) === '}') {
+    let b = null;
+    try { b = JSON.parse(t); } catch (e) { b = null; }
+    if (b && b.app === 'campScoreboardV3' && typeof b.camp === 'string' && CAMPS[b.camp] && b.config && Array.isArray(b.config.games)) {
+      const ms = Date.parse(b.exportedAt || b.at);
+      const when = Number.isFinite(ms) ? setupClockParts(ms) : null;
+      const day = when ? (when.day === 'Today' || when.day === 'Yesterday' ? when.day.toLowerCase() : when.day) : '';
+      const games = b.config.games.length;
+      const teams = b.state && Array.isArray(b.state.teams) ? b.state.teams.length : 0;
+      out = ['A ' + campWord(CAMPS[b.camp]) + ' backup' + (when && when.time ? ' from ' + day + ', ' + when.time : ''),
+        hubPlural(games, 'game', 'games'), teams ? hubPlural(teams, 'team', 'teams') : ''].filter(Boolean).join(' · ');
+    }
+  }
+  backupPasteUi.sumFor = text;
+  backupPasteUi.sum = out;
+  return out;
 }
 function backupPasteWhy(msg) {
   const why = setupEl('bp-why');
   const box = setupEl('bp-text');
   setTextIfChanged(why, msg || '');
   setAttrIfChanged(box, 'aria-invalid', msg ? 'true' : null);
+  if (msg) {
+    backupPasteUi.refused = /whole backup/.test(msg) ? 'whole' : 'other';
+    renderBackupPasteSheet();
+  }
   if (msg && why && why.scrollIntoView) why.scrollIntoView({ block: 'nearest' });
 }
 function backupPasteTyped(value) {
+  const had = !!backupPasteUi.text.trim() && !backupPasteUi.refused;
   backupPasteUi.text = String(value == null ? '' : value);
+  backupPasteUi.refused = false;
   backupPasteWhy('');
   renderBackupPasteSheet();
+  // The gold button lands when it takes the dashed well's place (from the typing, never from a render).
+  if (!had && backupPasteUi.text.trim()) backupPasteLand(setupEl('bp-check'));
+  // A paste that reads as a backup says what it is under the box: bring that line into view (at large text it is below the fold).
+  const sum = setupEl('bp-sum');
+  if (backupPasteUi.sum && sum && !sum.hidden && sum.scrollIntoView) sum.scrollIntoView({ block: 'nearest' });
+}
+function backupPasteLand(el) {
+  if (el && typeof JellyMotion !== 'undefined') JellyMotion.play(el, 'snap', (x) => ({ transform: 'scale(' + (0.94 + 0.06 * Math.min(1, x)) + ')' }), { calm: false });
 }
 async function backupPasteCheck() {
   if (!backupPasteBusy() || backupPasteUi.checking) return false;
   backupPasteUi.checking = true;
   try {
     const sheetUp = () => { backupPasteUi.text = ''; backupPasteUi.open = false; if (shell.sheets.includes('backup-paste')) shellSheetClose('backup-paste'); };
-    return await rpRestoreText(backupPasteUi.text, { pasted: true, name: 'Pasted backup', say: (m) => { if (m) backupPasteWhy(m); }, beforeOpen: sheetUp });
+    // A sentence that arrives once the sheet has closed (it never should: the checks run first) is a toast, never a hidden line.
+    const say = (m) => { if (!m) return; if (backupPasteUi.open) backupPasteWhy(m); else showToast(m); };
+    return await rpRestoreText(backupPasteUi.text, { pasted: true, name: 'Pasted backup', say, beforeOpen: sheetUp });
   } finally { backupPasteUi.checking = false; }
 }
 function backupPasteGuardClose() {
@@ -4309,6 +4366,9 @@ function wireSetupUi() {
   on('#bp-text', 'input', (e) => backupPasteTyped(e.target.value));
   on('#bp-wait', 'click', () => { const b = setupEl('bp-text'); if (b && b.focus) b.focus(); });
   on('#bp-check', 'click', () => { backupPasteCheck(); });
+  // ✕ and the backdrop ask first too (Escape and Back go through setupSheetGuardClose), as every guarded setup sheet does.
+  const bpSheet = setupEl('sheet-backup-paste');
+  if (bpSheet) bpSheet.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-sheet-close]') && backupPasteGuardClose()) e.stopPropagation(); }, true);
   on('#backup-file-input', 'change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) rpRestoreFile(f); });
   document.querySelectorAll('[data-rp-pick]').forEach((cb) => cb.addEventListener('change', () => {
     const rs = setupUi.rsheet;
@@ -8137,8 +8197,9 @@ function gmNoWeekdayDays() { return competitionDays().filter((d) => d && !(Numbe
 function renderGmNoWeekday(editable) {
   const rows = editable ? gmNoWeekdayDays().map((d) => {
     const n = allGames().filter((g) => g && g.dayId === d.id).length;
-    return '<button type="button" class="cb-row sg-game" data-key="nd-' + esc(d.id) + '" data-sg-dayid="' + esc(d.id) + '"><span class="cb-main"><span class="cb-title"><span>' + esc(d.name || 'A day') + '</span></span>' +
-      '<span class="cb-sub">' + (n ? hubPlural(n, 'game', 'games') + ' · ' : '') + 'Give it a weekday to see them here</span></span>' +
+    const sub = !n ? 'No games · Give it a weekday' : n === 1 ? '1 game · Give it a weekday to see it in the strip' : n + ' games · Give it a weekday to see them in the strip';
+    return '<button type="button" class="cb-row sg-game" data-key="nd-' + esc(d.id) + '" data-sg-dayid="' + esc(d.id) + '" data-warn><span class="cb-main"><span class="cb-title"><span>' + esc(d.name || 'A day') + '</span></span>' +
+      '<span class="cb-sub">' + sub + '</span></span>' +
       '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
   }) : [];
   setHiddenIfChanged(setupEl('sg-sec-nodow'), !rows.length);
@@ -8205,16 +8266,27 @@ function renderGmDaySheet() {
     if (document.activeElement !== name && name.value !== String(rec.name || '')) name.value = String(rec.name || '');
     if (name.placeholder !== (dk ? word : 'Name this day')) name.placeholder = dk ? word : 'Name this day';
   }
-  setTextIfChanged(setupEl('sg-day-name-hint'), dk ? 'The Games tab shows it. Clear it to go back to “' + word + '”.' : 'The Games tab shows it. Pick a day of the week below too.');
+  // Another games day on a weekday (its record), and whether any weekday is still free for this one to move to.
+  const otherOn = (k) => competitionDays().find((d) => d && d.id !== rec.id && d.dow === gmDow(k));
+  const free = SETUP_DK.some((k) => k !== dk && !otherOn(k));
+  setTextIfChanged(setupEl('sg-day-name-hint'), dk ? 'The Games tab shows it. Clear it to go back to “' + word + '”.' : free ? 'The Games tab shows it. Pick a day of the week below too.' : 'The Games tab shows it.');
+  setTextIfChanged(setupEl('sg-day-dow-hint'), free ? 'Its games and their results go with it. A day with a number is already a games day.'
+    : dk ? 'Every day of the week already has a games day, so this one can’t move.'
+      : 'Every day of the week already has a games day: delete one first, or keep this day without one.');
   const strip = setupEl('sg-day-dows');
   if (strip) {
     strip.querySelectorAll('[data-dk]').forEach((b) => {
       const k = b.dataset.dk;
       const mine = k === dk;
-      const taken = !mine && competitionDays().some((d) => d && d.id !== rec.id && d.dow === gmDow(k));
+      const other = mine ? null : otherOn(k);
+      const taken = !!other;
+      // A taken weekday carries that day's game count (the Games screen strip's vocabulary), never a dashed box: the free days
+      // are the choices, so they stay the plainest.
+      const count = taken ? allGames().filter((g) => g && g.dayId === other.id).length : 0;
       setAttrIfChanged(b, 'aria-checked', mine ? 'true' : 'false');
       setAttrIfChanged(b, 'aria-disabled', taken ? 'true' : null);
       setAttrIfChanged(b, 'data-taken', taken ? 'true' : null);
+      setTextIfChanged(b.querySelector('[data-dow-n]'), taken ? String(count) : '');
       setAttrIfChanged(b, 'aria-label', SETUP_DAY_WORDS[k] + (taken ? ', already a games day' : ''));
     });
     paintStripOverflow(strip);
@@ -8224,7 +8296,7 @@ function renderGmDaySheet() {
   if (box && document.activeElement !== box && box.value !== String(rec.note || '')) box.value = String(rec.note || '');
   setTextIfChanged(setupEl('sg-day-note-label'), 'Note on ' + word + '’s games');
   setTextIfChanged(setupEl('sg-day-off-title'), 'Delete this games day');
-  setTextIfChanged(setupEl('sg-day-off-sub'), n ? 'First asks where its ' + hubPlural(n, 'game', 'games') + ' go' : word + ' becomes a day with no games');
+  setTextIfChanged(setupEl('sg-day-off-sub'), n ? 'First asks where its ' + hubPlural(n, 'game', 'games') + ' go' : dk ? word + ' becomes a day with no games' : 'It has no games');
 }
 
 // The name saves when focus leaves it, only if it changed while focused.
@@ -8239,23 +8311,45 @@ function gmDayNameBlur() {
   else if (r.reason === 'empty') showToast('Give this day a name.');
 }
 
+// A tap that changes nothing (a weekday that is already a games day): one short sideways wobble, the reveal dock's refused tap.
+// Calm: a 200 ms dim (data-refused, styles.css), nothing that moves.
+function gmRefused(el) {
+  if (!el) return;
+  if (typeof calmMotion === 'function' && calmMotion()) {
+    if (el.setAttribute) el.setAttribute('data-refused', '');
+    setTimeout(() => { if (el.removeAttribute) el.removeAttribute('data-refused'); }, 200);
+    return;
+  }
+  if (typeof JellyMotion !== 'undefined') JellyMotion.play(el, 'wobble', (x) => ({ transform: 'translateX(' + 6 * (1 - Math.min(1, x)) * Math.cos(9 * x) + 'px)' }), { calm: false });
+}
+
 // A tap on a weekday of the strip: a free one moves the day (asking first when it has games), a taken one says why.
 async function gmDayDowTap(dk) {
   const rec = gmSheetDay();
   const why = setupEl('sg-day-dow-why');
   if (!canEdit() || !rec || SETUP_DK.indexOf(dk) === -1) return { ok: false, reason: 'day' };
   if (gmDayWeekday(rec) === dk) return { ok: true, changed: false };
+  const strip = setupEl('sg-day-dows');
+  const chip = strip && typeof strip.querySelector === 'function' ? strip.querySelector('[data-dk="' + dk + '"]') : null;
   const taken = competitionDays().some((d) => d && d.id !== rec.id && d.dow === gmDow(dk));
   if (taken) {
+    // Every tap is answered (a second tap on the same taken day wobbles again); the line unfolds the first time it shows.
+    const was = !!(why && why.hidden);
     setTextIfChanged(why, SETUP_DAY_WORDS[dk] + ' is already a games day. Move or delete that one first.');
     setHiddenIfChanged(why, false);
+    if (was && why) gmArrive([why]);
+    gmRefused(chip);
     return { ok: false, reason: 'taken' };
   }
   setHiddenIfChanged(why, true);
   const plan = gmMovePlan(rec.id, dk);
   if (plan.games) {
     const body = ['Its ' + hubPlural(plan.games, 'game', 'games') + ' and their results go with it.'];
-    if (plan.off) body.push((plan.off === plan.games ? 'None of them have' : plan.off + ' of them ' + (plan.off === 1 ? 'has' : 'have') + ' no') + ' a Games item on ' + SETUP_DAY_WORDS[dk] + (plan.off === plan.games ? '' : '') + ': they go under Not on the schedule.');
+    // Written out whole for each case: built from pieces it read "3 of them have no a Games item".
+    const on = SETUP_DAY_WORDS[dk];
+    if (plan.off && plan.off === plan.games) body.push('None of them has a Games item on ' + on + ', so they go under Not on the schedule.');
+    else if (plan.off === 1) body.push('1 of them has no Games item on ' + on + ', so it goes under Not on the schedule.');
+    else if (plan.off) body.push(plan.off + ' of them have no Games item on ' + on + ', so they go under Not on the schedule.');
     const go = await askDialog({
       title: 'Move this games day to ' + SETUP_DAY_WORDS[dk] + '?', body,
       actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Move it to ' + SETUP_DAY_WORDS[dk], value: 'go', kind: 'gold' }],
@@ -8263,7 +8357,7 @@ async function gmDayDowTap(dk) {
     if (go !== 'go') return { ok: false, reason: 'cancelled' };
   }
   const r = gmMoveDay(rec.id, dk);
-  if (r.ok && r.changed) renderAll();
+  if (r.ok && r.changed) { renderAll(); secSnap(chip); } // the newly chosen day lands like the Schedule strip's
   else if (!r.ok && r.reason === 'taken') { setTextIfChanged(why, SETUP_DAY_WORDS[dk] + ' is already a games day. Move or delete that one first.'); setHiddenIfChanged(why, false); }
   else if (!r.ok && r.reason === 'gone') shellSheetClose('sg-day');
   return r;
@@ -8292,8 +8386,9 @@ async function gmTakeDayOffFlow() {
     const others = SETUP_DK.filter((d) => d !== dk && gmIsGamesDay(d));
     if (!others.length) { setupSay('Make another day a games day first — ' + word + '’s games need somewhere to go.'); return { ok: false, reason: 'where' }; }
     const pick = await askDialog({
-      title: word + ' still has ' + hubPlural(n, 'game', 'games'), body: ['Move them to another games day first. Their results go with them.'], stack: true,
-      actions: others.slice(0, 6).map((d) => ({ label: 'Move them to ' + SETUP_DAY_WORDS[d], value: d })).concat([{ label: 'Not now', value: 'no', kind: 'quiet', cancel: true }]),
+      // The buttons say both halves of what happens: the games move AND this day is deleted (a "first" read as step 1 of 2).
+      title: 'Delete ' + word + '’s games day?', body: [(n === 1 ? 'Its 1 game moves' : 'Its ' + n + ' games move') + ' to the day you pick, with ' + (n === 1 ? 'its result' : 'their results') + '. Undo brings it all back.'], stack: true,
+      actions: others.slice(0, 6).map((d) => ({ label: 'Move them to ' + SETUP_DAY_WORDS[d] + ' and delete', value: d })).concat([{ label: 'Not now', value: 'no', kind: 'quiet', cancel: true }]),
     });
     if (!pick || pick === 'no') return { ok: false, reason: 'cancelled' };
     moveTo = pick;
