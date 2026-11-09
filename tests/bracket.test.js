@@ -189,7 +189,7 @@ test('free pick: a winner is recorded as { a, b, winner, loser } in pick order, 
     assert.equal(w.b().phase, 'round1');
     assert.ok(state.meta.lastDataChangeAt, 'a recorded match is real scoreboard activity');
     assert.ok(/Match 2 of 3/.test(w.html()));
-    assert.ok(/Completed:/.test(w.html()) && /def\./.test(w.html()), 'the completed list names it');
+    assert.ok(/Played so far/.test(w.html()) && /beat/.test(w.html()), 'the completed list names it');
     assert.ok(w.has('undo-match-btn'));
   });
 });
@@ -358,7 +358,7 @@ test('choosing the bye: the others meet in the championship game, in the order t
     assert.equal(w.b().phase, 'semifinal');
     assert.equal(w.b().championship, null);
     assert.ok(state.meta.lastDataChangeAt);
-    assert.ok(/Championship Game/.test(w.html()) && /has the bye/.test(w.html()));
+    assert.ok(/Championship game/.test(w.html()) && /has the bye/.test(w.html()));
   });
 });
 
@@ -620,7 +620,7 @@ test('a viewer reads the live matchup through renderLiveWatch, with the six-team
   const el = document.createElement('div');
   renderLiveWatch(el, g);
   assert.ok(/Live now · Championship game/.test(el.innerHTML), el.innerHTML);
-  assert.ok(/Completed:/.test(el.innerHTML) && /def\./.test(el.innerHTML));
+  assert.ok(/Played so far/.test(el.innerHTML) && /beat/.test(el.innerHTML));
   assert.notOk(/winner-btn|save-bracket/.test(el.innerHTML), 'a spectator can record nothing');
   b.phase = 'championship';
   b.semifinal.winner = 't1'; b.semifinal.loser = 't0';
@@ -842,7 +842,7 @@ test('Undo at every step through the wizard: the final, the championship game, t
     assert.ok(/<h3>Final<\/h3>/.test(w.html()) && w.has('undo-semifinal-btn'));
     w.press('undo-semifinal-btn');
     assert.deepEqual(w.b(), snaps.semifinal, 'back at the championship game, as it was before it was played');
-    assert.ok(/Championship Game/.test(w.html()) && w.has('undo-bye-btn'));
+    assert.ok(/Championship game/.test(w.html()) && w.has('undo-bye-btn'));
     w.press('undo-bye-btn');
     assert.equal(w.b().phase, 'bye');
     assert.equal(w.b().byeTeamId, null);

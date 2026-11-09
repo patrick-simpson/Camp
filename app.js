@@ -2361,7 +2361,7 @@ function nowBlockCard(ctx, blocks, nb, held) {
   if (kind === 'games' && body.doubled) card.notes.push({ kind: 'double', text: 'Double points until the end of Friday' });
   const rain = kind === 'night' || kind === 'over' ? null : upcomingRain(ctx.minutes, ctx.date);
   if (rain) card.notes.push({ kind: 'rain', text: rain.precip + '% chance of rain ' + rain.when });
-  if (kind === 'games' && body.startNote) card.notes.push({ kind: 'start', text: FOUR_START_NOTE });
+  if (kind === 'games' && body.startNote) card.notes.push({ kind: 'start', text: body.rows && body.rows.some((r) => r.score) ? FOUR_START_NOTE_SCORE : FOUR_START_NOTE });
   if (kind === 'games' && body.bracket4 && body.bracket4.note) card.notes.push(Object.assign({ kind: 'team' }, body.bracket4.note));
   // A result being checked: said in the slot the team's line sits in, so the cells are never left to explain themselves.
   else if (kind === 'games' && body.bracket4 && body.bracket4.hold) card.notes.push({ kind: 'hold', text: FOUR_HOLD_NOTE });
@@ -9201,7 +9201,7 @@ function gamesPodium(g) {
       const short = nowTeamWord(team);
       // A team holding another medal is MOVED by a tap (one draft update: its old leaf cleared, or given to the team this row held:
       // a swap, which the toast names); only a row that is still waiting for the medal above it keeps its keys dashed and dead.
-      const label = name + (!picked && wait ? ', waiting for ' + above : taken ? ', has ' + taken + '. Tap to make them ' + medal : '');
+      const label = name + (!picked && wait ? ', waiting for ' + above : taken ? ', has ' + taken + '. Tap to make them ' + medal + (picks[medal] ? ' and ' + teamName(picks[medal]) + ' ' + taken : '') + '' : '');
       return { team, name, short, picked, taken, disabled: !picked && wait, label };
     });
     return { medal, place: i + 1, word: PODIUM_WORDS[medal], pts: pts ? MEDAL_POINTS[medal] * mult : null, wait, waitFor: wait ? above : null, pick: picks[medal], teams };
@@ -9686,8 +9686,8 @@ function renderLiveWatch(container, g) {
   if (b.semifinal && b.semifinal.winner && b.semifinal.loser) played.push({ m: b.semifinal, round: 'Championship game' });
   if (b.championship && b.championship.winner && b.championship.loser) played.push({ m: b.championship, round: 'Final' });
   const done = played.map(({ m, round }) =>
-    `<li>${bracketMarkHtml(m.winner, 20)}<span><b>${esc(teamName(m.winner))}</b> def. ${esc(teamName(m.loser))}${round ? `<small class="live-watch-round">&nbsp;· ${round}</small>` : ''}</span></li>`).join('');
-  const doneHTML = done ? `<div class="live-watch-done"><p class="live-watch-label">Completed:</p><ul>${done}</ul></div>` : '';
+    `<li>${bracketMarkHtml(m.winner, 20)}<span><b>${esc(teamName(m.winner))}</b> beat ${esc(teamName(m.loser))}${round ? `<small class="live-watch-round">&nbsp;· ${round}</small>` : ''}</span></li>`).join('');
+  const doneHTML = done ? `<div class="live-watch-done"><p class="live-watch-label">Played so far</p><ul>${done}</ul></div>` : '';
 
   if (!pair) {
     // Every match is played at Results: the line says what is happening (a director saving), never "waiting for the next match".
@@ -10381,6 +10381,8 @@ const FOUR_ORDER = ['s1', 's2', 'third', 'final'];
 const FOUR_NAMES = { s1: 'Semifinal 1', s2: 'Semifinal 2', third: '3rd place', final: 'Final' };
 // The one line everybody but the deciding director reads while a result is being checked (Now's card and the game view).
 const FOUR_START_NOTE = 'A director picks the semifinals when the bracket starts';
+// The same line for a director whose card offers Score: it says what the tap does.
+const FOUR_START_NOTE_SCORE = 'Tap Score to start the bracket. You pick the semifinals.';
 const FOUR_PLAYED_NOTE = 'All four matches are played. The result shows once a director saves it.';
 const FOUR_HOLD_NOTE = 'A director is double-checking a result. The bracket carries on soon.';
 
@@ -11395,7 +11397,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
   const col = (id) => `
     <div class="board-col" data-board-col="${esc(id)}"${teamAccentAttr(id)}${id === state.followTeam ? ' data-mine' : ''}>
       <span class="board-emoji">${bracketMarkHtml(id, viewer ? 52 : 40)}</span>
-      <span class="board-name">${esc(teamName(id))}</span>
+      <span class="board-name"><span class="board-name-full">${esc(teamName(id))}</span><span class="board-name-short" aria-hidden="true">${esc(nowTeamWord(id))}</span></span>
       <span class="board-score" data-hr-team="${esc(id)}">${l.hr[id] || 0}</span>
       ${viewer ? '' : `<div class="board-stepper">
         <button class="live-btn" data-live="hr-down" data-team="${esc(id)}" aria-label="Subtract from ${esc(teamName(id))}">−</button>
@@ -11478,7 +11480,7 @@ function liveBoardHTML(g, aId, bId) {
   const col = (id, score) => `
     <div class="board-col"${teamAccentAttr(id)}${id === state.followTeam ? ' data-mine' : ''}>
       <span class="board-emoji">${bracketMarkHtml(id, 52)}</span>
-      <span class="board-name">${esc(teamName(id))}</span>
+      <span class="board-name"><span class="board-name-full">${esc(teamName(id))}</span><span class="board-name-short" aria-hidden="true">${esc(nowTeamWord(id))}</span></span>
       ${score != null ? `<span class="board-score">${score}</span>` : ''}
     </div>`;
   const clockHTML = clock ? `
@@ -11768,8 +11770,8 @@ function renderBracketRound1(body, g, b) {
 
   if (b.matches.length > 0) {
     html += `<div class="completed-matches">
-      <p class="muted">Completed:</p>
-      <ul>${b.matches.map((m) => `<li>${esc(teamName(m.winner))} def. ${esc(teamName(m.loser))}</li>`).join('')}</ul>
+      <p class="muted">Played so far</p>
+      <ul>${b.matches.map((m) => `<li>${esc(teamName(m.winner))} beat ${esc(teamName(m.loser))}</li>`).join('')}</ul>
       <button id="undo-match-btn" class="link-btn">Undo last match</button>
     </div>`;
   }
@@ -11963,7 +11965,7 @@ function sixUndoHtml(id, label, teams) {
 
 function renderBracketSemifinal(body, g, b) {
   body.innerHTML = `
-    <h3>Championship Game</h3>
+    <h3>Championship game</h3>
     <p class="bye-note"><strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Final.</p>
     ${matchupCalloutHTML(b.semifinal.a, b.semifinal.b)}
     ${matchTrackerHTML(g, b.semifinal.a, b.semifinal.b)}

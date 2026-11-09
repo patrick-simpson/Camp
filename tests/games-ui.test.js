@@ -456,7 +456,7 @@ test('the podium picker\'s markup: rows of toggle keys, the checked and taken st
   assert.notOk(/role="radio"|aria-checked|role="radiogroup"/.test(html), 'toggle buttons, not radios: a tap on the picked one clears it');
   const goldKey = new RegExp('<button type="button" class="pp-team" data-team="' + t[1] + '"[^>]*aria-pressed="true"[^>]*>').exec(html);
   assert.ok(goldKey && !/aria-disabled/.test(goldKey[0]), 'the picked team is pressed in its own row: ' + (goldKey && goldKey[0]));
-  assert.ok(/data-taken="gold"[^>]*aria-label="[^"]*, has gold\. Tap to make them silver"/.test(html), 'a team held by gold is named, and says aloud that a tap moves it');
+  assert.ok(/data-taken="gold"[^>]*aria-label="[^"]*, has gold\. Tap to make them silver and [^"]+ gold"/.test(html), 'a team held by gold is named, and says aloud that a tap swaps it with the team the row held');
   assert.ok(!/data-taken="gold"[^>]*aria-disabled/.test(html), 'a taken key is an ordinary key now (a tap moves the team), not a dashed dead one');
   assert.ok(/<span class="pp-taken" aria-hidden="true"><i class="pp-disc" data-place="1" aria-hidden="true">1<\/i>has gold<\/span>/.test(html), 'the tab names the MEDAL, never the bare word');
   assert.ok(/<i class="pp-ok" aria-hidden="true">/.test(html) && /<i class="pp-ok" aria-hidden="true" hidden>/.test(html), 'the check is a permanent slot, shown only on the picked key');

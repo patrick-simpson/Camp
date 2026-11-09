@@ -911,7 +911,7 @@ test('nowModel: a four-team bracket game that has not started is "not started": 
     let m = look();
     assert.equal(m.body.bracket4, null, 'role ' + i + ': pairs from the standings are never drawn');
     assert.equal(m.body.startNote, true);
-    assert.ok(m.card.notes.some((n) => n.kind === 'start' && /director picks the semifinals/.test(n.text)), 'role ' + i + ': the note says who picks');
+    assert.ok(m.card.notes.some((n) => n.kind === 'start' && (i === 1 ? /Tap Score to start the bracket\. You pick the semifinals\./ : /director picks the semifinals/).test(n.text)), 'role ' + i + ': the note says who picks (a director with Score is told what the tap does)');
     g.bracketSeed = 'pick';
     assert.equal(look().body.bracket4, null);
     g.bracketSeed = 'fixed'; g.roundOneMatchups = [[T()[0], T()[3]], [T()[1], T()[2]]];
