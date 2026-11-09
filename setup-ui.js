@@ -1133,7 +1133,11 @@ function askFinish(i, fromClose) {
   const a = i == null ? s.actions.find((x) => x.cancel) : s.actions[i];
   const input = s.input ? setupEl('ask-input') : null;
   const text = input && typeof input.value === 'string' ? input.value : '';
-  s.resolve({ value: a ? a.value : null, text });
+  // The optional tick (#ask-tell): read before the dialog closes; a cancel is never a yes, and a tick that was hidden or
+  // replaced by its no-signal line is the unticked answer.
+  const tickEl = s.tick ? setupEl('ask-tell-check') : null;
+  const tick = !!(tickEl && a && !a.cancel && !s.tickOff && tickEl.hasAttribute('checked'));
+  s.resolve({ value: a ? a.value : null, text, tick });
   if (fromClose) return; // Jelly already closed it
   const dlg = setupEl('ask-dialog');
   askClosing = new Promise((done) => {
@@ -1154,7 +1158,7 @@ async function askOpen(opts) {
     let yes;
     if (o.input && typeof prompt === 'function') { const t = prompt(String(o.title || '') + (o.input.label ? '\n' + o.input.label : ''), o.input.value || ''); yes = t !== null; text = t || ''; }
     else yes = confirm([o.title].concat(Array.isArray(o.body) ? o.body : o.body ? [o.body] : [], o.list || []).filter(Boolean).join('\n\n'));
-    return { value: yes ? main.value : (cancel ? cancel.value : null), text };
+    return { value: yes ? main.value : (cancel ? cancel.value : null), text, tick: false }; // the native confirm has no tick: the unticked answer
   }
   if (askState) askFinish(null, false); // a newer question replaces an older one (it reads as its cancel)
   if (askClosing) { await askClosing; askClosing = null; }
@@ -1165,11 +1169,27 @@ async function askOpen(opts) {
   body.innerHTML = askBodyHtml(o) + (o.input ? '<jelly-input class="form-input ask-input" id="ask-input" type="text" label="' + esc(o.input.label || '') + '" placeholder="' + esc(o.input.placeholder || '') +
     '" maxlength="' + (Number(o.input.maxLength) || 120) + '" value="' + esc(o.input.value || '') + '"></jelly-input>' : '');
   body.__html = null;
+  // The tick row (a question may carry "Tell people who follow …"): unticked EVERY time it opens, hidden when not asked for.
+  const tk = o.tick && typeof o.tick === 'object' ? o.tick : null;
+  const tkRow = setupEl('ask-tell');
+  const tkOff = !!(tk && tk.off);
+  if (tkRow) {
+    setHiddenIfChanged(tkRow, !tk);
+    if (tk) {
+      setTextIfChanged(setupEl('ask-tell-label'), String(tk.label || 'Tell people who follow this item'));
+      setTextIfChanged(setupEl('ask-tell-note'), String(tk.note || ''));
+      const chk = setupEl('ask-tell-check');
+      if (chk && chk.hasAttribute('checked')) chk.removeAttribute('checked');
+      setHiddenIfChanged(chk, tkOff);
+      setHiddenIfChanged(setupEl('ask-tell-off'), !tkOff);
+      setHiddenIfChanged(setupEl('ask-tell-note'), tkOff);
+    }
+  }
   const box = setupEl('ask-actions');
   box.innerHTML = askActionsHtml(actions);
   if (typeof box.toggleAttribute === 'function') box.toggleAttribute('data-stack', !!o.stack);
   return new Promise((resolve) => {
-    askState = { resolve, actions, input: !!o.input };
+    askState = { resolve, actions, input: !!o.input, tick: !!tk, tickOff: tkOff };
     dlg.setAttribute('open', '');
     // Focus lands on the safe choice (or the field), never on the destructive one.
     const focusWhat = () => {
@@ -1182,6 +1202,11 @@ async function askOpen(opts) {
 
 async function askDialog(opts) {
   return (await askOpen(opts)).value;
+}
+
+// A question with a tick: resolves { value, text, tick } (tick false unless the box was ticked and the answer was not a cancel).
+function askWithTick(opts) {
+  return askOpen(opts);
 }
 
 async function askForText(opts) {
@@ -3209,28 +3234,53 @@ async function schedRemoveItem() {
   let scope = 'day';
   const fromTypical = it.origin === 'typical' || it.origin === 'changed';
   const note = (games) => (games.length ? [hubPlural(games.length, 'game sits', 'games sit') + ' on it. ' + (games.length === 1 ? 'It keeps its results and is' : 'They keep their results and are') + ' listed as not on the schedule.'] : []);
+  const tellOffer = schedRemoveTell(it, name, fromTypical);
+  let ticked = false;
+  const ask = async (o) => {
+    if (!tellOffer) return askDialog(o);
+    const r = await askWithTick(Object.assign({ tick: tellOffer }, o));
+    ticked = !!r.tick;
+    return r.value;
+  };
   if (it.dayKey === 'typical' || fromTypical) {
     const day = it.dayKey === 'typical' ? '' : SETUP_DAY_WORDS[it.dayKey];
     const actions = it.dayKey === 'typical'
       ? [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Remove from the typical day', value: 'typical', kind: 'danger' }]
       : [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Skip just ' + day, value: 'day' }, { label: 'Remove from every day like ' + day, value: 'typical', kind: 'danger' }];
-    const pick = await askDialog({ title: it.dayKey === 'typical' ? 'Remove ' + name + ' from the typical day?' : 'Remove ' + name + '?', body: it.dayKey === 'typical' ? ['Every day that follows the typical day loses it.'].concat(note(allGamesOn)) : ['Skipping it affects only ' + day + ', and you can bring it back. Removing it takes it off every day that follows the typical day.'].concat(note(dayGames)), actions });
+    const pick = await ask({ title: it.dayKey === 'typical' ? 'Remove ' + name + ' from the typical day?' : 'Remove ' + name + '?', body: it.dayKey === 'typical' ? ['Every day that follows the typical day loses it.'].concat(note(allGamesOn)) : ['Skipping it affects only ' + day + ', and you can bring it back. Removing it takes it off every day that follows the typical day.'].concat(note(dayGames)), actions });
     if (pick !== 'day' && pick !== 'typical') return;
     scope = pick;
   } else {
-    const ok = await askDialog({ title: 'Remove ' + name + '?', body: ['It is only on ' + word + '.'].concat(note(dayGames)), actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Remove it', value: 'go', kind: 'danger' }] });
+    const ok = await ask({ title: 'Remove ' + name + '?', body: ['It is only on ' + word + '.'].concat(note(dayGames)), actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Remove it', value: 'go', kind: 'danger' }] });
     if (ok !== 'go') return;
   }
   const losing = scope === 'typical' ? allGamesOn : (fromTypical ? [] : dayGames);
   const dk = it.dk;
   const label = (scope === 'day' && fromTypical ? 'Skipped ' : 'Removed ') + name + ' ' + (scope === 'typical' ? 'from the typical day' : 'on ' + word);
+  const tellBefore = tellOffer && typeof pushScheduleSnapshot === 'function' ? pushScheduleSnapshot() : null;
+  const recWas = typeof undoLastRecorded !== 'undefined' ? undoLastRecorded : null;
   const r = setupCombined(label, (d) => {
     const x = schedRemoveMutate(d, { dk, bid: it.bid, scope });
     if (!x.ok) return false;
   }, losing.length ? schedUnlinkMutator(losing) : null, { expect: it.where === 'dayBlocks' ? ['dayBlocks/' + dk + '/' + it.bid] : ['typical/' + it.bid] });
   if (!r.ok) { if (r.reason === 'config-loading') setupSay('Still loading the games list — try again in a moment.'); else weekRefused(r); return; }
+  // Tell the phones that follow it, if the director ticked the box. Fire and forget, like Save's: the removal is already saved.
+  if (tellBefore) setupTellAfter(tellBefore, ticked, { entry: setupTellEntry(recWas), what: name + (scope === 'day' && fromTypical ? ' skipped' : ' removed') });
   setupSched.item = null;
   shellSheetClose('sched-item');
+}
+
+// The tick on Remove…'s question: offered only while phone alerts are live and it is camp week, the item has a time, and one
+// of the occurrences it takes away is one the sender would tell (still to come today or tomorrow). Always UNTICKED. null = no row.
+function schedRemoveTell(it, name, fromTypical) {
+  if (typeof pushScheduleAlertOffered !== 'function' || typeof pushScheduleTimeTellable !== 'function' || !pushScheduleAlertOffered()) return null;
+  const m = schedItemModel(it);
+  const item = m && m.item;
+  if (!item || item.noTime || (it.rec && it.rec.noTime) || !Number.isInteger(item.start)) return null;
+  const typicalDays = SETUP_DK.filter((dk) => setupMapOf(setupMapOf(setupTree.days)[dk]).typical === true);
+  const dks = it.dayKey === 'typical' ? typicalDays : (fromTypical ? [it.dayKey].concat(typicalDays) : [it.dayKey]);
+  if (!dks.some((dk) => pushScheduleTimeTellable(SETUP_DK.indexOf(dk), item.start))) return null;
+  return { label: 'Tell people who follow ' + (name && name.length <= 22 ? name : 'this item'), note: 'Only they get an alert, so tell everyone else in person.', off: setupNoSignal() };
 }
 
 // ── the day's menu (⋯ on a day) and the other actions of the screen ──

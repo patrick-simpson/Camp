@@ -400,6 +400,63 @@ function ssTrackBox(id) { // the stub's elements keep no attributes: this one re
   return box;
 }
 
+test('the tick on Remove…: offered only while alerts are live, in camp week, for a time the sender would tell; unticked every time; its outcome says who was told; never a real alert', async () => {
+  const todayDow = campNow().dow;
+  const todayKey = SETUP_DK[todayDow];
+  const real = { cfg: pushConfigured, week: campWeek, tell: pushScheduleTell, now: serverNow, ask: askDialog, tickAsk: askWithTick };
+  const told = [];
+  ssStart({ day: todayKey });
+  try {
+    const target = planForDow(todayDow).find((b) => !b.noTime && b.type !== 'games' && !b.meal && b.start >= 120 && b.start <= 1000 && b.origin === 'typical');
+    assert.ok(target, 'a plain item from the typical day');
+    pushScheduleTell = async (before, alert) => { told.push({ before, alert }); return { ok: true, sent: 3, queued: 0 }; };
+    const ymd = (add) => new Date(Date.UTC(2027, 6, 18 + add)).toISOString().slice(0, 10);
+    let asked = null;
+    askDialog = async () => 'day';
+    askWithTick = async (o) => { asked = o; return { value: 'day', tick: asked.__answer === true }; };
+    // dormant: a plain question, no tick
+    schedOpenItem({ bid: target.id });
+    await schedRemoveItem();
+    assert.equal(asked, null, 'dormant: the ordinary question');
+    schedBringBack(target.id);
+    // live, camp week, an hour before the item
+    pushConfigured = () => true;
+    campWeek = () => ({ start: '2027-07-18', phase: 'during' });
+    serverNow = () => etWallToEpoch(ymd(todayDow), 60);
+    schedOpenItem({ bid: target.id });
+    await schedRemoveItem();
+    assert.ok(asked && asked.tick, 'the question carries the tick');
+    assert.ok(/^Tell people who follow /.test(asked.tick.label), asked.tick.label);
+    assert.ok(/tell everyone else in person/.test(asked.tick.note));
+    assert.equal(told.length, 1, 'the change is named to the sender, quietly: unticked is alert false');
+    assert.equal(told[0].alert, false, 'UNTICKED by default: nobody is alerted');
+    schedBringBack(target.id);
+    // ticked: the sender is told to alert
+    asked = null;
+    askWithTick = async (o) => { asked = o; return { value: 'day', tick: true }; };
+    schedOpenItem({ bid: target.id });
+    await schedRemoveItem();
+    assert.equal(told.length, 2);
+    assert.equal(told[1].alert, true);
+    assert.ok(told[1].before && typeof told[1].before === 'object', 'the blocks as they were before the commit');
+    schedBringBack(target.id);
+    // an older Worker (bad-kind) hides it too
+    pushSchedAlertsOff = true;
+    serverNow = () => etWallToEpoch(ymd(todayDow), 60);
+    asked = null;
+    schedOpenItem({ bid: target.id });
+    await schedRemoveItem();
+    assert.equal(asked, null);
+  } finally { pushSchedAlertsOff = false; pushConfigured = real.cfg; campWeek = real.week; serverNow = real.now; pushScheduleTell = real.tell; askDialog = real.ask; askWithTick = real.tickAsk; ssSheetClose(); ssEnd(); }
+});
+
+test('askWithTick: unticked every time it opens, a cancel is never a yes, the native confirm has no tick', async () => {
+  // the dialog's own markup is stubbed by the harness; what matters is the answer shape
+  const r = await askWithTick({ title: 'Remove it?', body: ['x'], actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Remove it', value: 'go' }], tick: { label: 'Tell people who follow it', note: 'n' } });
+  assert.equal(r.tick, false, 'with no dialog the native confirm answers: never ticked');
+  assert.ok('value' in r && 'text' in r);
+});
+
 test('the tick on the item sheet: hidden while phone alerts are dormant, shown only for a change someone could be told about (a moved start, a new name) and then ticked for a move on a real day; a save tells the sender; unticked it is a quiet baseline move', async () => {
   // Moved on purpose with the Step 26 review: an emoji-only change no longer offers the tick (the sender would alert
   // "details changed" for nothing), and the tick needs a time still to come inside the sender's window.
