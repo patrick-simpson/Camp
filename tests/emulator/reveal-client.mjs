@@ -11,7 +11,7 @@
 // a missing `pub: null`) and a case here turns red, with an unchanged unit suite for the model.
 import { createRequire } from 'module';
 import vm from 'vm';
-import { harness, suite, NEW_RULES, ROOTS, ED, ED2, VW, ref, get, update, onValue, serverTimestamp, sleep } from './lib.mjs';
+import { harness, suite, NEW_RULES, R1_FROZEN, ROOTS, ED, ED2, VW, ref, get, update, onValue, serverTimestamp, sleep } from './lib.mjs';
 
 const require = createRequire(import.meta.url);
 const { makeContext, clearAllTimers } = require('../harness.js');
@@ -19,6 +19,9 @@ const { makeContext, clearAllTimers } = require('../harness.js');
 const s = suite('reveal-client — the real client\'s writes against the real rules');
 const h = await harness('reveal-client', NEW_RULES);
 await h.members();
+// the rules that were live before R2: the client with the branding switch ON must still run a whole reveal against them
+const hOld = await harness('reveal-client-r1', R1_FROZEN);
+await hOld.members();
 
 // firebase.database().ref(path) over a modular Database instance. Values are round-tripped through JSON so an object made in
 // the page's vm realm is a plain object to the SDK; the timestamp placeholder survives as {'.sv':'timestamp'}.
@@ -49,11 +52,11 @@ const SENTINEL = [971, 863, 752, 641, 533, 427];
 const NAMES = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
 
 // One phone: a fresh page of the real scripts, signed in as `person` with `role`, its `firebase` the emulator under real rules.
-async function phone(R, person, role) {
+async function phone(R, person, role, hh = h) {
   const camp = R === 'seniorScoreboard' ? 'senior' : 'junior';
   const { ctx, sandbox } = makeContext({ camp });
   const writes = [];
-  sandbox.firebase = compatFirebase(h.as(person), writes);
+  sandbox.firebase = compatFirebase(hh.as(person), writes);
   const run = (code) => vm.runInContext(code, ctx);
   run(`state = makeFreshState(); migrateState(state); normalizeSyncedState();
        authUser = ${JSON.stringify({ email: person.email })};
@@ -306,7 +309,103 @@ for (const R of ROOTS) {
   });
 }
 
+// ── R2: a team's own look in a shown place (owner's decisions item 7) ─────────────────────────────────────
+// The switch REVEAL_BRANDING_LIVE ships off. These cases flip it in the page and prove the three pairings:
+// ON under R2 (the look only in shown places), OFF under R2 (writes identical to before), ON under the rules live
+// before R2 (a refused branded place is retried plain; the whole reveal, the crowning and End still run).
+const THUMB = 'data:image/jpeg;base64,' + 'A'.repeat(1500);
+const OWL = '\u{1F989}';
+function giveLooks(d, teams) {
+  d.run(`(function () {
+    state.teams.forEach((t, i) => {
+      if (i === ${teams} - 1) t.emoji = ${JSON.stringify(OWL)};               // the first place shown: a look R1 knows nothing about
+      if (i === 0) { t.color = 'teal'; t.photoV = 3; TEAM_PHOTO_MEM.set(t.id + ':3', ${JSON.stringify(THUMB)}); revealThumbs.set(t.id, { v: 3, data: ${JSON.stringify(THUMB)} }); }
+      if (i === 1) { t.plain = true; t.emoji = '2\\uFE0F\\u20E3'; }
+    });
+  })()`);
+}
+for (const R of ROOTS) {
+  const teams = R === 'seniorScoreboard' ? 4 : 6;
+  const pts = SENTINEL.slice(0, teams);
+  const pub = `${R}/revealPublic`;
+  const anon = () => h.anon();
+  await clear(R);
+  await s.t(`${R}: switch ON under R2 — every place goes through; a look appears only in the place its team is shown in; never at Start, never in revealFull`, async () => {
+    const d = await phone(R, ED, 'editor');
+    d.standings(pts); giveLooks(d, teams);
+    await d.boot();
+    d.run('REVEAL_BRANDING_LIVE = true');
+    d.skew(0);
+    let r = await d.run('revealStart({ quiet: true })');
+    if (!r.ok) throw new Error('Start: ' + JSON.stringify(r));
+    const atStart = JSON.stringify(await val(anon(), pub));
+    if (/"(em|pl|ph)"/.test(atStart) || atStart.includes(THUMB)) throw new Error('a look was public at Start');
+    let skew = 0;
+    for (let k = 0; k < teams; k++) {
+      skew += 6000; d.skew(skew);
+      r = await d.run('revealNext({ quiet: true })');
+      if (!r.ok) throw new Error('Next #' + k + ': ' + JSON.stringify(r));
+      const text = JSON.stringify(await val(anon(), pub));
+      if (k < teams - 1 && text.includes(THUMB)) throw new Error('the photo of a team still hidden is public after place ' + k);
+    }
+    const node = await val(anon(), `${pub}/real/pub`);
+    const e0 = node['g' + (teams - 1)].e.t0, eFirst = node.g0.e['t' + (teams - 1)];
+    if (e0.k !== 'teal' || e0.ph !== THUMB) throw new Error('the shown team\'s look: ' + JSON.stringify(e0).slice(0, 120));
+    if (eFirst.em !== OWL) throw new Error('the first place\'s own emoji: ' + JSON.stringify(eFirst));
+    const full = JSON.stringify(await val(h.as(ED), `${R}/revealFull/real`));
+    if (/"(em|pl|ph)"/.test(full) || full.includes(THUMB)) throw new Error('revealFull carries a look');
+    if (d.run('revealBrandRefused') !== false) throw new Error('the switch fell back against R2');
+    d.stop();
+  });
+  await clear(R);
+  await s.t(`${R}: switch OFF under R2 — the writes carry no look at all (what the client wrote before R2)`, async () => {
+    const d = await phone(R, ED, 'editor');
+    d.standings(pts); giveLooks(d, teams);
+    await d.boot();
+    d.skew(0);
+    let r = await d.run('revealStart({ quiet: true })');
+    if (!r.ok) throw new Error('Start: ' + JSON.stringify(r));
+    let skew = 0;
+    for (let k = 0; k < 2; k++) { skew += 6000; d.skew(skew); r = await d.run('revealNext({ quiet: true })'); if (!r.ok) throw new Error('Next: ' + JSON.stringify(r)); }
+    if (/"(k|em|pl|ph)"/.test(JSON.stringify(d.writes.map((w) => w.values)))) throw new Error('a look was written with the switch off');
+    d.stop();
+  });
+  await clear(R);
+  await s.t(`${R}: switch ON under the rules live BEFORE R2 — the branded place is refused once and sent plain; the crowning and End still run`, async () => {
+    const hoc = () => hOld.anon();
+    await hOld.seed(async (db) => { await update(ref(db, R), { revealPublic: null, revealFull: null }); });
+    const d = await phone(R, ED, 'editor', hOld);
+    d.standings(pts); giveLooks(d, teams);
+    await d.boot();
+    d.run(`REVEAL_BRANDING_LIVE = true; finaleDow = () => revealDowOf(serverNow()); campWeek = () => ({ start: null, phase: 'unset' });`);
+    d.skew(0);
+    let r = await d.run('revealStart({ quiet: true })');
+    if (!r.ok) throw new Error('Start: ' + JSON.stringify(r));
+    let skew = 0;
+    for (let k = 0; k < teams + 1; k++) {                    // every place, then the crowning
+      skew += 6000; d.skew(skew);
+      r = await d.run('revealNext({ quiet: true })');
+      if (!r.ok) throw new Error('Next #' + k + ': ' + JSON.stringify(r));
+    }
+    const sends = d.writes.filter((w) => w.keys.some((k) => /\/pub\/g\d$/.test(k)));
+    const branded = sends.filter((w) => /"(em|pl|ph)"/.test(JSON.stringify(w.values)));
+    if (branded.length !== 1) throw new Error('exactly one branded send (refused), got ' + branded.length);
+    if (sends.length !== teams + 1) throw new Error('one retry in all: ' + sends.length + ' place sends for ' + teams + ' places');
+    if (d.run('revealBrandRefused') !== true) throw new Error('the page should have stopped branding');
+    if ((await val(hoc(), `${R}/revealPublic/real/ctl/phase`)) !== 'champion') throw new Error('expected the crowning');
+    skew += 6000; d.skew(skew);
+    r = await d.run('revealNext({ quiet: true })');
+    skew += 6000; d.skew(skew);
+    r = await d.run('revealEnd({ quiet: true })');
+    if (!r.ok) throw new Error('End: ' + JSON.stringify(r));
+    const text = JSON.stringify(await val(hoc(), `${R}/revealPublic`));
+    if (/"(em|pl|ph)"/.test(text)) throw new Error('a look is public under the old rules');
+    d.stop();
+  });
+}
+
 for (const p of []) p.stop();
 clearAllTimers();
 await h.done();
+await hOld.done();
 s.finish();

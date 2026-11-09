@@ -4,7 +4,7 @@
 // week config untouched. This suite lists, for each thing the new client will do, what the PUBLISHED
 // rules say and what R1 says: the new-node operations must be refused cleanly before and accepted after,
 // and the everyday operations must behave the same under both.
-import { harness, suite, NEW_RULES, OLD_RULES, ROOTS, OWNER, ED, VW, ref, set, get, update, remove, onValue, TS, outcome, bigPng, startPayload } from './lib.mjs';
+import { harness, suite, NEW_RULES, OLD_RULES, R1_FROZEN, ROOTS, OWNER, ED, VW, ref, set, get, update, remove, onValue, TS, outcome, bigPng, startPayload, nextPayload, group, entry } from './lib.mjs';
 
 async function run(label, rules) {
   const h = await harness('newc-' + label, rules);
@@ -66,6 +66,43 @@ for (const name of Object.keys(before)) {
       if (after[name] !== 'ok') throw new Error(`should work after R1, got ${after[name]}`);
     } else if (before[name] !== after[name] || before[name] !== 'ok') {
       throw new Error(`everyday traffic must be identical and accepted: pre-R1 ${before[name]}, R1 ${after[name]}`);
+    }
+  });
+}
+// ── R2 (big-screen branding): the client with the switch ON meets the rules live BEFORE R2 (r1.rules.json), then R2 ──
+// A branded place is refused before and accepted after; the same command without branding (the client's retry) and every
+// everyday reveal command are identical under both; a colour alone was already accepted by R1.
+async function reveal(label, rules) {
+  const h = await harness('newc-r2-' + label, rules);
+  await h.members();
+  const res = {};
+  for (const R of ROOTS) {
+    const ed = h.as(ED);
+    const op = async (name, fn) => { res[`${R}: ${name}`] = await outcome(fn); };
+    const ctl = async () => (await get(ref(h.as(OWNER), `${R}/revealPublic/real/ctl`))).val();
+    const g = (k, extra) => ({ place: 6 - k, e: { ['t' + k]: Object.assign(entry(k), extra) } });
+    await op('a Start', () => update(ref(ed, R), startPayload('real')));
+    let c = await ctl();
+    await op('a branded place (em, pl, ph)', () => update(ref(ed, R), nextPayload('real', c, { group: g(0, { em: '\u{1F989}', pl: true, ph: 'data:image/jpeg;base64,' + 'A'.repeat(900) }) })));
+    c = await ctl();
+    await op('the same place, plain (the retry)', () => update(ref(ed, R), nextPayload('real', c, { group: g(0, {}) })));
+    c = await ctl();
+    await op('a place with a colour alone', () => update(ref(ed, R), nextPayload('real', c, { group: g(1, { k: 'teal' }) })));
+    c = await ctl();
+    await op('the next plain place', () => update(ref(ed, R), nextPayload('real', c)));
+  }
+  await h.done();
+  return res;
+}
+const r2Before = await reveal('r1', R1_FROZEN);
+const r2After = await reveal('r2', NEW_RULES);
+for (const name of Object.keys(r2Before)) {
+  await s.t(`R2: ${name}  [R1: ${r2Before[name]}  R2: ${r2After[name]}]`, async () => {
+    if (name.includes('a branded place')) {
+      if (r2Before[name] !== 'denied') throw new Error('should be refused cleanly before R2, got ' + r2Before[name]);
+      if (r2After[name] !== 'ok') throw new Error('should work after R2, got ' + r2After[name]);
+    } else if (r2Before[name] !== 'ok' || r2After[name] !== 'ok') {
+      throw new Error(`identical and accepted under both: R1 ${r2Before[name]}, R2 ${r2After[name]}`);
     }
   });
 }

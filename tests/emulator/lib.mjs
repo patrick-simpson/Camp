@@ -19,6 +19,9 @@ export { ref, set, get, update, remove, serverTimestamp, runTransaction, onValue
 // mutation-checked: weaken one clause, expect a red suite)
 export const NEW_RULES = readFileSync(process.env.R1_RULES || new URL('../../database.rules.json', import.meta.url), 'utf8');
 export const OLD_RULES = readFileSync(new URL('./pre-r1.rules.json', import.meta.url), 'utf8');
+// The rules that were live before R2 (big-screen branding), frozen: the compat cases prove a client that writes a team's
+// look is refused there and its plain retry accepted. Never edited; hash prefix ccf2e5d3.
+export const R1_FROZEN = readFileSync(new URL('./r1.rules.json', import.meta.url), 'utf8');
 export const ROOTS = ['campScoreboard', 'seniorScoreboard'];
 // The database emulator's port (firebase.json says 9000). EMULATOR_PORT lets a second checkout run its own beside one already up;
 // the older suites still say 9000 themselves.

@@ -3559,6 +3559,35 @@ rules**; the client code only shapes the UI.
     phones and remotes carry on, the big screen shows Waiting. Rules can't limit
     connections (Spark allows 100 at once): the TV page holds its connection
     only while visible (built, Step 23: `goOffline()` after 60 s hidden).
+  - **R2 — a team's own look in a shown place (owner's decisions item 7; rules written and proven, NOT YET PUBLISHED).**
+    Publish by `docs/build-notes/rules-r2-runbook.md` (the owner, Cloud Shell; the hash prefix is in the commit message).
+    The only change to the file: `revealPublic/$mode/pub/$g/e/$tid` gains three optional children beside `k` (a palette id,
+    already live and unread): **`em`** (the team record's OWN emoji, the team-emoji rule plus no apostrophe, 1–16),
+    **`pl`** (the cleared-team marker, only ever `true`) and **`ph`** (a JPEG thumbnail of the current team photo,
+    `data:image/png|jpeg;base64`, full-match regex, **at most 20,000 characters**, `REVEAL_PHOTO_MAX` in tests/rules-macros.js
+    and reveal-core.js, pinned equal by rules.test.js; and the team may hold a photo in ONE group of a child, six
+    `exists()` clauses, so a child holds at most six). `revealFull` is unchanged (`groupShape(m, extra, brand)`: only the
+    public group passes `brand`), `$other` stays false and last, `revealPublic/.read` stays the only anonymous read, nothing
+    anonymous becomes writable, the kill switch is still one line. A look is in the node only from the moment its place is
+    shown (groups appear only once shown and are never rewritten inside a reveal): never at a Start, never in `revealFull`.
+    Size: 163,109 bytes as committed (132,786 minified; limit 256 KiB). Anonymous download per read: about 1.4 KB without
+    photos, about 100–121 KB with six junior photos, **worst case the rules allow about 129 KB per child, 257 KB for both**;
+    a script reading once a second all night with six photos would use about 5 GB of Spark's 10 GB a month, so the kill
+    switch is the remedy. **The client (reveal.js) ships it behind `REVEAL_BRANDING_LIVE = false`**, a `let` flipped by ONE
+    line in a deploy AFTER the owner has published and read back the rules (that deploy also adds the director's What's new
+    note). With it ON: the published group of the place being shown carries `revealBrandOf(id)` for ITS teams only (read
+    through the SEAM accessors `teamColorId`, `teamEmojiRecord`, `teamPlain`, `teamPhotoVersion`; a thumbnail of the
+    current `photoV` made in memory on the director's phone while the remote is open, `revealThumbsPrepare`, sizes
+    240×333 / 200×278 / 173×240, JPEG quality 0.72 / 0.62 / 0.52 on the TV's paper, never awaited by a command, dropped when
+    the remote closes or the phone is demoted, never stored; a place whose thumbnail is not ready goes out without one
+    and is never rewritten). **Against the rules live before R2** a refused branded place is re-read and, when the re-read
+    was not refused and the confirmed ctl is still the same `id` and `seq`, sent ONCE more plain and the page load then
+    sends plain places (`revealBrandRefused`); a race is never retried. The phone's reveal cache strips `ph`.
+    `normalizeRevealPub` keeps `k` (a palette key), `em` (`safeEmoji`, unchanged), `pl` (only `true`) and `ph` (only a small
+    inline png / jpeg, never an address) and drops anything else; `revealMarkSpec` / `revealMascot` (reveal-core.js, pure)
+    are the phones' mark order for the big screen. The frozen rules that were live before R2 are
+    `tests/emulator/r1.rules.json` (`R1_FROZEN` in lib.mjs, hash prefix `ccf2e5d3`, never edited): `reveal.mjs`,
+    `reveal-client.mjs` and `compat-new-client-old-rules.mjs` run the branded command under both files, mutation-checked.
   - **Q8 owner-only acts** (no new role; the member record's shape is
     untouched): `setup/meta/on/<section>`, `setup/meta/{epoch,epochAt}` and
     `state/meta/{epoch,epochAt}`, every `setup/meta/wizard` leaf, and the
