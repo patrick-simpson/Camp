@@ -1161,7 +1161,7 @@ sections). Rules for whoever edits them:
 
 ## The standings reveal: the engine (reveal.js)
 
-(R2, big-screen branding: the published group of a shown place carries its teams' look behind `REVEAL_BRANDING_LIVE`; see "R2" under the R1 notes.)
+(R2, big-screen branding: the published group of a shown place carries its teams' look while `REVEAL_BRANDING_LIVE` is on, which it is once deployed; see "R2" under the R1 notes.)
 
 Redesign §4.5, §4.9, §4.10. `reveal.js` is an optional layer (a classic script
 right after app.js, before setup-sync.js; every hook in app.js typeof-guarded) and
@@ -1393,7 +1393,7 @@ writes nothing (`reveal-ui.test.js` and `reveal-remote.test.js` count the writes
   paint after the remote opens. The mini TV's board is the big screen's: one sheet, a "Still to come" row per TEAM
   not shown yet (never per place), the place just shown gold-edged, the crown on 1st only at the final table of a
   finale. **Its marks are a picture of the big screen** (`revealUiTvMarkHtml`, reveal-core's `revealMarkSpec`): a shown place's
-  own look from the node's entry, the printed look on Waiting and the intro, never the phone's own look.
+  own look from the node's entry, and no mark at all on Waiting and the intro (words only, owner's item 11), never the phone's own look.
 - **The crown waits for the crowning** (`revealUiCrowned`): `revealView` names the champions the moment a
   finale's 1st place is shown, but the mirror's and the ladder's crown (and the crown's confetti) wait for phase
   `champion` (then `table` / `ended`), so no phone celebrates ahead of the room while the remote still says
@@ -3562,8 +3562,8 @@ rules**; the client code only shapes the UI.
     phones and remotes carry on, the big screen shows Waiting. Rules can't limit
     connections (Spark allows 100 at once): the TV page holds its connection
     only while visible (built, Step 23: `goOffline()` after 60 s hidden).
-  - **R2 — a team's own look in a shown place (owner's decisions item 7; rules written and proven, NOT YET PUBLISHED).**
-    Publish by `docs/build-notes/rules-r2-runbook.md` (the owner, Cloud Shell; the hash prefix is in the commit message).
+  - **R2 — a team's own look in a shown place (owner's decisions items 7, 10, 11; rules written and proven; switch ON in code).**
+    **TODO for the deploy agent: the owner publishes `database.rules.json` (hash prefix e0d3edd5) by `docs/build-notes/rules-r2-runbook.md` (Cloud Shell); fill in here the publish date and the results of the owner's block 3 (read-back) and block 4 (probes), and deploy this code only after "R2 is published and read back".**
     The only change to the file: `revealPublic/$mode/pub/$g/e/$tid` gains three optional children beside `k` (a palette id,
     already live and unread): **`em`** (the team record's OWN emoji, the team-emoji rule plus no apostrophe, 1–16),
     **`pl`** (the cleared-team marker, only ever `true`) and **`ph`** (a JPEG thumbnail of the current team photo,
@@ -3576,9 +3576,9 @@ rules**; the client code only shapes the UI.
     Size: 163,109 bytes as committed (132,786 minified; limit 256 KiB). Anonymous download per read: about 1.4 KB without
     photos, about 100–121 KB with six junior photos, **worst case the rules allow about 129 KB per child, 257 KB for both**;
     a script reading once a second all night with six photos would use about 5 GB of Spark's 10 GB a month, so the kill
-    switch is the remedy. **The client (reveal.js) ships it behind `REVEAL_BRANDING_LIVE = false`**, a `let` flipped by ONE
-    line in a deploy AFTER the owner has published and read back the rules (that deploy also adds the director's What's new
-    note). With it ON: the published group of the place being shown carries `revealBrandOf(id)` for ITS teams only (read
+    switch is the remedy. **The client (reveal.js) ships with `REVEAL_BRANDING_LIVE = true`** (a `let`, so a test can turn it off), which may be
+    deployed only AFTER the owner has published and read back the rules; the director's What's new note `big-screen-logos`
+    ("Revealed teams show their logo and colour on the big screen.") ships with it. With it ON: the published group of the place being shown carries `revealBrandOf(id)` for ITS teams only (read
     through the SEAM accessors `teamColorId`, `teamEmojiRecord`, `teamPlain`, `teamPhotoVersion`; a thumbnail of the
     current `photoV` made in memory on the director's phone while the remote is open, `revealThumbsPrepare`, sizes
     240×333 / 200×278 / 173×240, JPEG quality 0.72 / 0.62 / 0.52 on the TV's paper, never awaited by a command, dropped when
@@ -3591,13 +3591,11 @@ rules**; the client code only shapes the UI.
     are the phones' mark order for the big screen. The frozen rules that were live before R2 are
     `tests/emulator/r1.rules.json` (`R1_FROZEN` in lib.mjs, hash prefix `ccf2e5d3`, never edited): `reveal.mjs`,
     `reveal-client.mjs` and `compat-new-client-old-rules.mjs` run the branded command under both files, mutation-checked.
-    **The switch flips only after the owner has published R2 and the read-back matched** (the runbook's step list); until then
-    the shipped client sends plain places and nothing a viewer or a TV sees changes. **Proved in real browsers**
-    (`tests/emulator/reveal-e2e.cjs`, both emulators): with `BRAND=1` the served `reveal.js` has the switch ON for that run only
-    (three teams carry a look: a colour and emoji, a cleared number tile, a real photo the director's phone thumbnails), and
+    **Deploy only after the owner has published R2 and the read-back matched** (the runbook's step list). **Proved in real browsers**
+    (`tests/emulator/reveal-e2e.cjs`, both emulators): `BRAND=1` gives three teams a look (a colour and emoji, a cleared number tile, a real photo the director's phone thumbnails) with the shipped switch ON, and
     extra checks follow each shown place into the public node and onto the big screen under the NEW rules (37 checks), and with
     `BRAND=1 OLD_RULES=1` under the frozen old rules (37 checks: the branded place is refused once, goes out plain, the reveal
-    plays on and the TV draws the printed look); without `BRAND` it is the original checks (34 with the SDK hash ones) against the new rules, switch off.
+    plays on and the TV draws the printed look); without `BRAND` it is the original checks (34 with the SDK hash ones). `reveal-client.mjs` (22 cases) runs the switch ON under R2, OFF under R2 and ON under the old rules.
   - **Q8 owner-only acts** (no new role; the member record's shape is
     untouched): `setup/meta/on/<section>`, `setup/meta/{epoch,epochAt}` and
     `state/meta/{epoch,epochAt}`, every `setup/meta/wizard` leaf, and the
@@ -4671,11 +4669,14 @@ field, to the camp's own constant while the record doesn't carry it.
   colours and these) serves them. The Teams screen says it in the same words, as a plain line with no gold "!" (`#teams-weak[data-tone="note"]`)
   while only such teams are in it (the "!" is for a colour that is hard to read), and its link counts more than two teams ("Pick colours for
   4 teams"); a plain team's sheet says under the emoji grid "Leave it empty to show the team’s number." Not built, an owner question: a way back to the camp's own printed look for a cleared team.
-- **The big screen draws a team's own look for a SHOWN place only (R2, see the R1 notes; live once the owner publishes R2 and the switch is
-  flipped).** Waiting and the intro keep the camp's printed marks, because no team's look may be public before its place is shown. The
-  Teams sheet's photo note says, once `REVEAL_BRANDING_LIVE` is on, that the photo shows on the big screen and that anyone can open it.
-  **Owner question, open:** what Waiting and the intro show after a new-year clear or a re-brand: the printed marks (as built), no marks,
-  or plain numbered tiles 1…N (a slot number names no team, place or look).
+- **The big screen draws a team's own look for a SHOWN place only (R2, see the R1 notes; owner's items 10–12 of Nov 9).** A team's photo is
+  its LOGO, not a picture of the kids, so a small copy riding with a revealed place is fine (item 10). **Waiting, the intro ("Get ready…") and
+  the intro's confetti carry no team mark at all** (item 11): words only, no shield, flag, emoji tile or mascot, for every team and both camps,
+  because a team's new look may not be public before its place is revealed and the printed art could be last year's; the intro's confetti is
+  the neutral party set. The remote's mini TV mirrors the same frames. There is **no "Use the original look" row** on the Teams screen for a
+  cleared team (item 12): a cleared team gets a new look only from what a director picks (an old shield can be uploaded as a logo); the new-year
+  setup's Undo still brings everything back. The Teams sheet's photo note says that the photo shows on the big screen when the team's place is
+  revealed and that anyone can open the big screen.
 - **A backup file or a restore point can only bring in well-formed branding** (`teamsFromBackup`, used by
   `tryImport`, the restore preview and `restoreApply`): id, name and counselor as they were, the other
   fields only if they pass the checks above, and `photoV` NEVER from the file, because `teamPhotos/<tid>`
@@ -5775,16 +5776,16 @@ directors…" (mockup 11).
   purpose (a count would tell the room a tie exists before it is revealed). No
   keyboard or click advancing exists (the old handlers are gone): the only document
   listener is `visibilitychange`.
-- **Marks: a shown place's own look, else the camp's printed one** (`teamMark(id, cls, brand)`, drawn from reveal-core's pure
+- **Marks: a shown place's own look, else (an older sender's node) the camp's printed one; none on Waiting or the intro** (`teamMark(id, cls, brand)`, drawn from reveal-core's pure
   `revealMarkSpec(CAMP, id, brand)`, the phones' own order, which the remote's mini TV also runs through `revealUiTvMarkHtml`).
   `brand` is a SHOWN place's laundered entry (`k` a palette id, `em`, `pl` cleared, `ph` a small inline photo) that
-  `normalizeRevealPub` already cleaned; Waiting and the intro pass none, so they draw the printed marks. Order: the photo
+  `normalizeRevealPub` already cleaned; Waiting and the intro draw no mark at all (owner's item 11: nothing of a team is public before its place is shown), so there is no mark slot in either frame. Order: the photo
   (`img.tv-photo`, a rounded 480:667 card), else, unless cleared, the camp's shipped shield (junior) or flag (senior, filled with
   a picked colour's palette value as an inline `--flag-fill`), else the phones' tile (`.crest-tile`: a cleared team's number in
   type, `[data-num] > span`, a keycap emoji drawn as its digit; a picked colour its `[data-edge]` / `--tile-edge`). A cleared team
   never falls back to the printed look. A database string never becomes markup or a style: colours only SELECT a palette value,
   the photo is a laundered data address set as a `src` property, the emoji and numeral are `textContent`, and every mark is built
-  as DOM. A mascot emoji is never drawn beside a name (§8.6); confetti flies a team's own emoji (not a keycap), the party set
+  as DOM. A mascot emoji is never drawn beside a name (§8.6); the intro's confetti is the neutral party set, never a team's mascot; a shown place's confetti flies a team's own emoji (not a keycap), the party set
   for a cleared team and for a senior team that picked a colour but no emoji (its printed mascot is a colour dot), else the
   printed mascot (`confettiFor`). So a picked emoji is on the mark only as a cleared team's tile, and otherwise flies as its
   confetti. **A picked colour also shows beside a mark that does not wear it** (a junior shield, a photo): a rule under the
@@ -5795,7 +5796,7 @@ directors…" (mockup 11).
   photo card's weights (a hairline; a picked colour at most 6px). EVERY appearance goes through it (the hero, the board's rows
   put into each row's empty `.em` after the markup, the champions); `groupsSig` carries the look so a changed one repaints.
   An older sender's node (no look) draws exactly as before. With the OS reduced-motion setting nothing moves (the marks and the
-  crown stop bobbing; the intro's marks, letters and "Get ready…" fade in; the spotlight, breakdown and board come and go as
+  crown stop bobbing; the intro's letters and "Get ready…" fade in; the spotlight, breakdown and board come and go as
   fades). `tests/tv.test.js` pins it per frame and per camp, hostile values inert, and the paths, no-write and CSP pins
   unchanged (no new host).
 - **One visual system with the phones** (§8): sentence case and Inter 850 with a
@@ -5873,7 +5874,7 @@ directors…" (mockup 11).
   whose every object throws (and records) on any call the page is not meant to make.
   It pins: the paths (nothing but `<root>/revealPublic` and `.info`), no write, no
   `firebase.auth`, no sign-in text anywhere, exactly two SDK tags with their hashes;
-  Waiting and its marks per camp; nothing painted before the clock answers and the
+  Waiting with no mark per camp, the intro and its confetti the same (party set only); nothing painted before the clock answers and the
   server's time used over the TV's own; every frame and beat on the page's own timer;
   words not discs; ties; senior flags; the finale; Back; late join; real beats
   practice and a practice returning; ended / expired / idle / too-new reveals;
