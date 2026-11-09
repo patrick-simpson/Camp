@@ -70,3 +70,13 @@ These REPLACE the matching parts of items 2 and 6 above.
    after the update ships" and chose the second.) Everything else in item 6 stands: banners at the top of Now in the
    message-strip look, sorted by role, written by the agent with each update, dismissed per note on each phone, Show me.
    The catch-up set shipped with v215 at 10:50 AM ET is therefore over.
+
+## Evening (Mon Nov 9, about 6:05–6:15 PM ET), after v216 and v217 went live
+
+10. **Team photos on the big screen: yes.** They are each team's LOGO, not pictures of the kids (the owner's words), so a
+    small copy riding with a revealed place on the public big screen is fine, as built in v217 (switch still off).
+11. **Before the reveal starts** (the big screen's Waiting and "Get ready…" frames, and the intro's confetti): **no team
+    marks** — words only, no shields, flags or mascots — because a team's new look may not be public before its place is
+    revealed, and the camp's printed art could be last year's. Each team's look appears as its place is revealed.
+12. **No "Use the original look" row** on the Teams screen for a cleared team: a cleared team gets a new look only from
+    what a director picks (an old shield can be uploaded as a logo); the new-year setup's Undo still brings everything back.
