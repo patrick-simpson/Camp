@@ -19445,3 +19445,28 @@ button.winner-btn {
   font: inherit;
   color: var(--ink-2);
 }
+
+/* ── SET UP THE WEEK: Restore from pasted text (#sheet-backup-paste) ──
+   One box and one line under it. The pasted backup is unreadable data, so the box shows it in ink-2 (it is never edited by
+   hand) and wraps it ANYWHERE: a backup is long runs with no spaces, which would otherwise push the sheet sideways. 16px,
+   never smaller: iPhones zoom the page into a smaller field on focus. The box has a fixed height and scrolls inside itself
+   (a growing box would push the dock off a phone). */
+.bp-body {
+  display: grid;
+  grid-auto-rows: max-content;
+  gap: 6px;
+}
+.bp-body > .setup-sheet-lede {
+  margin-bottom: 6px;
+}
+.bp-text {
+  height: min(8.5em, 30dvh); /* at 200% text the box must leave its own error line in view */
+  min-height: var(--target);
+  resize: none;
+  overflow-y: auto;
+  font: 500 1rem/1.4 var(--font-ui);
+  font-variant-numeric: normal;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}

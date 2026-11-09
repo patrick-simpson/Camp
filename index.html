@@ -133,6 +133,8 @@
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4.6v14.2M6.3 13.1l5.7 5.7 5.7-5.7"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M15.5 8.5V6.7a2.2 2.2 0 0 0-2.2-2.2H6.7a2.2 2.2 0 0 0-2.2 2.2v6.6a2.2 2.2 0 0 0 2.2 2.2h1.8"/></symbol>
+    <!-- A clipboard with lines: Restore points' "Restore from pasted text" (never the copy glyph, which is the row above it). -->
+    <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5.4" y="5.2" width="13.2" height="15.4" rx="2.2"/><path d="M9.4 5.2V3.8h5.2v1.4M8.8 10.6h6.4M8.8 14.2h6.4M8.8 17.6h3.6"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.8 7h14.4M9.6 7V5.2h4.8V7M6.8 7l.8 12.3h8.8l.8-12.3M10.2 10.6v5.4M13.8 10.6v5.4"/></symbol>
     <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7.2 15.2a3.9 3.9 0 0 1-.5-7.77 5.2 5.2 0 0 1 10.1.72 3.55 3.55 0 0 1 .4 7.05z"/><path d="M8.7 18.3 7.9 20.4M12.5 18.3l-.8 2.1M16.3 18.3l-.8 2.1"/></symbol>
     <!-- Step 23 (the reveal): the remote's Back is a REWIND (it moves the big
@@ -1071,12 +1073,22 @@
             <div class="gl-head"><h3 class="gl-label">Past years</h3></div>
             <div class="gl cb-list" id="rp-years"></div>
           </div>
+          <!-- Backups (§7.4): keeping a copy first (a file, or the same backup as text on the clipboard), then putting one
+               back (from a file, or from pasted text). Both ways back run ONE path (a backup of this camp opens #sheet-restore
+               to pick what to put back; another camp's asks once to copy its schedule, games and teams; an older backup asks
+               once). Copy says "Copied" in its own title for 1.5 s and its icon turns into the check (copyTextToClipboard's
+               .copy-t swap; the row stays focusable, never disabled); the text is backupJSON(), which never holds camper names. -->
           <div class="more-sec rp-sec">
-            <div class="gl-head"><h3 class="gl-label">Backup files</h3></div>
+            <div class="gl-head"><h3 class="gl-label">Backups</h3></div>
             <div class="gl">
               <button type="button" class="gl-row" id="backup-download-btn">
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-download"/></svg></span>
                 <span class="gl-text"><span class="gl-title">Download a backup file</span><span class="gl-sub">The week, games, teams and scores</span></span>
+                <span class="gl-end"></span>
+              </button>
+              <button type="button" class="gl-row" id="backup-copy-btn">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-copy"/></svg></span>
+                <span class="gl-text"><span class="gl-title copy-t" aria-live="polite">Copy the backup</span><span class="gl-sub">The same backup as text, to paste into a note or a message</span></span>
                 <span class="gl-end"></span>
               </button>
               <!-- A label, so the whole row opens the file picker (the input is
@@ -1087,6 +1099,11 @@
                 <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
                 <input type="file" id="backup-file-input" class="visually-hidden" accept="application/json,.json">
               </label>
+              <button type="button" class="gl-row" id="backup-paste-row" aria-haspopup="dialog" aria-controls="sheet-backup-paste">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-paste"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Restore from pasted text</span><span class="gl-sub">A backup someone copied; you pick what to put back</span></span>
+                <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
             </div>
           </div>
           <!-- Advanced (owner only, §11.16): ONE row into the Advanced sheet
@@ -3799,6 +3816,39 @@
              the filled commit, and Cancel back to the hold. -->
         <button type="button" class="btn btn-danger btn-danger-fill btn-block" id="rp-hold-confirm" hidden></button>
         <button type="button" class="btn-quiet" id="rp-hold-cancel" hidden>Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restore from pasted text (§7.4; the classic Data tab's paste box, owner's answer of Nov 9, 2026). A shell sheet
+       (SETUP_SHEETS 'backup-paste', editors only, one at a time), opened by Restore points' #backup-paste-row. Nothing is
+       put back from here: "Check this backup" runs the SAME path a picked file takes (a backup of this camp closes this sheet
+       and opens #sheet-restore to pick what to put back; another camp's asks once to copy its schedule, games and teams; an
+       older backup asks once), so this sheet only holds the text and says, in #bp-why, why it can't be used:
+         "That isn’t a whole backup. Copy it again and paste all of it." (not readable, or cut short)
+         "That backup doesn’t say which camp it’s from, so it can’t be put back."
+         "That backup has 4 teams, but Junior camp has 6. Nothing was changed." (tryImport's own words through opts.say)
+         "The games list is still loading. Try again in a moment."
+       #bp-text gets aria-invalid="true" while #bp-why says something; typing clears both. The dock is the item sheet's: the
+       dashed well #bp-wait ("Paste a backup first", a tap focuses the box) until there is text, then the gold #bp-check.
+       While the box holds text the sheet asks before it closes by any route (setupSheetGuardClose: "Keep it" / "Throw it
+       away"), and it holds the deploy's auto-reload. The text lives in memory only, never in storage. -->
+  <div id="sheet-backup-paste" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-backup-paste-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-backup-paste-title">Paste a backup</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body bp-body">
+        <p class="setup-sheet-lede" id="bp-lede">Paste everything “Copy the backup” copied. Nothing changes until you pick what to put back.</p>
+        <label class="fld"><span class="fld-label">The backup</span><textarea class="fld-input bp-text" id="bp-text" rows="6" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" placeholder="Paste it here"></textarea></label>
+        <p class="fld-error" id="bp-why" role="alert"></p>
+      </div>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-block si-wait" id="bp-wait"><span id="bp-wait-text">Paste a backup first</span></button>
+        <button type="button" class="btn btn-gold btn-block" id="bp-check" hidden>Check this backup</button>
       </div>
     </div>
   </div>
