@@ -136,7 +136,7 @@ Files:
   The three abilities Step 30 removed came back in the new screens' language (owner, Nov 9, 2026): renaming a games day, moving
   it to another weekday and deleting it (the Games screen's day sheet), Copy the backup and Restore from pasted text (Restore
   points). **Restore default games & days stays gone, on purpose (owner's call): build no equivalent.** A manual reorder of
-  days was not rebuilt either: every reader lists days in week order, so it would change nothing anyone sees.
+  days was not rebuilt either: in configs this build writes every reader lists days in week order, so it would change nothing anyone sees.
   Every commit to `state.config` or the roster goes through `configEdit` / `stateEdit` (an Undo entry;
   see "Undo core"), looking its record up by id when it runs. The strip of what the config engine
   set aside (`configNotesHtml`: Put it back / Use mine, see "The week config is a field-op engine")
@@ -4339,7 +4339,7 @@ there is no draft and no Save.** The classic editor (its Games tab, `saveGameDra
   **Delete this games day** (`gmTakeDayOff`, the one delete path, by weekday or by id: a day with games asks "Delete Wednesday’s games day?" with one
   button per other games day, "Move them to Monday and delete" — never the day itself — and they move there, off any item, onto its natural one; they
   never vanish; a day with none asks once). **Reordering
-  days is not built, on purpose**: every reader lists days in week order (a move re-sorts), so a manual order would change nothing anyone sees.
+  days is not built, on purpose**: in configs this build writes every reader lists days in week order (a move re-sorts), so a manual order would change nothing anyone sees.
   A day an older build made with no weekday gets a row (with the gold "!") under **Days with no weekday** (`#sg-sec-nodow`, last on the screen, under
   the open day's "Add a game to …"; `gmOpenDayById`) that opens the same sheet.
 - **The sheet** `gmUi.open = { mode: new | edit | quick, pane: form | when, gid (null until created), dk, bid, form, … }` (the field list is

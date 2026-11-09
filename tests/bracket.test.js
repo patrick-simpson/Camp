@@ -147,7 +147,7 @@ test('the step line says which of the five steps the bracket is at', () => {
     state.brackets[g.id].byeTeamId = 't2';
     state.brackets[g.id].semifinal = { a: 't0', b: 't1', winner: null, loser: null };
     w.render();
-    assert.ok(/Step 3 of 5 · <span[^>]*wizard-step active[^>]*>Championship</.test(w.html()));
+    assert.ok(/Step 3 of 5 · <span[^>]*wizard-step active[^>]*>Championship game</.test(w.html()));
     assert.notOk(/>Bye</.test(w.html()), 'no row of pills any more');
   });
 });

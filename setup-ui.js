@@ -1901,7 +1901,7 @@ async function rpImportLegacy(text, opts, outer) {
 // memory only (never storage), holds the deploy's auto-reload while it has text, and asks before it closes with text in it.
 const backupPasteUi = { open: false, text: '' };
 function backupPasteBusy() { return !!(backupPasteUi.open && backupPasteUi.text.trim()); }
-function backupPasteReset() { backupPasteUi.open = false; backupPasteUi.text = ''; backupPasteUi.refused = false; backupPasteUi.sumFor = null; backupPasteUi.sum = ''; }
+function backupPasteReset() { backupPasteUi.open = false; backupPasteUi.text = ''; backupPasteUi.refused = false; backupPasteUi.sumFor = null; backupPasteUi.sum = ''; const bx = (typeof setupEl === 'function') ? setupEl('bp-text') : null; if (bx && bx.value) bx.value = ''; }
 function rpCopyBackup(btn) {
   if (!canEdit() || typeof backupJSON !== 'function') return;
   copyTextToClipboard(backupJSON(), btn);

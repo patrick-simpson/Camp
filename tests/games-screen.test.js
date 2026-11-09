@@ -1890,7 +1890,7 @@ test('deleting a games day: refused while it has games until they are given some
     assert.equal(dayById(gmUi.dayId) !== undefined, true);
     await gsAsking(['no'], async (asked) => {
       assert.equal((await gmTakeDayOffFlow()).reason, 'cancelled');
-      assert.ok(/ still has \d+ games?$/.test(asked[0].title));
+      assert.ok(/^Delete .+’s games day\?$/.test(asked[0].title), asked[0].title);
       assert.ok(asked[0].actions.some((a) => /^Move them to /.test(a.label)));
     });
     assert.ok(dayById(gmUi.dayId), 'Not now keeps the day');

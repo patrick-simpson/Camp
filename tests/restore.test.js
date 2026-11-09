@@ -700,7 +700,7 @@ test('another camp\'s backup is refused with its name; "copy from the other camp
     const errs = [];
     let said = '';
     tryImport(JSON.stringify(foreign), { say: (m) => { said = m; } });
-    assert.ok(/not /.test(said) && said.includes(CAMPS[other].label), said);
+    assert.ok(/not /.test(said) && said.includes(campWord(other)), said);
     assert.equal(state.config.games.length, gamesBefore, 'nothing changed');
     // Copied
     tryImport(JSON.stringify(foreign), { copyFromOtherCamp: true });
@@ -732,7 +732,7 @@ test('a hand-edited backup cannot skip the camp check or smuggle a junk catalog:
     flat.teams = state.teams; // a roster that fits must not be the only backstop
     flat.config = Object.assign({}, flat.config, { games: flat.config.games.slice(0, 1) });
     tryImport(JSON.stringify(flat), { say });
-    assert.ok(said.includes(CAMPS[other].label), said);
+    assert.ok(said.includes(campWord(other)), said);
     assert.equal(state.config.games.length, gamesBefore, 'nothing changed');
     // A catalog that is not arrays is refused by the restore-point reader.
     const junk = rsClone(mine); junk.config.games = 'x'; junk.config.days = 5;
