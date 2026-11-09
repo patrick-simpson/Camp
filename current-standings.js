@@ -66,13 +66,16 @@
     return d;
   }
 
-  // ── Teams: the camp's own marks, by id ─────────────────────────
-  // Names and points come from the node; pictures come from files that ship with
-  // the page, chosen by team id (junior's shields, senior's flags), so no team
-  // photo, colour or emoji a director typed ever reaches this public screen.
-  var TEAM_FLAG_SHAPES = ['plain', 'swallow', 'stripe', 'chevron']; // mirrors app.js — keep in sync
-  var TEAM_FLAG_COLORS = ['red', 'blue', 'green', 'gold'];
+  // ── Teams: a team's mark, by id ────────────────────────────────
+  // Names and points come from the node. A mark is drawn by reveal-core's revealMarkSpec in the phones' own
+  // order: the photo a director picked (a small copy that rides in the shown place's entry), else the camp's
+  // shipped shield (junior) or flag (senior), else a tile; a team the new-year setup cleared never falls back
+  // to the printed look. `brand` is a SHOWN place's laundered entry (k, em, pl, ph); Waiting and the intro pass
+  // none, so before any place is shown the screen holds only the camp's printed marks. A database string never
+  // becomes markup or a style: the colour only SELECTS a palette value, the photo is a laundered data address
+  // set as a property, the emoji and the numeral go in as text.
   var SVG_NS = 'http://www.w3.org/2000/svg';
+  var PARTY = ['🎉', '🎊', '✨', '⭐'];
 
   function campTeamIds() {
     var out = [];
@@ -81,38 +84,56 @@
   }
   // A team slot's own mascot (camps.js), laundered like every string that becomes markup.
   function teamEmojiOf(id) { return safeEmoji(CAMP.teamEmoji && CAMP.teamEmoji[id], '🏕️'); }
+  // The emoji that fly for a set of entries: a team's own, nothing of a cleared team's (the party set instead),
+  // else the camp's printed mascot.
+  function confettiFor(entries) {
+    var out = [];
+    entries.forEach(function (e) {
+      var m = revealMascot(CAMP, e.id, e);
+      if (m) out.push(m); else if (e.pl === true || e.em) out.push.apply(out, PARTY);
+    });
+    return out.length ? out : PARTY;
+  }
 
-  // A team's mark as a DOM node, in the slot's own class (hero-shield, intro-crest,
-  // wait-crest, champ-crest), which carries its size and motion: a shipped shield
-  // when one passes safeCrestSrc, else the camp's flag (the SHAPE by the team's
-  // order, so two flags stay apart without colour), else an emoji tile. Never an
-  // <img> with no usable source, never an address concatenated into markup.
-  function teamMark(id, cls) {
-    var src = safeCrestSrc(CAMP.teamCrest && CAMP.teamCrest[id]);
-    if (src) {
+  // A team's mark as a DOM node, in the slot's own class (hero-shield, intro-crest, wait-crest, row-crest,
+  // champ-crest), which carries its size and motion. Never an <img> with no usable source, never an address
+  // concatenated into markup.
+  function teamMark(id, cls, brand) {
+    var spec = revealMarkSpec(CAMP, id, brand);
+    if (spec.kind === 'photo' || spec.kind === 'shield') {
       var img = document.createElement('img');
-      img.className = cls;
+      img.className = spec.kind === 'photo' ? cls + ' tv-photo' : cls;
       img.alt = '';
-      img.src = src; // a DOM property, never concatenated into markup
+      img.src = spec.src; // a DOM property, never concatenated into markup
       return img;
     }
-    var color = CAMP.teamFlag && CAMP.teamFlag[id];
-    if (TEAM_FLAG_COLORS.indexOf(color) >= 0) {
-      var slot = parseInt(String(id).slice(1), 10) || 0;
+    if (spec.kind === 'flag') {
       var svg = document.createElementNS(SVG_NS, 'svg');
       svg.setAttribute('class', cls + ' tv-flag');
-      svg.setAttribute('data-flag', color);
+      svg.setAttribute('data-flag', spec.color);
       svg.setAttribute('viewBox', '0 0 32 32');
       svg.setAttribute('aria-hidden', 'true');
+      if (spec.fill) svg.style.setProperty('--flag-fill', spec.fill); // a palette value, never a database string
       var use = document.createElementNS(SVG_NS, 'use');
-      use.setAttribute('href', '#flag-' + TEAM_FLAG_SHAPES[slot % TEAM_FLAG_SHAPES.length]);
+      use.setAttribute('href', '#flag-' + spec.shape);
       svg.appendChild(use);
       return svg;
     }
     var tile = document.createElement('div');
     tile.className = cls + ' crest-tile';
     tile.setAttribute('aria-hidden', 'true');
-    tile.textContent = teamEmojiOf(id);
+    if (spec.num) {
+      tile.setAttribute('data-num', '');
+      var sp = document.createElement('span');
+      sp.textContent = spec.num;
+      tile.appendChild(sp);
+    } else {
+      tile.textContent = spec.emoji;
+    }
+    if (spec.edge) {
+      tile.setAttribute('data-edge', '');
+      tile.style.setProperty('--tile-edge', spec.edge);
+    }
     return tile;
   }
 
@@ -516,7 +537,7 @@
     placed.sort(function (a, b) { return b.idx - a.idx; }).forEach(function (g) {
       g.entries.forEach(function (e) {
         var cls = 'row' + (g.idx === o.nowIdx ? ' now' : '') + (o.crown && g.place === 1 ? ' crowned' : '');
-        ids.push(e.id);
+        ids.push(e);
         rows.push(
           '<div class="' + cls + '">' +
             '<div class="rank">' + esc(ordinal(g.place)) + '</div>' +
@@ -532,7 +553,7 @@
     boardHtml = html;
     boardEl.innerHTML = html;
     var slots = boardEl.querySelectorAll ? boardEl.querySelectorAll('.em') : [];
-    for (var k = 0; k < slots.length && k < ids.length; k++) slots[k].appendChild(teamMark(ids[k], 'row-crest'));
+    for (var k = 0; k < slots.length && k < ids.length; k++) slots[k].appendChild(teamMark(ids[k].id, 'row-crest', ids[k]));
   }
 
   // The beat inside one place's moment: the name alone, then the place and score, then the breakdown.
@@ -556,7 +577,7 @@
     var entriesEl = box('hero-entries');
     g.entries.forEach(function (e) {
       var entry = box('hero-entry');
-      entry.appendChild(teamMark(e.id, 'hero-shield'));
+      entry.appendChild(teamMark(e.id, 'hero-shield', e));
       var extra = extraWords(e);
       entry.appendChild(box('hero-info',
         '<div class="hero-name">' + esc(e.nm) + '</div>' +
@@ -594,7 +615,7 @@
     if (f.fresh) {
       // confetti: the team mascot(s) up the edges as the place arrives; the light stream waits for the score beat
       // (setBeat), so nothing moves around the name while the room reads it.
-      var emojis = g.entries.map(function (e) { return teamEmojiOf(e.id); });
+      var emojis = confettiFor(g.entries);
       cannon(emojis, 8, 11 * dpr);
       hero.__stream = reduceMotion() ? null : emojis; // fresh is the name beat: setBeat starts it at the next one
       kick();
@@ -622,7 +643,7 @@
   // The champions' celebration (a finale day): a full-screen crowning, a sustained barrage while it is fresh.
   function paintChampion(g, animate) {
     var names = g.entries.map(function (e) { return esc(e.nm); }).join(' &amp; ');
-    var emojis = g.entries.map(function (e) { return teamEmojiOf(e.id); }); // the confetti only, never beside a name
+    var emojis = confettiFor(g.entries); // the confetti only, never beside a name
     var pts = g.entries[0].p;
     var champ = $('champ');
     champ.innerHTML = '<div class="crown" aria-hidden="true"></div><div class="lead">Camp champions</div>';
@@ -636,7 +657,7 @@
       crownSlot.appendChild(crown);
     }
     var crests = box('champ-shields');
-    g.entries.forEach(function (e) { crests.appendChild(teamMark(e.id, 'champ-crest')); });
+    g.entries.forEach(function (e) { crests.appendChild(teamMark(e.id, 'champ-crest', e)); });
     champ.appendChild(crests);
     champ.insertAdjacentHTML('beforeend',
       '<div class="name">' + names + '</div>' +
@@ -656,7 +677,7 @@
   function groupsSig(groups) {
     return groups.map(function (g) {
       return g.idx + ':' + g.place + ':' + g.entries.map(function (e) {
-        return [e.id, e.nm, e.p, e.g, e.s, e.b, e.v, e.m, e.c].join(',');
+        return [e.id, e.nm, e.p, e.g, e.s, e.b, e.v, e.m, e.c, e.k || '', e.em || '', e.pl ? 1 : 0, e.ph ? e.ph.length + e.ph.slice(-12) : 0].join(',');
       }).join(';');
     }).join('/');
   }

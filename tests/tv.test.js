@@ -67,7 +67,7 @@ const T0 = Date.UTC(2026, 6, 22, 23, 0, 0); // 7:00 PM Eastern on a July evening
 
 function loadTv(o) {
   o = o || {};
-  const log = { html: [], created: [], writes: [] };
+  const log = { html: [], created: [], writes: [], fills: [], raf: [] };
   const byId = new Map();
   const bySel = new Map();
   const listeners = {};
@@ -81,7 +81,7 @@ function loadTv(o) {
     const cls = new Set();
     let inner = '';
     const e = {
-      tagName: String(tag || 'div').toUpperCase(), children: [], style: {}, attrs: {}, listeners: {}, hidden: false,
+      tagName: String(tag || 'div').toUpperCase(), children: [], style: Object.defineProperty({}, 'setProperty', { value(k, v) { this['prop:' + k] = v; } }), attrs: {}, listeners: {}, hidden: false,
       textContent: '', isConnected: true, width: 0, height: 0, offsetWidth: 0,
       get className() { return [...cls].join(' '); },
       set className(v) { cls.clear(); String(v).split(/\s+/).filter(Boolean).forEach((c) => cls.add(c)); },
@@ -98,7 +98,12 @@ function loadTv(o) {
       insertAdjacentHTML(pos, h) { log.html.push(String(h)); inner += String(h); },
       addEventListener(type, fn) { (e.listeners[type] = e.listeners[type] || []).push(fn); },
       removeEventListener() {}, remove() {},
-      getContext: () => new Proxy({}, { get: () => () => {}, set: () => true }),
+      getContext: () => new Proxy({}, { get: (t, k) => (k === 'fillText' ? (...a) => { log.fills.push(a[0]); } : () => {}), set: () => true }),
+      querySelectorAll(sel) {
+        if (sel !== '.em') return [];
+        if (e.__slotsFor !== inner) { e.__slotsFor = inner; e.__slots = (inner.match(/class="em"/g) || []).map(() => el('span')); }
+        return e.__slots;
+      },
       querySelector(sel) {
         const want = sel.slice(1);
         const find = (n) => {
@@ -160,7 +165,7 @@ function loadTv(o) {
     clearTimeout: (id) => { const i = sched.findIndex((s) => s.id === id); if (i >= 0) sched.splice(i, 1); },
     setInterval: (fn, ms) => { const id = nextId++; sched.push({ id, at: clock.t + ms, fn, every: ms }); return id; },
     clearInterval: (id) => { const i = sched.findIndex((s) => s.id === id); if (i >= 0) sched.splice(i, 1); },
-    requestAnimationFrame() {},
+    requestAnimationFrame(fn) { log.raf.push(fn); },
     fetch: o.fetch || (() => new Promise(() => {})),
   };
   sandbox.window = sandbox;
@@ -407,6 +412,130 @@ test('nothing is painted from the node until the server\'s clock has answered, a
   assert.ok(tv.hero().has('solo'), 'two seconds into the place by the server\'s clock: the name beat');
   tv.advance(1100);
   assert.ok(!tv.hero().has('solo'), 'and it moves on by the server\'s clock (three seconds)');
+});
+
+// ── A team's own look in a shown place (R2) ──────────────────────────
+const PHOTO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+
+function brandedSix(over) {
+  const G = six();
+  // t0 (1st): photo + colour; t1: colour + emoji; t2: cleared (plain, keycap); t3: colour only
+  Object.assign(G[5].e.t0, { ph: PHOTO, k: 'teal' });
+  Object.assign(G[4].e.t1, { k: 'purple', em: '🦊' });
+  Object.assign(G[3].e.t2, { pl: true, em: '3\uFE0F\u20E3' });
+  Object.assign(G[2].e.t3, { k: 'gold' });
+  return over ? over(G) : G;
+}
+
+test('a shown place draws the team\'s own look: photo, then shield / flag, then tile, in the phones\' order, on the hero, the board and the champions', () => {
+  ['junior', 'senior'].forEach((camp) => {
+    const tv = loadTv({ search: '?camp=' + camp });
+    tv.online(0);
+    const n = tv.run('CAMP.teamCount');
+    const G = [];
+    for (let i = n - 1; i >= 0; i--) G.push(grp(n - i, ent('t' + i, 'Team ' + i, 10 + i)));
+    const by = (id) => G.find((g) => g.e[id]).e[id];
+    Object.assign(by('t0'), { ph: PHOTO, k: 'teal' });
+    Object.assign(by('t1'), { k: 'purple', em: '🦊', pl: true });
+    Object.assign(by('t2'), { pl: true, em: '3\uFE0F\u20E3' });
+    // the hero: the newest place alone (t0 is the last place shown only when it is the top group; show it first)
+    const top = [G[0]];
+    tv.feed({ real: nodeOf(tv, [grp(1, ent('t0', 'Team 0', 10, { ph: PHOTO, k: 'teal' }))], { phase: 'live', cur: 0, shown: 1, teams: n, seq: 2 }) });
+    const h = tv.hero();
+    assert.ok(h.entries[0].mark.tagName === 'IMG' && /tv-photo/.test(h.entries[0].mark.className) && h.entries[0].mark.src === PHOTO, camp + ': the hero shows the photo');
+    // the board
+    tv.feed({ real: nodeOf(tv, G, { phase: 'table', cur: n - 1, shown: n, teams: n, seq: 9, at: tv.serverNow() - 60000, sa: tv.serverNow() - 60000 }) });
+    const marks = boardMarks(tv);
+    assert.equal(marks.length, n, camp + ': one mark per row');
+    assert.ok(marks.some((m) => m.tagName === 'IMG' && /tv-photo/.test(m.className) && m.src === PHOTO), camp + ': a photo row');
+    const num = marks.find((m) => m.attrs['data-num'] !== undefined);
+    assert.ok(num && num.children[0].textContent === '3', camp + ': a cleared team with a keycap is its digit');
+    const emo = marks.find((m) => m.tagName === 'DIV' && m.attrs['data-num'] === undefined && m.textContent === '🦊');
+    assert.ok(emo && emo.attrs['data-edge'] !== undefined && emo.style['prop:--tile-edge'] === tvPaletteLight(tv, 'purple'), camp + ': a team\'s own emoji tile, edged in its picked colour');
+  });
+});
+
+test('a cleared team never falls back to the printed shield or flag; a team that only picked a colour keeps its shield or flag, a flag filled with the colour', () => {
+  const jr = loadTv({});
+  jr.online(0);
+  const G = six();
+  Object.assign(G[5].e.t0, { pl: true, em: '1\uFE0F\u20E3' }); // junior t0 has a shipped shield
+  Object.assign(G[4].e.t1, { k: 'blue' });
+  jr.feed({ real: nodeOf(jr, G, { phase: 'live', cur: 1, shown: 2, seq: 3 }) });
+  // the hero holds the newest place, t1; board is not up yet; step to the table for the rows
+  jr.feed({ real: nodeOf(jr, G, { phase: 'table', cur: 5, shown: 6, seq: 8, at: jr.serverNow() - 60000, sa: jr.serverNow() - 60000 }) });
+  const marks = boardMarks(jr);
+  const plain = marks.filter((m) => m.attrs['data-num'] !== undefined);
+  assert.equal(plain.length, 1, 'junior: exactly the cleared team is a number tile');
+  assert.equal(plain[0].children[0].textContent, '1');
+  assert.ok(marks.filter((m) => m.tagName === 'IMG').length >= 5, 'junior: the others keep their shipped shields');
+  const sr = loadTv({ search: '?camp=senior' });
+  sr.online(0);
+  const S = [grp(4, ent('t3', 'Gold Team', 10)), grp(3, ent('t2', 'Green Team', 20)), grp(2, ent('t1', 'Blue Team', 30)), grp(1, ent('t0', 'Red Team', 40))];
+  Object.assign(S[3].e.t0, { k: 'purple' });
+  Object.assign(S[2].e.t1, { pl: true });
+  sr.feed({ real: nodeOf(sr, S, { phase: 'table', cur: 3, shown: 4, teams: 4, seq: 8, at: sr.serverNow() - 60000, sa: sr.serverNow() - 60000 }) });
+  const sm = boardMarks(sr);
+  const flags = sm.filter((m) => /tv-flag/.test(m.className));
+  assert.equal(flags.length, 3, 'senior: three printed flags, the cleared team is a tile');
+  const purple = tvPaletteLight(sr, 'purple');
+  assert.ok(flags.some((f) => f.style['prop:--flag-fill'] === purple), 'a picked colour fills the flag with the palette value');
+  assert.ok(flags.filter((f) => f.style['prop:--flag-fill']).length === 1, 'only the picked one');
+  const tile = sm.find((m) => m.attrs['data-num'] !== undefined);
+  assert.equal(tile.children[0].textContent, '2', 'senior t1 cleared: its number is its slot plus one');
+});
+
+function boardMarks(tv) { const out = []; tv.board().querySelectorAll('.em').forEach((sl) => sl.children.forEach((c) => out.push(c))); return out; }
+function tvPaletteLight(tv, key) { return tv.run('CAMP_TEAM_PALETTE.' + key + '.l'); }
+
+test('hostile branding is inert: a bad colour, markup emoji, an external or breakout photo and a false marker reach no tag, style or address', () => {
+  const tv = loadTv({});
+  tv.online(0);
+  const G = six();
+  Object.assign(G[5].e.t0, { ph: 'https://evil.example/x.png', k: 'red;background:url(x)', em: '<img src=x onerror=alert(1)>', pl: false });
+  Object.assign(G[4].e.t1, { ph: 'data:image/png;base64,AAA" onerror="alert(1)', k: '__proto__' });
+  Object.assign(G[3].e.t2, { ph: 'data:image/svg+xml;base64,AAAA', em: 'x'.repeat(40) });
+  tv.feed({ real: nodeOf(tv, G, { phase: 'table', cur: 5, shown: 6, seq: 8, at: tv.serverNow() - 60000, sa: tv.serverNow() - 60000 }) });
+  assertInertHtml(tv.log.html);
+  tv.log.created.forEach((c) => {
+    if (c.tagName === 'IMG') assert.ok(/^images\/team-shields\//.test(c.src), 'an <img> points only at a shipped shield: ' + c.src);
+    Object.keys(c.style).forEach((k) => { if (/flag-fill|tile-edge/.test(k)) assert.ok(/^#[0-9a-f]{6}$/i.test(c.style[k]), 'a colour is a palette hex: ' + c.style[k]); });
+  });
+});
+
+test('a node with no branding (an older sender) draws exactly the printed look; Waiting and the intro always do', () => {
+  const tv = loadTv({});
+  tv.online(0);
+  const G = brandedSix();
+  tv.feed({ real: nodeOf(tv, G, { phase: 'intro', cur: -1, shown: 0, seq: 1 }) });
+  tv.byId('intro-shields').children.forEach((m) => {
+    assert.equal(m.tagName, 'IMG', 'the intro holds the camp\'s shields');
+    assert.ok(/^images\/team-shields\//.test(m.src));
+  });
+  tv.byId('wait-shields').children.forEach((m) => assert.equal(m.tagName, 'IMG'));
+  const plainNode = six();
+  const tv2 = loadTv({});
+  tv2.online(0);
+  tv2.feed({ real: nodeOf(tv2, plainNode, { phase: 'table', cur: 5, shown: 6, seq: 8, at: tv2.serverNow() - 60000, sa: tv2.serverNow() - 60000 }) });
+  const marks = boardMarks(tv2);
+  assert.ok(marks.length === 6 && marks.every((m) => m.tagName === 'IMG' && !/tv-photo/.test(m.className)), 'every row is a shipped shield');
+});
+
+test('confetti: a team\'s own emoji flies, a cleared team gives the party set, a plain node the printed mascot', () => {
+  const fly = (entry) => {
+    const tv = loadTv({});
+    tv.online(0);
+    const G = [grp(1, ent('t0', 'Ferocious Foxes', 40, Object.assign({}, entry)))];
+    tv.feed({ real: nodeOf(tv, G, { phase: 'live', cur: 0, shown: 1, teams: 1, seq: 2 }) });
+    tv.advance(400);
+    for (let i = 0; i < 3; i++) { const f = tv.log.raf.shift(); if (f) f(); }
+    return { fills: [...new Set(tv.log.fills)], mascot: tv.run('CAMP.teamEmoji.t0') };
+  };
+  assert.deepEqual(fly({ em: '🦊' }).fills, ['🦊']);
+  const cleared = fly({ pl: true, em: '1\uFE0F\u20E3' });
+  assert.ok(cleared.fills.length && cleared.fills.every((x) => ['🎉', '🎊', '✨', '⭐'].includes(x)), 'cleared: the party set, got ' + cleared.fills);
+  const printed = fly({});
+  assert.deepEqual(printed.fills, [printed.mascot]);
 });
 
 // ── The frames ───────────────────────────────────────────────────────
