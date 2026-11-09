@@ -2940,7 +2940,7 @@ function putGamesOnSchedule() {
   return { ok: true, attached: plan.ops.length, unplaced: plan.unplaced };
 }
 
-// One game, just created (the classic builder's Add game and the ⚡ quick game both end in saveGameDraft): put it on
+// One game, just created (the Games screen's sheet and the ⚡ quick game): put it on
 // its natural block at once, by A2's own rules, so it shows in the schedule, the calendar file and every counselor's
 // view instead of on no item until somebody finds "Put games on the schedule". Called INSIDE the config edit that adds
 // the game, so the game goes up whole with its link. Touches only this game: a game taken off the schedule on

@@ -118,8 +118,8 @@ Files:
   single `persistSetup()` gate, the setup undo domain, the sync line's state.
   Loaded right after app.js (it uses app.js's globals) and before settings.js;
   every hook in app.js is typeof-guarded, so deleting its `<script>` leaves a
-  running app. DARK at Step 14: it reads, and writes only when a director acts
-  (and every section's switch is the owner's, which nothing turns on yet)
+  running app. It reads for everyone and writes only when a director acts
+  (every section's switch is the owner's)
 - `setup-ui.js` — SET UP THE WEEK's behaviour (see "Set up the week: behaviour"
   below): the hub and its checklist (`hubStatus`, pure), the frame's head (sync
   line, who's here), Back, the docked undo pill, `askDialog`, the four sheets,
@@ -264,41 +264,14 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 4. **Do NOT add "What's new" banner entries.** The banners are discontinued
    (owner's call, 2026-07-21): the `CHANGES` array at the top of `app.js` is
    kept EMPTY and must stay that way — do not append entries for user-visible
-   changes. The queue machinery is left in place but dormant (see "What's new
-   banners" below).
+   changes (see "What's new banners" below).
 
 ## What's new banners & auto-reload
 
-**"What's new" banners — DISCONTINUED (2026-07-21).** The owner turned these
-off. `CHANGES` (top of `app.js`) is kept EMPTY so no banner ever renders
-(`activeChanges()` returns nothing). Do not add entries. The mechanics below
-are preserved only as documentation of the dormant machinery, in case it's
-ever revived — but the current policy is: no banners.
-
-`CHANGES` was a hand-maintained
-list of recent, user-visible changes. Each entry — `{ id, at, text }` —
-can render a dismissible banner at the top of the page (`renderWhatsNew`,
-into `#whats-new`). They roll in as a **queue, one at a time, one per
-hour**, and only during awake hours. Rules:
-- `at` is UTC ISO (`date -u +%Y-%m-%dT%H:%M:%SZ`) — normally the same
-  stamp as that deploy's `CODE_UPDATED_AT`.
-- **Release schedule** (`changeReleases`): each entry's release time is the
-  later of its own awake-slotted ship time (`nextAwakeSlot` — a change
-  shipped in quiet hours waits for 8am) and one awake-hour behind the
-  previous entry's release (`addAwakeMs`, `CHANGE_SPACING_MS`). So a batch
-  shipped overnight starts appearing at ~8am and advances one per hour.
-- **One at a time** (`activeChanges`): only the newest entry that has
-  rolled in, isn't dismissed, and is still inside its two-hour awake window
-  shows — each is superseded by the next as its hour arrives.
-- Awake hours are 7am–9pm camp time (`QUIET_END_HOUR`/`QUIET_START_HOUR`);
-  the release schedule and the two-hour visibility window both count awake
-  time only (`awakeElapsedMs`), pausing overnight.
-- `id` is a stable slug; a viewer's dismissal is remembered per-`id` in
-  `localStorage` (`campScoreboardDismissedChanges`).
-- List order is the queue order (index 0 rolls in first). Add newest
-  entries to the front; prune long-past ones when editing the list.
-- `renderWhatsNew` runs from `renderAll` and the 30-second interval, so
-  banners advance on their own within ~30s, no interaction needed.
+**"What's new" banners are discontinued** (owner's call, 2026-07-21): `CHANGES` (top of `app.js`) stays EMPTY so
+`activeChanges()` returns nothing and no banner renders. The queue code (`changeReleases`, `activeChanges`,
+`renderWhatsNew`, the per-`id` dismissal key `campScoreboardDismissedChanges`) is dormant on purpose, in case the
+owner revives it; it releases one entry an hour, awake hours only (7am–9pm camp time). Do not add entries.
 
 **Auto-reload on deploy.** Open phones refresh themselves when a newer
 build ships. Each client polls the deployed `index.html` (same-origin,
@@ -488,7 +461,7 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
 - **State is the source of truth, the browser's history is DERIVED from it.**
   `state.ui.tab` (`now|games|chat|more`, device-local, saved with `ui`),
   `state.ui.gameId` (+ `gameFrom`: the tab it was opened from, `gameDow`), `state.ui.revealOpen` (+ `revealFrom`: the director's reveal remote, a second takeover, see "The standings reveal: the screens, behaviour"),
-  `state.ui.view === 'settings'` (the classic builder) and `shell.sheets` say
+  `state.ui.view === 'settings'` (Set up the week) and `shell.sheets` say
   what is open; `renderAll` → `shellSync()` paints the root (`#app[data-tab]`,
   `aria-current="page"`, `body.takeover-open`) and `shellReconcile()` makes the stack
   match. No click handler pushes history. The stack is always `[Now] + [the tab,
@@ -679,10 +652,9 @@ never rebuilds a segmented control under a finger.
   them is up. Retry / Discard in the bar are full 44px targets
   (`.sync-alert .sync-quarantine-btn`). Toasts need nothing like it: the toaster
   (z 10002) sits above a drawer (10001), so a toast raised from inside Alerts or
-  Who can sign in is visible, only inert while the modal is open.
+  Change history is visible, only inert while the modal is open.
 - **More** (`renderMore`, rendered with the tab; `wireMore` / `wireSegs` once):
-  Director (editors only: **What counselors see**, **Set up the week** → today's
-  classic builder, **Change history**, **People** (was Who can sign in: Step 25), **Run the reveal**
+  Director (editors only: **What counselors see**, **Set up the week**, **Change history**, **People** (the builder's People screen), **Run the reveal**
   (Step 23: the remote, see "The standings reveal"); **Tell everyone** /
   **Award points** are built by Step 24's design pass (`#tell-row`, `#award-row`,
   hidden until their takeovers are wired: see "Director tools")), Camp (**Full schedule**, **Memory verse**, **Meal cleanup** — the last
@@ -739,8 +711,7 @@ never rebuilds a segmented control under a finger.
   are `height` / `min-width: var(--target)` on the HOST (the component fixes its
   host at 30 / 36px, and an outer rule on the host beats its `:host`);
   "How to play" and the lone text links (`.quick-game-btn`, `#clear-result-btn`,
-  Now's follow-card and announcement links until Step 17 retires them) get a
-  44px hit box. A takeover whose back label is long ("Wednesday games") lets its
+  Now's announcement links) get a 44px hit box. A takeover whose back label is long ("Wednesday games") lets its
   title wrap onto its own row (`.tk-head` wraps, `.tk-titles { flex: 1 1 13rem }`).
   Not audited: the week builder (settings.js, its own screens) and a game
   mid-play (a live bracket, score entry); the audit opens each game's takeover in
@@ -906,7 +877,7 @@ moment's title and body and the foot's hold text are EMPTIED when nothing shows)
 - Every database string is escaped (`esc`) and every emoji, link and colour passes its camp-core.js sanitizer on the way in (`safeEmoji`, `safeVideoUrl`
   for the verse song, `teamMarkHtml` / `teamAccentAttr`). Markup never carries an animation class.
 - Taps (one delegated listener on `#tab-now`, wired by the first `renderNow`): a game row or Score → `openGame(id, {from: 'now'})` (Score carries
-  `data-joy`: §9.7 puts sparkles on Score, Reveal and awards only); a Still to do row → the game / Award points / Who can sign in; "N more" → Award points when
+  `data-joy`: §9.7 puts sparkles on Score, Reveal and awards only); a Still to do row → the game / Award points / People; "N more" → Award points when
   the last row shown was its kind, else the Games tab; Whole day → `openSchedule()`; Set up the week → `openBuilder()`; "Not Sam? Change" →
   `openIdentityPicker()`; an ask name → `state.identity` (blank = "just cheering"); Still on this → `nowHoldOverrun()`; Take down; See all / N more messages /
   Who's where open their sheets (registered in `shellSheetAllowed` / `shellSheetFill`; each opens only with something to say).
@@ -1112,7 +1083,7 @@ sections). Rules for whoever edits them:
   `#now-reveal-grid` and `#games-reveal-grid` (the frozen grid). New icons:
   `#i-rewind` (Back moves the room's screen: never a chevron) and `#i-crown`.
 
-## The standings reveal: the engine (reveal.js — Step 23, build session 1)
+## The standings reveal: the engine (reveal.js)
 
 Redesign §4.5, §4.9, §4.10. `reveal.js` is an optional layer (a classic script
 right after app.js, before setup-sync.js; every hook in app.js typeof-guarded) and
@@ -1274,7 +1245,7 @@ scope with reveal-core.js).
   `{ ok, code, message? }`; they raise their own toasts unless `{ quiet: true }`),
   `revealSetRemoteOpen(bool)`, `revealSetPractice(bool)`, `revealSetBuzz(bool)`.
 
-## The standings reveal: the screens, behaviour (reveal-ui.js — Step 23, build session 2)
+## The standings reveal: the screens, behaviour (reveal-ui.js)
 
 Redesign §4.1, §4.8–4.10. reveal-ui.js paints the design pass's static markup from the
 engine's views; every write goes through `setHtmlIfChanged` (or a keyed morph),
@@ -1295,8 +1266,7 @@ writes nothing (`reveal-ui.test.js` and `reveal-remote.test.js` count the writes
   per TEAM first (a tie cannot be read off the count), then the places shown best first. While the
   newest place is held back (3 s after `sa`) one still row becomes "Look at the big screen" where the
   place will land and that team is NOT in the markup. Counts are words, each in its own nowrap span,
-  never a medal disc; "Your team" is `state.followTeam`'s row (ink outline until Step 25 supplies a
-  validated per-theme team colour as `--team`); "Started 7:31", never a name. The list is cleared
+  never a medal disc; "Your team" is `state.followTeam`'s row (an ink outline); "Started 7:31", never a name. The list is cleared
   whenever the mirror is not live (a hidden list is no place to keep numbers). The "Happening now" row
   is read from `scheduleForDow` and follows the 30 s tick (`SHELL_PANELS.now.tick`).
 - **The frozen grid** (`renderRevealGrids`, Now and Games, counselors only): `revealUiGridHtml`,
@@ -1381,14 +1351,13 @@ test clock re-arms for ever. Browser pass (Playwright against the real code; no 
 line meeting the contrast rule, no sideways scroll, in every state of the remote, the mirror, the grids, the strip,
 More, Games and the champion line.
 
-## Director tools: Tell everyone, Award points, Preview as a counselor (Step 24 — markup and visual system)
+## Director tools: Tell everyone, Award points, Preview as a counselor (markup and visual system)
 
 Redesign §7.2–7.4, mockup 10 and 10-dark (Tell everyone) and mockup 09 (More), with Award points and
 the preview drawn in the same language (no mockup existed for them). Static markup in index.html
 (comments there name every hook and give the row templates), styles in styles.css's DIRECTOR TOOLS
-block (the last block in the file). **Everything ships hidden and unwired**: the two More rows, the
-preview button in What counselors see, both takeovers and the preview bar; the build session un-hides
-each as it wires it, so the live app never shows a dead control. Rules for whoever edits them:
+block. Each piece is un-hidden by the script that wires it (tell.js, award.js, app.js), so the app never
+shows a dead control. Rules for whoever edits them:
 
 - **Tell everyone** (`#takeover-tell.takeover.is-roof.tell`, its back `#takeover-tell-back-label`):
   top to bottom the order a director meets the decisions — `#tell-result` (after a send that did not
@@ -1489,7 +1458,7 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
 - **Behaviour**: wired by tell.js ("Tell everyone: behaviour"), award.js ("Award points: behaviour") and app.js ("Preview as a
   counselor: behaviour"). The preview's `--pv-h` is measured (a ResizeObserver on the bar), the CSS value stays the one-line fallback.
 
-## Tell everyone: behaviour (tell.js — Step 24, build session 1)
+## Tell everyone: behaviour (tell.js)
 
 Wires the markup above. `tell.js` is a classic script after push.js; every hook in app.js is typeof-guarded, and
 the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintMoreRow`, never by the markup).
@@ -1573,7 +1542,7 @@ the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintM
   sign-out), `reloadBlocked`, a counselor reaching none of it, the shell stack, escaping, the preview, and that the
   app runs without `tell.js`.
 
-## Award points: behaviour (award.js — Step 24, build session 1)
+## Award points: behaviour (award.js)
 
 Wires the markup above. `award.js` is a classic script right after tell.js; every hook in app.js is typeof-guarded and
 the More row (`#award-row`) is un-hidden by `awardPaintMoreRow`, never by the markup. The takeover is the shell's
@@ -1627,7 +1596,7 @@ nothing.
   (`tests/run.js`): both live camps run with every Edit-the-week-here section on, and Award points reads the verse, the
   rota and the meal times from the setup tree.
 
-## Preview as a counselor: behaviour (app.js — Step 24, build session 2)
+## Preview as a counselor: behaviour (app.js)
 
 Redesign §7.4. The markup is in "Director tools" above; this is the code, and the rules that make it unable to leak or trap. It is
 a LENS over the role, not a role: `counselorPreviewOn` (memory only, declared beside `memberRole`) and four reads.
@@ -1705,17 +1674,14 @@ a LENS over the role, not a role: `counselorPreviewOn` (memory only, declared be
 P2 §11.0–11.2 ("the director's clipboard") inside redesign §8. Static markup in
 index.html (`#setup`, its four sheets, `#ask-dialog`), styled in styles.css's
 "SET UP THE WEEK" section; a renderer patches text, `hidden` and the data-*
-named here, never rebuilds a row. **The behaviour is wired separately** (the
-rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with no
-`data-screen` on `#setup` the markup is inert and the builder is v197's.
+named here, never rebuilds a row. The behaviour is setup-ui.js ("Set up the week:
+behaviour" below).
 
-- **`#setup[data-screen]` is the one switch** (`hub | backups | classic`, and
-  Step 15's `week | schedule | rain`, Step 19's `meals | verses | cleanup | electives`, Step 25's `teams`, Step 21's
-  `games`, Step 28's `wizard`, Step 30's `notice` (its CSS line exists; the routing doesn't yet); a later
-  screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
-  inside `#tab-now`, shown only under `body.builder-open` (which hides every
-  other child of main-wrap: `:not(#setup)`). A stored screen this build does not have (the removed
-  `classic`) reads as the hub.
+- **`#setup[data-screen]` is the one switch** (`hub | backups | week | schedule | rain |
+  meals | verses | cleanup | electives | teams | people | campers | games | notice | wizard`; a new
+  screen adds its own pair of lines in the CSS). `#setup` sits inside `#tab-now`, shown only under
+  `body.builder-open` (which hides every other child of main-wrap: `:not(#setup)`). A stored screen this
+  build does not have (the removed `classic`) reads as the hub.
 - **The head** (`.setup-head`, sticky, paper, full bleed): `#setup-back` with
   `#setup-back-label` (the tab the builder was opened from — More, or Games when Add games has no games day to put a game on — on the hub, "Set up the week" on a screen),
   `#setup-undo-dock` (the docked undo; its aria-label is the entry's label),
@@ -1826,17 +1792,11 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   `rpApply` (and the reveal) also require the restore sheet to still be OPEN: a hold
   still down when Escape / Back dismissed the sheet must not finish and put the scores
   back after the person said no.
-- **Keep mine / Use theirs** (§6.3.5): `.clash-list` > `.clash[data-clash-field]`
-  > `.clash-q` + `.seg.clash-pick[role=radiogroup]` > two `.seg-btn[role=radio]
-  [data-clash-pick=mine|theirs]` with `.clash-who` and `.clash-val` — the full
-  markup is in styles.css beside `.clash`. Each side wears a radio ring that
-  fills when picked, with a hairline between the halves, and both start on one
-  line. Values are words (settings.js `clashShow(v, field, other, side)`): a
-  rules clash is its first differing line ("How it works: “Winner takes all.”",
-  `clashRulesLine`), a day its name, a format its label, double points On / Off,
-  prompts a count, a timer its minutes, the scoreboard its rounds and unit;
-  never JSON — the last resort is "Your version" / "Their version". The config engine's set-aside notes
-  (configNotesHtml) wear the same look: the gold "!", no emoji, no amber tint.
+- **Keep mine / Use theirs**: `.clash-list` > `.clash[data-clash-field]` > `.clash-q` + `.seg.clash-pick[role=radiogroup]` >
+  two `.seg-btn[role=radio][data-clash-pick=mine|theirs]` with `.clash-who` and `.clash-val` (markup beside `.clash` in
+  styles.css). Each side wears a radio ring that fills when picked; values are words, never JSON. The rain plan's Done sheet
+  (`#rain-clashes`) is the one place it is asked; the config engine's set-aside notes (`configNotesHtml`, top of the Games
+  screen) wear the same look: the gold "!", no emoji, no amber tint.
 
 ## Set up the week: behaviour (setup-ui.js — Step 14)
 
@@ -1845,8 +1805,7 @@ script; a renderer patches text, `hidden` and `data-*` on static markup and neve
 rebuilds a row (an idle `paintHub` writes nothing: `setup-ui.test.js`), and every hook
 into it from app.js / settings.js is typeof-guarded.
 
-- **Frame hooks in app.js**: `renderAll` calls `renderSetupUi(inBuilder)` (without the
-  file: `renderSettings()` as before); `openBuilder(tab)` calls `setupOnOpen(tab)`;
+- **Frame hooks in app.js**: `renderAll` calls `renderSetupUi(inBuilder)`; `openBuilder(tab)` calls `setupOnOpen(tab)`;
   `init` calls `wireSetupUi()`; `shellSheetAllowed` / `shellSheetFill` know
   `SETUP_SHEETS`; `updateSyncAlert` hands its bar to `setupUiSyncAlert`; `JOY_QUIET`
   gains `#setup`, the four sheets and `#ask-dialog` (the gold buttons must not sparkle).
@@ -1854,7 +1813,7 @@ into it from app.js / settings.js is typeof-guarded.
   `backups`, `notice`, …; anything else, a stale `classic` included, reads as the hub) is mirrored into
   `#setup[data-screen]`. More → Set up the week opens the hub; the hub's Games row opens
   the Games screen (Step 21; the Games tab's Add games opens the game sheet over the tab instead, the screen only when no day takes games), Notice opens its own screen (Step 30; `openBuilder('notice')` and `openBuilder('games')` still land on theirs, any other old tab name on the hub), Restore points
-  opens `backups`, People opens its own screen (Step 25; the Members drawer is retired). Back goes screen → hub →
+  opens `backups`, People opens its own screen (Step 25). Back goes screen → hub →
   closes the builder (from More's People row, or from Tell everyone's Notice, Back goes back there: `peopleUi.from` / `noticeUi.from`;
   camper names waiting for the signal ask first). The hub does not push history entries of its own (the
   builder is one entry; the four sheets are shell sheets and do).
@@ -1894,11 +1853,9 @@ into it from app.js / settings.js is typeof-guarded.
 - **The front door** (`hubDoor`): running → new year due → nothing edited here yet, in that
   order. **Owner-only (Q8)**: the owner's gold button and the sentence every other director
   reads ("Patrick turns on editing.", via `ownerName()`) exist only when the door's action
-  exists — `HUB_DOOR_ACTIONS.original` is Step 15's Edit the week here (`setupEditTheWeek`),
-  `['new-year']` was `null` until Step 28 (now `nywStart`) put
-  a function there — nobody is offered a button that can only fail, and a door with no
-  action is just its lead as one plain line (`data-quiet`; the model's text, "comes in the
-  next update", is not shown). The menu's owner rows work the same way
+  exists — `HUB_DOOR_ACTIONS.original` is Edit the week here (`setupEditTheWeek`),
+  `['new-year']` is `nywStart` — nobody is offered a button that can only fail, and a door with no
+  action is just its lead as one plain line (`data-quiet`). The menu's owner rows work the same way
   (`SETUP_OWNER_ACTIONS`: listed only for `isOwner()` AND when the action exists; a row that
   can't be used right now stays, greyed, with its reason in `[data-setup-why]`); a tap is
   re-checked against `isOwner()` and `why()` before it runs. `body.setup-owner` is set from
@@ -1938,7 +1895,7 @@ into it from app.js / settings.js is typeof-guarded.
   action row is sticky at the dialog's foot, so a long question keeps its buttons in reach.
 - **Escape and Back**: while a question is up (`askIsOpen()`) Escape belongs to it and the
   sheet underneath stays (app.js's Escape handler checks); the phone's Back pops the top
-  history entry — a sheet, the Who can sign in drawer — before it leaves the builder. Opening
+  history entry — a sheet or drawer — before it leaves the builder. Opening
   the builder and every screen change put focus on Back (`setupFocusBack`; a tap leaves
   `:focus-visible` off, so touch shows no ring). The restore sheet is allowed
   only with a point a tap opened (`setupSheetReady`), so a Forward or a stale history entry
@@ -2519,7 +2476,7 @@ What's covered, and why each file exists:
   (shield / flag-with-a-shape / tile; `paintTeamMark` writes only when the mark
   changes), the header model (never a number), More keeping the retired Settings
   drawer's ids, What counselors see (four switches on the existing keys, ON =
-  shown, the standings row locked), the three drawers on the history stack, and
+  shown, the standings row locked), the two drawers on the history stack, and
   the Your team sheet reading no standings.
 - `award.test.js` (+ `.senior`) — Award points (see "Award points: behaviour"): one write path per slot, the own-team
   guard, the ledger by day, secrecy (only a confirmed director opens it).
@@ -2530,15 +2487,17 @@ What's covered, and why each file exists:
 - `tell.test.js` (+ `.senior`) — Tell everyone (see "Tell everyone: behaviour"): the channel combinations, partial failure,
   the notice replace question and an Undo that checks first, quick alerts, Buzz disabled until phone alerts are live,
   the draft, `reloadBlocked`, the shell stack, and a counselor reaching none of it.
+- `notice-screen.test.js` (+ `.senior`) — the Notice screen ("The notice board"): routing and Back, every edit through the live
+  notice, a team addressed by id, steps, the post / take-down / reset / clear questions, the preview as a counselor's phone, escaping, a
+  counselor reaching none of it.
 - `game-view.test.js` (the rules above: live-html skip, kept forms firing real
   handlers after a state swap, celebrations only for scoring; a podium pick resolving the LIVE draft, the picker built once and patched, the dropdowns
   kept behind a missing games-ui.js), `home.test.js`
   (the Games panels' render stability and the standings side effects, toast cap, announcement composer), `overlays.test.js` (schedule
-  sheet, status pill, members drawer, lock screen, scrim fade, pickers),
+  sheet, status pill, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
   guard, no motion media query, **index.html's twenty-three versioned assets share
-  one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
-  (week-builder shell, drafts, joy press), `chat-view.test.js`
+  one `?v=` equal to `APP_VERSION`, in load order**), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and
   atomic flips) — each pins the state rules behind a glitch fix. `motion.test.js`
   loads `jelly-motion.js` into its OWN vm context (a hand-made DOM, a fake clock
@@ -2714,8 +2673,7 @@ What's covered, and why each file exists:
   with an action behind it; every other director reads the owner's name; never a dead
   button), `hubView` over the live page, and the hub rows in `index.html` (a row that
   opens a screen is a `<button>`, one that doesn't is a `<div>`).
-- `setup-ui.test.js` (+ `.senior`) — navigation (More → hub, a named tab → the classic
-  screen, Back, a dirty game editor asking through `askDialog`), **a counselor reaching
+- `setup-ui.test.js` (+ `.senior`) — navigation (More → hub, a named screen, Back, a dirty game editor asking through `askDialog`), **a counselor reaching
   none of it** (`openBuilder`, `setupGo`, a stored screen, every setup sheet, a forged
   history entry, a deep link), the sync line and its Details, the undo pill (no toast
   inside the builder, Redo, docking, one at a time, Ctrl/Cmd-Z, a partial undo as a plain
@@ -2964,9 +2922,9 @@ reuses) an accessor in the block.
 - **Why:** the setup rebuild (BUILD-PLAN Steps 14–22) lets a director edit the
   week in the app, kept as shared data. The accessors are the single place that
   will choose between the built-in copy and the shared one; no renderer changes
-  again. **No behaviour change until a switch is pressed**: while a section is off
-  (every section is, until the owner's Edit the week here) an accessor returns the
-  camps.js constant itself (the same object). Verified
+  again. **A section that is off reads as it always did**: the owner's "Use the original
+  week again" switches a camp back, and then an accessor returns the camps.js constant itself (the
+  same object); the seeded test passes cover both halves. Verified
   byte-identical on both camps (banner at 19 times of day, schedule sheet and
   `.ics` for all seven days, the team card, verse, cleanup, electives, identity
   picker, viewer and editor) before and after.
@@ -2991,8 +2949,7 @@ reuses) an accessor in the block.
   `legacyRosterFor(i)`, and (step 25) `teamRecord(id)`, `teamColorId(id)`,
   `teamAccentVars(id)`, `teamEmojiOwn(id)` (`teamEmoji` without the white-flag placeholder) and
   `teamPhotoVersion(id)`.
-- **Deliberately not built yet** (nothing reads them, so no dead code): the spec's
-  `hubStatus` (setup-ui.js has it) — it lands with the step that first needs it. (`campersFor` is NOT an accessor of this block: camper
+- **Not accessors on purpose:** `hubStatus` (setup-ui.js) and `campersFor` (camper
   names are minors' data, held in memory by setup-sync.js's CAMPERS section for a director with a camper-showing screen open, and nothing
   else may read them — see "Campers".)
   **The "on" half of the schedule accessors is built (Step 15)**: `scheduleForDow`,
@@ -3268,7 +3225,7 @@ ignores the "director alerts" opt-out). Design spec:
   address and index.html's `connect-src` names that exact origin (change the two TOGETHER: a sender the page may not
   reach is blocked silently — the drawer's sender line says "blocked"; never a `*.workers.dev` wildcard). The TV page
   does not talk to the sender, so its CSP does not name it. Blanking `PUSH_SERVICE_URL` (and the `connect-src` entry)
-  puts the whole feature back to dormant; `tests/push.test.js` pins both the address and the CSP. A newer `worker.js` is
+  switches the whole feature off; `tests/push.test.js` pins both the address and the CSP. A newer `worker.js` is
   deployed by re-uploading it to `camp-alerts` (the README's "Updating the sender later"; secrets and the timer stay).
   The Cloudflare account also hosts the owner's Awana site (`kvbcawana` Pages + `awana-sync` Worker): the free plan's
   100,000 requests a day are shared, and the camp timer alone uses about 1,440.
@@ -3367,13 +3324,13 @@ rules**; the client code only shapes the UI.
   included). (The big-screen page used to duplicate this; it signs nobody in now.)
 - **Member record**: `{ role, name?, teamId?, addedBy, addedAt }`
   (`memberRecord()`; `name`/`teamId` omitted, not null, when empty). Built at `campScoreboard/members`,
-  editor-managed via More → **People** (Step 25; formerly the Who can sign in drawer, `renderMembers`). Your
+  editor-managed via More → **People** (setup-ui.js). Your
   own row is disabled (another editor must change your access); the owner key
   is additionally immutable in the rules (the lockout anchor).
 - **The owner row is read-only** (`OWNER_MEMBER_KEY` in app.js, the same literal
   as the rules' `$memberKey != '…'` in BOTH roots; `tests/owner-row.test.js`
-  pins they agree). Every client write to that key is refused, so the Members
-  drawer renders it with no access switches, no team select and no Remove — just
+  pins they agree). Every client write to that key is refused, so the People
+  screen renders it with no access switches, no team select and no Remove — just
   "👑 Owner · managed in the Firebase console" — for the owner and for every
   other editor alike; the add form and the pending-convert flow refuse the key
   before writing. Any bulk member write (the seed roster today; the new-year
@@ -3697,7 +3654,7 @@ rules**; the client code only shapes the UI.
   named, removable people; removal + 🧹 clear-channel remains the real remedy.
 - **Also deliberate: every member can read the whole `members` list** — names,
   emails, phone numbers, roles, in both camps. `counselorName`, the mention
-  targets and the Members drawer all need it. Splitting it (a member-readable
+  targets and the People screen all need it. Splitting it (a member-readable
   `directory` of `{name, teamId}` beside an editor-only `members`) is the fix
   if that ever stops being acceptable.
 - **The test seam**: `setMemberRole('editor'|'viewer'|null)` sets the role and
@@ -3708,11 +3665,10 @@ rules**; the client code only shapes the UI.
   the app without a real sign-in; the popup itself can't run headless against
   Google, so the live sign-in check happens against the deployed site.
 
-## The setup engine (setup-sync.js — Step 14, dark)
+## The setup engine (setup-sync.js)
 
-Specs: P2 §5, §6.4, §7. Nothing here changes what a counselor or a director
-sees until a director acts: Step 15 ships Edit the week here (the owner's switch),
-and until then every commit into a section is refused ("off").
+Specs: P2 §5, §6.4, §7. Everyone reads; only a director writes, and a commit into a
+section that is switched off (the owner's Use the original week again) is refused ("off").
 
 - **The node** `<root>/setup` (`meta`, `days`, `typical`, `patches`, `dayBlocks`,
   `meals`, `verses`, `cleanup`, `electives`; rules published and verified, Step 11).
@@ -3843,8 +3799,8 @@ and until then every commit into a section is refused ("off").
   trailing write of the last place, never a refusal). Presence is untouched and
   stays `{at}`. `where` is the short vocabulary `[a-z0-9:_-]{1,60}` (`hub`,
   `schedule:tue`, `item:tue:<bid>`, `rain:<dk>`, `game:<gid>`, `team:<tid>`,
-  `people`, …) and is REMOVED, never blanked, on leaving. **Dark by the owner's
-  rule**: a row exists only while Set up the week is open on a director's device —
+  `people`, …) and is REMOVED, never blanked, on leaving. **By the owner's
+  rule** a row exists only while Set up the week is open on a director's device —
   `editorsHereStart(where)` on open (writes the row, registers
   `onDisconnect().remove()`, attaches the editor-only listener),
   `editorsHereMove(where)` on every screen or sheet change, `editorsHereStop()` on
@@ -3854,8 +3810,8 @@ and until then every commit into a section is refused ("off").
   can attach) and does nothing with the builder closed. `ehMayWrite` needs a CONFIRMED
   role, so a hinted editor neither listens nor writes before approval. A write the
   rules refuse (the server stamps landed under a second apart) is retried once with
-  the latest place, then swallowed. `EDITORS_HERE_EAGER` (false) is the one switch for the spec's
-  row-on-every-connect behaviour, for the step that turns the setup screens on.
+  the latest place, then swallowed. `EDITORS_HERE_EAGER` (false, on purpose) is the one switch for the spec's
+  row-on-every-connect behaviour.
   Viewers, a view-only second tab and a demoted director never write or listen
   (demotion removes the row: `setupOnRoleChange` → `editorsHereOnRoleChange`); a
   refused write or listener is swallowed and degrades only this feature. Reading:
@@ -3876,12 +3832,11 @@ and until then every commit into a section is refused ("off").
 
 ## Schedule as data: the seed, the plans, A2 (setup-sync.js §5 — Step 15; switch PRESSED at ◆16)
 
-**Status (Mon Nov 2, 2026, ~7 PM ET): the schedule switch is ON in both camps** (◆16, pressed through the real client signed in as the owner, after `tests/emulator/export-replay.mjs` said READY on a read of the live data). A1 wrote a `pre-seed` restore point first and A2 placed every game (junior 23/23, senior 25/25). What counselors see changed only as approved: junior Friday's Team Skits item lists its game; senior's 3:00 PM and 4:50 PM items list their own afternoon games (no longer the evening pair); senior's meal starts follow the schedule (lunch 12:30, supper 5:45 PM after its Meal tag); calendar UIDs follow block ids. The banner and every day's schedule are unchanged. The owner-facing text below that says "until the owner presses it" is history.
+**Status: the schedule switch is ON in both camps since Nov 2, 2026** (◆16, pressed through the real client signed in as the owner, after `tests/emulator/export-replay.mjs` said READY on a read of the live data). A1 wrote a `pre-seed` restore point first and A2 placed every game (junior 23/23, senior 25/25). What counselors see changed only as approved: junior Friday's Team Skits item lists its game; senior's 3:00 PM and 4:50 PM items list their own afternoon games (no longer the evening pair); senior's meal starts follow the schedule (lunch 12:30, supper 5:45 PM after its Meal tag); calendar UIDs follow block ids. The banner and every day's schedule are unchanged. 
 
-Specs: P2 §5.4–5.6, §9, §10. **Nothing here changes what anyone sees until the owner
-presses Edit the week here** (`meta/on/schedule`, section 5's A1, built in the same
-step): while the switch is off every accessor returns the camps.js constant itself.
-Both camps, junior and senior, run all of it.
+Specs: P2 §5.4–5.6, §9, §10. The switch is `meta/on/schedule` (the owner's Edit the week here, A1);
+while it is off (the owner's Use the original week again) every accessor returns the camps.js
+constant itself. Both camps run all of it.
 
 - **`resolveDay(tree, dow)`** is the ONE function every schedule consumer goes through:
   the typical day (when `days/<dk>/typical`) with the day's patches laid over it, minus
@@ -3962,12 +3917,11 @@ Both camps, junior and senior, run all of it.
   `loading`) before anything changes. **Oracle** (pinned, game by game): junior 22/22
   (Morning → 10:00 Team competitions, Evening → 18:00 Evening competition, Team Skits →
   Fri 19:00 Team Skits); senior 25/25 (9:45 / 3:00 PM Team competitions, Legacy Game →
-  16:50, Hot Seat and Let's Make a Deal → 18:50). **A game created in the classic builder
-  (Add game) or from the Games screen's sheet with no item named, while the schedule is edited here, is placed at once**:
+  16:50, Hot Seat and Let's Make a Deal → 18:50). **A game created from the Games screen's sheet with no item named (or the ⚡ quick game), while the schedule is edited here, is placed at once**:
   `setupAttachNewGame(config, game)` runs A2's rules for that ONE game inside the config
-  edit that adds it (`saveGameDraft`), so it shows on its natural block, in the calendar
+  edit that adds it, so it shows on its natural block, in the calendar
   file and on counselors' phones; a duplicate keeps its original's link (the copy is a clone).
-  Restore defaults and an imported backup run the whole of A2 (`putGamesOnSchedule()`) after
+  An imported backup (`tryImport`) runs the whole of A2 (`putGamesOnSchedule()`) after
   they replace the catalog — a game with no link is otherwise listed on no block. It never
   re-places a game whose link still resolves; a game taken off the schedule on purpose
   (`blockId` removed) is untouched by a new game, and `gamesForBlock` deliberately has NO
@@ -4006,14 +3960,12 @@ Both camps, junior and senior, run all of it.
   sentence — `TURNON_WHY`) and `SETUP_OWNER_ACTIONS.original` (`setupUseOriginalFlow`, greyed
   with "Already using the original week." while off). **Not built here:** team branding (`short` / `emoji` written to `state.teams`, A1 step 3)
   is not part of turning a section on (Step 25 reads and writes those fields per field with no switch: "Team colours and the
-  Teams screen"). Nothing pressed the switch in this
-  step (◆16 did, Nov 2, 2026: see the status line above). **The seed marks the
+  Teams screen"). **The seed marks the
   printed week's own overlaps `overlapOk`** (junior's Tue and Thu cabin movie nights run over
   Prepare for bed and the devotional: the longer item of each overlapping pair), so a freshly
   seeded camp warns about nothing; the frozen id fixtures are unaffected (they pin ids and
   alert keys only).
-- **The published schedule** (push.js; live since Step 27 — with `PUSH_SERVICE_URL` blank the whole push layer is
-  dormant): `pushPublishSchedule(weekStart)` is ONE transaction on
+- **The published schedule** (push.js; with `PUSH_SERVICE_URL` blank the whole push layer is off): `pushPublishSchedule(weekStart)` is ONE transaction on
   `pushSchedule` — `{weekStart, at, by, blocks, rev: (cur.rev||0)+1, src}`, where
   `src = fnv1a(pushStableJson({weekStart, blocks}))` (8 hex, what the rules pin) — and
   writes NOTHING when `cur` already holds that content (identical content is already
@@ -4207,7 +4159,7 @@ P2 §11.10–11.13 inside the Step 14 / 15 frame, in the same clipboard language
 headline / lede, the screen's door, then one column of hairline rows; nothing here is a new
 component (`.cb-row`, `.gl`, `.daypick`, `.seg`, `.si-team`, `.sched-add`, `.setup-note`,
 `.setup-door`, `.fld`, `.btn`, the shell sheets, `askDialog`). **Nothing is reachable by a counselor,
-and nothing is written until the owner turns a section on**: a section that is the original shows
+and nothing is written while a section is the original (only the owner turns one on)**: a section that is the original shows
 its screen as a read-only PREVIEW of the printed data (`secTree(section)` is the live tree when the
 section is on, else `setupBuiltInSections()`; a row a `<div>`, the data as plain words — a dish is a
 `.cb-sub` line, a station's people one line of names — never a disabled field or a chunky chip, §8.1.3;
@@ -4345,7 +4297,7 @@ P2 §11.14 in the Step 14 / 15 / 19 frame. Markup in index.html (templates in th
 styles in styles.css's last block, "SET UP THE WEEK: Games"; behaviour in setup-ui.js section 16 (engine first, then the screen, then
 the sheet), pinned by `tests/games-screen.test.js` (+ senior). Hooks are prefixed `sg-` (the screen) and `gm-` (the sheet): `gs-` /
 `gw-` / `games-` belong to the Games tab. **The catalog is written ONLY through `configEdit` (field ops, one undo entry per change);
-there is no draft and no Save.** The classic Games tab, `saveGameDraft` and the v183 parity fixture were removed in Step 30.
+there is no draft and no Save.** The classic editor (its Games tab, `saveGameDraft`, the v183 parity fixture) is gone.
 
 - **Routing**: the hub's Games row (`HUB_OPENS.games`) and the schedule item sheet's "Add a game here" (`#si-add-game`, a Games item of a
   day that exists: `schedItemAddGame`) lead to the screen; the Games tab's **Add games** (an empty day) is `gmAddGames(dayId)`: the game
@@ -4379,11 +4331,11 @@ there is no draft and no Save.** The classic Games tab, `saveGameDraft` and the 
   its value on arrival (`gmFocusVal`, a WeakMap) and `gmCommitText` / `gmDayNoteBlur` skip a blur that finds it unchanged, because the box
   shows what it showed on arrival, which a colleague's edit since (a focused field is not repainted) has made stale — a bare tap in and out
   must never put the old words back (§6.4.9). A field no focus reached through the sheet has no baseline and writes as before. A tally game picks up the live leaderboard and a bracket the plain running scoreboard,
-  as the classic format pick does. The inputs' markup is static (values are set as properties, only while a field is not focused), so a
+  as the house default does. The inputs' markup is static (values are set as properties, only while a field is not focused), so a
   snapshot or a save never takes a word away mid-typing or rebuilds a focused field (a Playwright MutationObserver pass sees zero mutations from two idle `renderAll`s on the screen and on every stage / pane of the sheet); inside Set up the week the docked undo pill offers each change, over the Games tab a field edit is recorded but quiet (no toast per field; creating, Make a copy and Delete still speak); the dock's line (`gmDockState`) is idle ("Changes save as you go", an existing game
   before its first save) · saved ("Added to Team competitions" — the item only — just after creating, then "Saved") · saving · offline ·
   error, and it follows the sync line (`setupUiOnEvent` repaints it even with the builder closed).
-- **Field rules** are the classic editor's own (`gmParseSteps`, `gmParseTimer`, `gmParseTracker`, `gmParsePrompts`): counter buttons are positive
+- **Field rules** (v183's editor rules, kept: `gmParseSteps`, `gmParseTimer`, `gmParseTracker`, `gmParsePrompts`): counter buttons are positive
   numbers, the timer is minutes typed / seconds saved with rounds from 2, the scoreboard's periods and outs whole numbers, **only one game a
   week may have drawing prompts**. A field in error keeps `aria-invalid` and its message and writes nothing; every other field still saves.
   The name can't be emptied. How to play is `gmRulesFrom(rows)` (a section with neither heading nor points is dropped; a blank one added and
@@ -4417,8 +4369,7 @@ there is no draft and no Save.** The classic Games tab, `saveGameDraft` and the 
   the game, takes a `pre-delete` restore point when it has a saved result (`schedSafetyPoint`) and removes every record under the id.
 - **Deleted on another phone while the sheet is open**: the next paint notices (`open.gone`, the sheet keeps showing the game as last seen,
   `open.last`), the gold "!" question appears at the top (`#gm-gone`) and **no write is made or resurrected**; "Put it back with my changes"
-  re-adds the record as the sheet last saw it (one undoable edit), Close leaves. The classic editor's clash block (`#gm-clashes`) is not
-  used: a field two directors change at once is last-commit-wins per field (the config engine's own rule), and a colleague's other fields
+  re-adds the record as the sheet last saw it (one undoable edit), Close leaves. A field two directors change at once is last-commit-wins per field (the config engine's own rule), and a colleague's other fields
   are never touched.
 - **The ⚡ quick game** (`gmQuickTarget`): the day being looked at (the Games tab's day, else today when it is a games day, else the first),
   and on it **the item the Now card shows** (`nowCurrentBlock`, app.js: the very pick `nowModel` makes, so a games item that ran over with a
@@ -4482,7 +4433,7 @@ field, to the camp's own constant while the record doesn't carry it.
   `team:<camp>:<tid>:<v>` (a miss, a failure or an open that never answers within 1.5 s just asks the
   server). A refused read is final for that version; any other failure may be asked again.
 - **The Teams screen** (setup-ui.js section 13; `#setup[data-screen="teams"]`, `state.ui.builderScreen`
-  `teams`; the hub's Teams row opens it, the classic Teams tab stays in the Classic editor): a fixed
+  `teams`; the hub's Teams row opens it): a fixed
   list, one clipboard row per team slot (`.cb-row.sec-row.tms-row`, keyed `t-<id>`, painted through
   `secPaintList`): the crest in a 3rem time column (wider rows: `.tms-row` / `.ppl-row` above the clipboard's 18em
   switch), the name, `short · emoji · ● colour name` ("Original colour" for the camp's own, "· hard to read in dark
@@ -4613,7 +4564,7 @@ requester's side is app.js (the denied screen).
   `peopleSavePerson` (only the fields that changed, ONE `update()` at the person's row; a cleared team is a removal),
   `peopleSaveTeams` (Put people on teams: one row at a time, so a refused row is listed and the rest are saved),
   `peopleAddLines` (new pending rows and named people's teams in ONE multi-path update), `peopleAddMember` /
-  `peopleAddSignIn` / `peopleSameAs` / `peopleSetCampAccess` (the old drawer's add, convert, merge and per-camp
+  `peopleAddSignIn` / `peopleSameAs` / `peopleSetCampAccess` (add, convert, merge and per-camp
   switch, typed instead of `prompt()`ed). The owner row and your own role are never written from here
   (`owner` / `self`). `peopleSetAsking(on)` is an ordinary setup commit of `meta/joinOpen` (the week's own field: it
   stamps `meta/edited/week`) with no undo entry; off is written as `false`.
@@ -4783,13 +4734,12 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
 - **Not built** (recorded): a printable sheet (decision Q7 allows one later); per-camper "absent" (cut, P2 C29); typing names into Put people on
   teams.
 
-## The new-year setup (Step 28 — markup and visual system)
+## The new-year setup (markup and visual system)
 
 P2 §11.3, §7.3, §10.1, §11.16 in the clipboard language. Static markup in index.html (every hook, the copy per step and
 the row templates are in the comments at `#setup-wizard`, `#nyw-saved-list` (TALLY ROWS), `#sheet-nyw-staff`,
 `#sheet-nyw-undo`, `#sheet-setup-advanced`, `#hub-door`, `#rp-year` and `#sync-alert` (STRANDED WORK)); styles in
-styles.css's last block, "SET UP THE WEEK: the new-year setup". **Wired in session 2** (next section but one: "The new-year
-wizard: the screens"). `docs/build-notes/verify/step28-design.cjs` draws every state as specimens (`SHOTS=1`);
+styles.css's last block, "SET UP THE WEEK: the new-year setup". Behaviour: "The new-year wizard: the screens". `docs/build-notes/verify/step28-design.cjs` draws every state as specimens (`SHOTS=1`);
 `step28-pass.cjs` drives the real renderers.
 
 - **The screen** `#setup-wizard.nyw` (`data-screen="wizard"`): `[data-step]` 1–5 shows one `.nyw-step[data-nyw-step]`;
@@ -4933,7 +4883,7 @@ sheets are `isOwner()` in `setupSheetReady`; every other director reads the hub 
 ## Counselors ↔ teams ↔ accounts
 
 A member record can carry a **`teamId`** (`'t0'`…`'t5'`) — the team that
-person is ON. It's set per-row in More → **Who can sign in**, and it does
+person is ON. It's set per-row in More → **People**, and it does
 three things.
 
 **1. The app opens on their team.** `adoptMemberTeam()` (called from
@@ -4989,8 +4939,8 @@ then removes the placeholder (RTDB keys are immutable, so this is
 create-then-delete — a failure part-way keeps the person). A pending row gets
 no invite text, because there's nothing to sign in to yet.
 
-**`SEED_COUNSELORS`** is this week's printed roster, behind the drawer's
-"👥 Add this week's counselors" button. `missingSeedCounselors()` matches on
+**`SEED_COUNSELORS`** is this week's printed roster, behind People's
+"Fill in last year's printed roster" line. `missingSeedCounselors()` matches on
 **name, case-insensitively**, so it's idempotent — including for someone who
 has since been given a real email. The button writes all the missing rows in
 one multi-path `update()` and disappears once nobody's missing. It exists
@@ -5133,25 +5083,11 @@ More sync invariants (each fixed after it bit us — don't regress these;
     deliberately stays about `state` alone. A refused or failed config write says
     "Couldn't save the week setup"; the edit stays unconfirmed and goes up with the
     next builder change or, after a reload, the first-snapshot merge.
-  - **The game editor saves only what it changed** (§6.3.5): `ensureGameDraft` keeps
-    `gameDraftOrigin` (a deep copy of the saved game as the sheet opened);
-    `saveGameDraft` computes `gameFieldOps(origin, out)` and applies just those fields
-    to the game as it is NOW (resolved by id). A field somebody else ALSO changed to
-    something different is asked about INLINE (Step 14; the native `confirm` is gone): the
-    first Save tap writes nothing and raises `gameClash` — a `.clash` per field above
-    Save, a radiogroup of the two actual values ("Keep mine" / "Use theirs"; the config
-    has no authorship, so "someone changed Location"), Save a dashed well ("Pick one for
-    Location, then save") until each has a pick; the next Save writes the picks and the
-    fields nobody else touched either way. The block is rebuilt from the game as it is at
-    every Save tap, so a pick made about values that changed again is asked again
-    (`gameClashSync`), and it is cleared with the draft. A game removed meanwhile asks in
-    `askDialog` ("Someone deleted “X” while you were editing it": Discard my changes / Put
-    it back with my changes; dismissing it changes nothing — the draft is the only copy).
-    The format-change confirm and the editor's own "Discard?" are still native.
-    (The v183 parity fixture went with the editor in Step 30.) A NEW
-    game's id (builder, ⚡ quick game, Duplicate) is the name's slug + `-` + 4 random
-    base36 (`makeId`, `takenGameIds`: `taken` covers every `GAME_RECORD_MAPS` key too);
-    day ids are still `d-<ms>`.
+  - **A game is written one field at a time** (the Games screen's sheet, `gmCommit`: see "Set up the week: Games"): each
+    save looks the game up BY ID and writes only the field that changed, so a colleague's edit to another field is never
+    undone and a game removed meanwhile is offered back, never resurrected. A NEW game's id (Games screen, ⚡ quick game,
+    Make a copy) is the name's slug + `-` + 4 random base36 (`makeId`, `takenGameIds`: `taken` covers every
+    `GAME_RECORD_MAPS` key too); day ids are still `d-<ms>`.
 - **Undo core** (setup rebuild spec §7.1 — build step 9). The builder's commits go
   through two wrappers: `configEdit(label, mutate, opts)` (games and days) and
   `stateEdit(label, mutate, opts)` (teams: rename, counselors, reorder; the roster in
@@ -5616,7 +5552,7 @@ presence row, not a heartbeat: an anonymously writable path is the one thing the
 design refuses), and never computes a standing: names, points and places arrive
 already frozen into the node, one place at a time, and only places a director has
 shown are in the node at all. With no live reveal it says "Waiting for the
-directors…" (mockup 11). The old signed-in, directors-only interim page is gone.
+directors…" (mockup 11). 
 
 - **What it draws is `tvFrame()`**, reveal-core's pure function of `(ctl, pub,
   server time)` (the remote's mini TV runs the very same one): `waiting | intro |
@@ -5730,8 +5666,7 @@ directors…" (mockup 11). The old signed-in, directors-only interim page is gon
   script in a file.
 - **The build stamp lives in two places**: `<meta name="tv-build">` (what the
   page's own 90-second / refocus check reads, falling back to the comment) AND
-  the exact text `var TV_BUILD = '<stamp>'` in an HTML comment. A TV left open
-  on a v184-or-earlier page, or on the signed-in interim page, polls its own
+  the exact text `var TV_BUILD = '<stamp>'` in an HTML comment. A TV left open on an older page polls its own
   address and reads that text with a regex to decide whether to reload; the text
   must stay in the HTML or a stuck TV would never learn about any later build.
   Every TV build keeps both, equal. **A newer build reloads the page only while it
@@ -5741,11 +5676,8 @@ directors…" (mockup 11). The old signed-in, directors-only interim page is gon
 - **Practice is public while it plays** (owner-accepted, redesign §4.12 row 19): the
   `practice` child holds only the places it has shown, End deletes it, and no phone
   ever reads it. The Practice switch says so in words.
-- **Old pages during the rollout** (§4.11): a signed-in interim page keeps working
-  until it reloads into this one and never shows a counselor anything; this page
-  against rules that were not published would show Waiting and the small line and
-  leak nothing; phones and TVs can be updated in either order (a TV updated first
-  just waits).
+- **Order of updates** (§4.11): this page against rules that were not published would show Waiting and the small line
+  and leak nothing; phones and TVs can be updated in either order (a TV updated first just waits).
 - **Tests**: `tests/tv.test.js` loads the page's real scripts (in tag order) into a
   vm behind a DOM that records every `innerHTML` and every created element, a fake
   clock that drives `setTimeout` / `setInterval` / `Date.now`, and a fake Firebase
@@ -5787,7 +5719,7 @@ composed card, always written whole). Posted, it is the strip `#now-notice` at t
 line, See all → `#sheet-notice`, a director's Take down) and, on send-off Saturday, the Now card itself (now-ui.js,
 `nowNoticeHtml`). `noticeCardHtml(preview, notice, opts)` is the notice AS A COUNSELOR'S PHONE DRAWS IT
 (`nowNoticePreviewHtml`: the strip, plus what See all opens unless `opts.strip`): Tell everyone's "On a counselor's phone" passes `{ strip: true }`, the
-builder's Notice tab takes both, and `nowNoticeData(ctx, notice)` reads the notice it is handed (a pin that WOULD post has no team areas).
+Notice screen takes both, and `nowNoticeData(ctx, notice)` reads the notice it is handed (a pin that WOULD post has no team areas).
 
 Built for send-off-morning cleanup, where six separate announcements filled a
 whole phone screen and buried the one line each camper needed. Reach for it
@@ -5795,10 +5727,9 @@ when a single message has structure (per-team assignments, a running order)
 and everyone must see it; reach for an announcement when it's one line that
 should expire on its own.
 
-- **Composed in Set up the week → Notice** (setup-ui.js section 18), not typed into a single box: heading,
-  intro, per-team assignments, numbered steps with bullets, closing line —
-  plus a live preview that renders the real card.
-- **Its own screen (Step 30)**: `#setup[data-screen="notice"]`,
+- **Composed on its own Set up the week screen** (More → Set up the week → Notice; setup-ui.js section 18), not typed into
+  a single box: heading, intro, per-team assignments, numbered steps with bullets, closing line, plus a live preview that
+  renders the real card. The screen: `#setup[data-screen="notice"]`,
   `#setup-notice.nbs[data-state=empty|draft|posted|hollow]` (the state picks the headline words, the dock's one button and
   whether there is a picture), in index.html's comment at `#setup-notice` (the copy per state and every row template) and
   styles.css's last block. One grouped sheet per part, in a counselor's reading order: Heading and intro, Where each team

@@ -14769,8 +14769,8 @@ function renderAll() {
 
 // ── Week builder (More → Set up the week) ────────────────────
 // A full-page editor-only view over the main page: body.builder-open hides
-// every other main-wrap section via CSS. settings.js renders the content
-// (renderSettings) and signals "back" by setting state.ui.view = 'home'
+// every other main-wrap section via CSS. setup-ui.js renders the content
+// (renderSetupUi) and signals "back" by setting state.ui.view = 'home'
 // before its own renderAll() — visibility is re-derived above either way.
 
 function builderOpen() {

@@ -8103,7 +8103,7 @@ function wireGamesScreen() {
   if (typeof wireGameSheet === 'function') wireGameSheet();
 }
 
-// ── the sheet's fields, as the classic editor's own rules read them (validateGameDraft / saveGameDraft) ──
+// ── the sheet's fields, as v183's editor rules read them ──
 // Each parser takes what was typed and returns { ok: true, value } (`value` undefined removes the field) or { ok: false, error }
 // in words. Nothing is written for a field in error: it keeps aria-invalid and its message, everything else is saved.
 function gmParseSteps(text) {
