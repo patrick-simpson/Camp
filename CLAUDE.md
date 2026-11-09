@@ -268,24 +268,25 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    **If you add an external host** (a new API, a font, an image CDN), add it
    to the `Content-Security-Policy` meta tag in `index.html` too, or the
    browser silently blocks the request.
-4. **Do NOT add "What's new" banner entries.** The banners are discontinued
-   (owner's call, 2026-07-21): the `CHANGES` array at the top of `app.js` is
-   kept EMPTY and must stay that way — do not append entries for user-visible
-   changes (see "What's new banners" below).
+4. **Add a plain-English "What's new" note, with its audience, for each change people would notice** (a new screen, a moved
+   control, a new way to do a job; not a bug fix nobody saw). Append it to `CHANGES` at the top of `app.js` and set its `at` to
+   this deploy's UTC time (the shipped catch-up set shares `WHATS_NEW_SHIPPED_AT`: the deploy sets it, with `CODE_UPDATED_AT`,
+   to the same moment). How to write one: pick the audience (`everyone`, `counselors`, `directors`, `owner`; a camp only if the
+   change is only there); say what changed and where to find it in one or two short lines (see "What's new notes" below);
+   true to the screens as built; plain words a teen counselor or a non-programmer director understands; no jokes, no point or
+   place, no emoji, no "!"; add `needs` when a switch or a missing screen should hide it, and `show` only for a place that
+   audience can open. A change with no one to read it (a rules or test change) gets no note.
 
 ## What's new banners & auto-reload
 
-**"What's new" comes back, redone** (owner's answer of Nov 9, 2026, reversing the July 21 "discontinued"). The design
-pass drew it (below); **until the build session lands its engine, `CHANGES` stays EMPTY** and step 4 above stands (the old
-queue code — `changeReleases`, `activeChanges`, `renderWhatsNew` — draws nowhere: its `#whats-new` section and `.whats-new-*`
-CSS are gone). The build session replaces that code, then rewrites step 4 and this paragraph to "add a plain-English note,
-with its audience, for each change people would notice".
+**"What's new" notes** (owner's answer of Nov 9, 2026, reversing the July 21 "discontinued"; built in app.js under "What's new
+notes", pinned by `tests/whats-new.test.js` + `.senior`). The retired badge banners (`renderWhatsNew`, `#whats-new`, `.whats-new-*`,
+the 15-minute queue) are gone; the legacy `campScoreboardDismissedChanges` key stays only in `clearLocalData`'s wipe list.
 
-**What's new notes: the design** (markup: NOTE MARKUP in index.html; look: `.msg[data-kind="new"]`, `.msg-show`, `#i-signpost`).
+**How it works** (markup: NOTE MARKUP in index.html; look: `.msg[data-kind="new"]`, `.msg-show`, `#i-signpost`).
 1. **A note** is an entry of `CHANGES` (app.js): `{ id, at, for, camp?, needs?, text, show? }`. `id` `^[a-z0-9-]{3,40}$`, unique
    forever (a phone's memory is keyed by it); `at` the UTC deploy time that ships it; `for` `everyone | counselors | directors |
-   owner`; `camp` `junior | senior` (absent: both); `needs` gate names (5); `text` plain, at most 56 characters (two lines at 360px,
-   measured), sentence case, curly apostrophes, no emoji, no `!`, never "update", "feature" or "version", saying what changed and
+   owner`; `camp` `junior | senior` (absent: both); `needs` gate names (5); `text` plain, at most 60 characters (two lines at 360px), sentence case, curly apostrophes, no emoji, no `!`, never "update", "feature" or "version", saying what changed and
    where to find it, never a point or a place; `show` `{ to, where }` (6). Written by the agent who ships the change; no jokes.
 2. **One at a time, the strip's last**: the note rides `#announcements` after the join bar and every banner, only while the
    strip has room for it (it never counts in "N more messages" and never goes to `#sheet-messages`), never under a live reveal,
@@ -314,7 +315,11 @@ with its audience, for each change people would notice".
    after each sign-in). Ids no longer in `CHANGES` are dropped on write.
 8. **Motion**: a release seen on screen UNFOLDS in place (`glide`, scaleY .6 → 1 from its top, no drop: a note is never as loud
    as a banner) and the sections under the strip glide (`annGlideBelow`); × squashes it out (`playRowOut`) and the rest glide up;
-   calm: fades; the first paint and a paint under a takeover move nothing.
+   calm: fades; the first paint and a paint under a takeover move nothing (`wnUnfold`).
+9. **The model is `whatsNewDue(notes, mem, nowMs, who, {mayRelease})`** (pure: `{ current, release, skip }`); `whatsNewItem(items, mayRelease)`
+   is the strip's one call (it writes the release to memory BEFORE drawing it, and draws nothing when the write fails). The
+   catch-up set is 14 notes (counselors 5, directors 8 and one more in camp week, the owner those plus one); a preview's fidelity
+   tests seed both phones' memory as read, since a note is a phone's own reading list.
 
 **Auto-reload on deploy.** Open phones refresh themselves when a newer
 build ships. Each client polls the deployed `index.html` (same-origin,
@@ -2533,6 +2538,10 @@ What's covered, and why each file exists:
   that nothing is stored, every way out, the walk through every tab / sheet / takeover with the points guard throwing, FIDELITY
   against a real counselor's phone (with a negative control), the write gates (no database write from any tap), the engines
   staying a director's (a config snapshot mid-preview, `reloadBlocked`, a source pin of the engine list).
+- `whats-new.test.js` (+ `.senior`) — What's new notes (see "What's new notes"): the shipped list's lint, the pacing truth table on a fake
+  clock (before `at`, 6:59 / 7:00 / 20:59 / 21:00 across both clock changes, one an hour, a phone opening weeks later, the stay,
+  staleness, the cap), the role / camp / gate filter, the strip (last, room, reveal, quiet hours, takeover, preview), render
+  stability, Show me, a dismissal surviving, sign-out keeping the memory, a blocked store, the app with `CHANGES` empty.
 - `tell.test.js` (+ `.senior`) — Tell everyone (see "Tell everyone: behaviour"): the channel combinations, partial failure,
   the notice replace question and an Undo that checks first, quick alerts, Buzz disabled until phone alerts are live,
   the draft, `reloadBlocked`, the shell stack, and a counselor reaching none of it.
