@@ -238,14 +238,10 @@ test('deleting a game, changing its format, or an import prune clears its four-t
   assert.ok(state.brackets4[g.id], 'a live game\'s bracket is not');
   clearGameRecords(g.id);
   assert.notOk(state.brackets4[g.id]);
-  // the delete confirm says a bracket is in progress for a four-team one too
+  // the Games screen's delete and format-change questions name a four-team bracket in progress too
   const g2 = fourGame();
   state.brackets4[g2.id] = fourStart([['t0', 't3'], ['t1', 't2']], IDS, 1);
-  const asked = [];
-  const realConfirm = confirm; confirm = (m) => { asked.push(String(m)); return false; };
-  try { deleteGame(g2.id); } finally { confirm = realConfirm; }
-  assert.ok(/A bracket is in progress/.test(asked[0]), asked[0]);
-  assert.ok(gameById(g2.id), 'declined: still there');
+  assert.ok(gameRecordLabels(g2.id).includes('the bracket in progress'), 'gameRecordLabels says a bracket is in progress');
 });
 
 test('a backup carries brackets4, and importing one heals and prunes it like every other record', () => {

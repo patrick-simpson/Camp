@@ -117,23 +117,6 @@ test('an import drops results for games the imported catalog does not have', () 
     'an orphan result has no UI left to clear it, so it would skew the standings forever');
 });
 
-test('restoring the default catalog keeps the teams and their scores', () => {
-  const gid = seed();
-  state.results[gid] = { medals: { gold: 't0', silver: 't1', bronze: 't2' } };
-  state.config.games.push({
-    id: 'my-custom-game', name: 'Custom', dayId: 'd1', session: 'Morning', format: 'placement', rules: [],
-  });
-  state.results['my-custom-game'] = { medals: { gold: 't1', silver: 't0', bronze: 't2' } };
-
-  setMemberRole('editor'); // the builder's restore is a director's act: configLocked() refuses anyone else (and a counselor preview)
-  try { restoreDefaults(); } finally { setMemberRole(null); }
-
-  assert.equal(state.teams.length, 6, 'teams are kept');
-  assert.notOk(state.config.games.some((g) => g.id === 'my-custom-game'), 'the custom game is gone');
-  assert.notOk('my-custom-game' in state.results, 'and so is its result');
-  assert.ok(gid in state.results, 'but a default game keeps its medals');
-});
-
 // ── Bracket shape ────────────────────────────────────────────────
 
 test('a fresh bracket starts in round1 with the whole pool', () => {

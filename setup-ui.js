@@ -652,7 +652,7 @@ function hubScheduleView() {
 
 // #setup[data-screen] is the ONE switch the CSS reads (styles.css "SET UP THE WEEK"): hub | backups |
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
-const SETUP_SCREENS = ['hub', 'backups', 'classic', 'notice', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers', 'games', 'wizard'];
+const SETUP_SCREENS = ['hub', 'backups', 'notice', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers', 'games', 'wizard'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
 const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add', 'game', 'sg-day', 'setup-advanced', 'nyw-staff', 'nyw-undo'];
 // The sheets that hold a half-made edit and ask before they let it go: the id → a function that takes the close over
@@ -664,8 +664,6 @@ function setupSheetGuardClose(id) {
   const g = SETUP_SHEET_GUARDS[id];
   return !!(g && g());
 }
-// The classic builder's tabs, in editorsHere's short vocabulary (setup-sync.js editorsHereWhereWords).
-const SETUP_CLASSIC_WHERE = { games: 'games', days: 'week', teams: 'teams', notice: 'notice', data: 'restore' };
 // The owner's menu rows (⋯ → Owner). A row is listed only when its action exists (Step 15: original; Step 28: new-year,
 // undo-new-year, and Advanced → "Start this section again from the original", the owner-only re-seed of a section that has
 // ever been on — BUILD-PLAN Step 28 owns it), so the menu never offers a switch that can only fail.
@@ -699,11 +697,12 @@ function setupScreen() {
   return SETUP_SCREENS.indexOf(s) !== -1 ? s : 'hub';
 }
 
-// app.js openBuilder(tab) calls this before it paints: More → Set up the week (no tab) opens the hub; a
-// caller that names a classic tab ("Add games" on an empty day) lands on that tab of the classic screen.
+// app.js openBuilder(tab, screen) calls this before it paints: More → Set up the week opens the hub, a named screen opens straight
+// onto it (More → People), and a caller that still names the old classic tab lands on that tab's own screen ('notice', 'games';
+// any other tab name is the hub). A stored 'classic' screen reads as the hub (setupScreen).
 function setupOnOpen(tab, screen) {
   // A named screen opens straight onto it (More → People); a named classic tab onto the classic editor; else the hub.
-  state.ui.builderScreen = tab === 'notice' ? 'notice' : tab ? 'classic' : (screen && screen !== 'hub' && SETUP_SCREENS.indexOf(screen) !== -1 ? screen : 'hub');
+  state.ui.builderScreen = tab === 'notice' ? 'notice' : tab === 'games' ? 'games' : (screen && screen !== 'hub' && SETUP_SCREENS.indexOf(screen) !== -1 ? screen : 'hub');
   if (state.ui.builderScreen !== 'people') peopleUi.from = '';
   noticeUi.from = state.ui.builderScreen === 'notice' ? noticeUi.pend : '';
   noticeUi.pend = '';
@@ -729,7 +728,7 @@ function setupWhereNow() {
     const w = o && o.gid && shell.sheets.includes('game') ? 'game:' + o.gid : '';
     return /^[a-z0-9:_-]{1,60}$/.test(w) ? w : 'games';
   }
-  return SETUP_CLASSIC_WHERE[state.ui.settingsTab] || 'games';
+  return 'hub';
 }
 
 function setupMoveHere() {
@@ -739,11 +738,9 @@ function setupMoveHere() {
   if (typeof editorsHereMove === 'function') editorsHereMove(w);
 }
 
-// Go to a screen of the frame (opts.tab: the classic builder's tab). Back always returns to the hub.
-function setupGo(screen, opts) {
+// Go to a screen of the frame. Back always returns to the hub.
+function setupGo(screen) {
   if (SETUP_SCREENS.indexOf(screen) === -1 || !canEdit()) return false;
-  const o = opts || {};
-  if (o.tab) state.ui.settingsTab = o.tab;
   if (screen !== 'people') peopleUi.from = '';
   if (screen !== 'notice') noticeUi.from = '';
   state.ui.builderScreen = screen;
@@ -758,30 +755,13 @@ function setupGo(screen, opts) {
 }
 
 function setupCloseBuilder() {
-  if (typeof discardGameDraft === 'function') discardGameDraft();
   state.ui.view = 'home';
   saveState();
   renderAll(); // the shell puts the tab it came from back where it was scrolled
 }
 
-// Leaving with a game editor open and edited asks first (the classic builder's own guard, in the dialog
-// instead of a native confirm). "Keep editing" puts the person back on the editor.
-async function setupConfirmLeave() {
-  if (typeof builderDirty !== 'function' || !builderDirty()) return true;
-  const what = typeof builderDirtyName === 'function' ? builderDirtyName() : 'this game';
-  const choice = await askDialog({
-    title: 'Discard your changes to ' + what + '?',
-    body: 'They haven’t been saved yet.',
-    actions: [{ label: 'Keep editing', value: 'keep', cancel: true }, { label: 'Discard', value: 'discard', kind: 'danger' }],
-  });
-  if (choice === 'discard') return true;
-  if (state.ui.builderScreen !== 'classic' || state.ui.settingsTab !== 'games') setupGo('classic', { tab: 'games' });
-  return false;
-}
-
 async function setupBack() {
   const screen = setupScreen();
-  if (!(await setupConfirmLeave())) return;
   if (!(await campersConfirmLeave())) return; // camper names typed with no signal, waiting in memory
   if (screen === 'rain') {
     if (!(await rainLeave())) return;
@@ -795,7 +775,6 @@ async function setupBack() {
   else if (screen === 'people' && peopleUi.from === 'more') { peopleUi.from = ''; setupCloseBuilder(); } // opened from More: Back goes back there
   else if (screen === 'notice' && noticeUi.from === 'tell') { noticeUi.from = ''; setupCloseBuilder(); } // opened from Tell everyone: its composer comes back
   else {
-    if (typeof discardGameDraft === 'function') discardGameDraft();
     setupGo('hub');
   }
 }
@@ -989,17 +968,14 @@ function hubOpen(key) {
   if (o.drawer === 'members') { if (typeof openMembers === 'function') openMembers(); return; }
   if (o.screen === 'people') peopleUi.from = ''; // from the hub, Back is the hub
   if (o.screen === 'backups') { setupGo('backups'); refreshRestoreIndex(); return; }
-  setupGo(o.screen, { tab: o.tab });
+  setupGo(o.screen);
 }
 
 // The frame's one paint, called from renderAll with whether the builder is up. Idempotent: every write
 // below is a patch of static markup that changes only when its value does.
 function renderSetupUi(open) {
   const root = setupEl('setup');
-  if (!root || !root.querySelector) { // a page without the frame's markup: the v197 builder as it was
-    if (open && typeof renderSettings === 'function') renderSettings();
-    return;
-  }
+  if (!root || !root.querySelector) return; // a page without the frame's markup
   if (typeof gmCleanSheets === 'function') gmCleanSheets(); // a sheet closed by any route leaves its state behind: drop it (a Forward must not reopen it)
   if (!open) {
     if (setupUi.wasOpen) setupUiClosed();
@@ -1036,7 +1012,6 @@ function renderSetupUi(open) {
   else if (screen === 'games') renderGamesScreen();
   else if (screen === 'wizard') renderNywScreen();
   else if (screen === 'notice') renderNoticeScreen();
-  else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
   // Opening the takeover puts focus on its labelled back (redesign §8.9), as every screen change does
@@ -1485,11 +1460,6 @@ function renderSetupDevices() {
 function setupMenuAct(act, opener) {
   if (act === 'changes') { setupSheet('setup-changes', opener); return; }
   if (act === 'devices') { setupSheet('setup-devices', opener); return; }
-  if (act === 'classic') {
-    shellSheetClose('setup-menu');
-    setupGo('classic', { tab: state.ui.settingsTab || 'games' });
-    return;
-  }
   const a = SETUP_OWNER_ACTIONS[act];
   if (!a || !(typeof isOwner === 'function' && isOwner())) return; // never a switch for anyone else
   if (a.why && a.why()) return; // greyed: the reason is on the row
@@ -4216,6 +4186,7 @@ function wireSetupUi() {
   wireCampersScreen();
   wireGamesScreen();
   wireNoticeScreen();
+  wireConfigNotes();
   wireNyw();
   on('#hub-door-watch', 'click', () => { if (typeof nywWatch === 'function') nywWatch(); });
   on('#hub-door-takeover', 'click', () => { if (typeof nywTakeOver === 'function') nywTakeOver(); });
@@ -7922,7 +7893,50 @@ function renderGmStrip(dk) {
   paintStripOverflow(track);
 }
 
+// The strip at the top of the Games screen for what the config engine set aside instead of dropping
+// (cfgNotes in app.js): a record somebody removed while an edit of mine was on its way,
+// and an offline change that lost to a colleague's on the same field. Every action is a
+// normal commit (undoable) or a dismissal; typed text is escaped.
+function configNotesHtml() {
+  return cfgNotes().map((n) => {
+    if (n.kind === 'putback') {
+      const noun = n.section === 'games' ? 'game' : 'day';
+      // `collide`: a NEW one of mine that met a different record under the same id.
+      return `<div class="config-note warn-note">
+        <p>${n.collide
+          ? `Your new ${noun} <strong>${esc(n.name)}</strong> couldn’t be added: somebody added a different one with the same id at the same moment.`
+          : `The ${noun} <strong>${esc(n.name)}</strong> was removed while you were editing it.`}</p>
+        <p class="config-note-actions">
+          <button type="button" class="link-btn" data-note-act="putback" data-note-id="${esc(n.id)}">${n.collide ? 'Add mine as a new one' : 'Put it back with my changes'}</button>
+          <button type="button" class="link-btn danger-link" data-note-act="drop" data-note-id="${esc(n.id)}">Discard</button>
+        </p>
+      </div>`;
+    }
+    if (n.kind === 'clash' && n.mine === null && String(n.path).split('/').length === 2) {
+      // A whole record: the JSON of a game says nothing, and its position isn't news.
+      return `<div class="config-note warn-note">
+        <p>While you were offline you deleted <strong>${esc(n.what)}</strong>, but someone changed it too — so it is still there.</p>
+        <p class="config-note-actions">
+          <button type="button" class="link-btn danger-link" data-note-act="usemine" data-note-id="${esc(n.id)}">Delete it anyway</button>
+          <button type="button" class="link-btn" data-note-act="drop" data-note-id="${esc(n.id)}">Dismiss</button>
+        </p>
+      </div>`;
+    }
+    if (n.kind === 'clash') {
+      return `<div class="config-note warn-note">
+        <p>While you were offline someone changed <strong>${esc(n.what)}</strong> too — theirs is showing (${esc(cfgShow(n.theirs))}), yours was ${esc(cfgShow(n.mine))}.</p>
+        <p class="config-note-actions">
+          <button type="button" class="link-btn" data-note-act="usemine" data-note-id="${esc(n.id)}">Use mine</button>
+          <button type="button" class="link-btn" data-note-act="drop" data-note-id="${esc(n.id)}">Dismiss</button>
+        </p>
+      </div>`;
+    }
+    return '';
+  }).join('');
+}
+
 function renderGamesScreen() {
+  setHtmlIfChanged(setupEl('sg-notes'), configNotesHtml());
   const dk = gmDayKey();
   const m = gmDayModel(dk);
   const word = SETUP_DAY_WORDS[dk];
@@ -10557,6 +10571,19 @@ function nbsNextField(el) {
   const all = root && root.querySelectorAll ? Array.prototype.filter.call(root.querySelectorAll('textarea, input'), (f) => f.offsetParent !== null) : [];
   const nxt = all[all.indexOf(el) + 1];
   if (nxt && typeof nxt.focus === 'function') nxt.focus(); else if (typeof el.blur === 'function') el.blur();
+}
+
+// The config notes' buttons: one delegated listener, because the strip is rewritten through setHtmlIfChanged.
+function wireConfigNotes() {
+  const el = setupEl('sg-notes');
+  if (!el || typeof el.addEventListener !== 'function') return;
+  el.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-note-act]') : null;
+    if (!btn) return;
+    if (btn.dataset.noteAct === 'putback') cfgPutBack(btn.dataset.noteId);
+    else if (btn.dataset.noteAct === 'usemine') cfgUseMine(btn.dataset.noteId);
+    else if (btn.dataset.noteAct === 'drop') cfgDropNote(btn.dataset.noteId);
+  });
 }
 
 function wireNoticeScreen() {

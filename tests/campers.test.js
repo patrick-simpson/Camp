@@ -491,8 +491,8 @@ test('the names are drawn only while the Campers screen is the one showing: any 
     renderSetupUi(true);
     renderCampersScreen();
     assert.ok(cmEl('campers-groups').innerHTML.includes('Maya'), 'back on the Campers screen they are drawn again');
-    // The Classic editor holds nothing: the listener and the names both go.
-    state.ui.builderScreen = 'classic';
+    // A screen that shows no names (the Notice board) holds nothing: the listener and the names both go.
+    state.ui.builderScreen = 'notice';
     renderSetupUi(true);
     assert.equal(db.listenerCount(CM_ROOT + '/campers'), 0);
     assert.equal(cmEl('campers-groups').innerHTML, '');

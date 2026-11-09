@@ -666,7 +666,7 @@ test('the People code keeps nothing on a phone, and every id it names is in inde
 test('More\'s row is People now and keeps the old id the tests and the code look up; the retired drawer markup stays for a build with no setup-ui.js', () => {
   const row = PS_HTML.slice(PS_HTML.indexOf('id="members-row"'), PS_HTML.indexOf('id="members-row"') + 700);
   assert.ok(/gl-title">People /.test(row) && /Counselors, directors and who/.test(row));
-  assert.ok(PS_HTML.includes('id="members-overlay"'));
+  assert.ok(!PS_HTML.includes('id="members-overlay"'), 'the Who can sign in drawer is gone (Step 30)');
   assert.ok(/HUB_OPENS = \{[\s\S]*people: \{ screen: 'people' \}/.test(PS_UI));
 });
 

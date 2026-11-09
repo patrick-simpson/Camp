@@ -49,11 +49,6 @@ function gateTeardown() {
   setMemberRole(null);
 }
 
-// A card that records what the builder wrote into it.
-function builderCard() {
-  return { innerHTML: '', __view: undefined, querySelectorAll: () => [], querySelector: () => null };
-}
-
 function withToasts(fn) {
   const real = showToast;
   const toasts = [];
@@ -74,58 +69,20 @@ test('before the first config snapshot nothing is pushed, even when flushed', ()
   } finally { gateTeardown(); }
 });
 
-test('the games and days tabs are read-only placeholders until the first snapshot', () => {
-  gateSetup();
-  try {
-    assert.equal(configEditable(), false);
-    ['games', 'days'].forEach((key) => {
-      const card = builderCard();
-      renderSettingsSection(key, card);
-      assert.ok(card.innerHTML.includes('Loading the games list'), key + ': ' + card.innerHTML);
-      ['add-day-btn', 'game-row-main', 'reorder-btn', 'day-delete-btn', 'gd-save-btn', 'quick-game'].forEach((hook) =>
-        assert.notOk(card.innerHTML.includes(hook), key + ' has no ' + hook));
-    });
-    // Even with the editor open from before the reload (state.ui persists), the
-    // games tab shows the placeholder, and no draft is built behind it.
-    state.ui.editGameId = state.config.games[0].id;
-    gameDraft = null; gameDraftFor = null;
-    const card = builderCard();
-    renderSettingsSection('games', card);
-    assert.ok(card.innerHTML.includes('Loading the games list'));
-    assert.equal(gameDraft, null, 'no draft is built while loading');
-    // The other tabs are state, not config, and are not gated.
-    const teams = builderCard();
-    renderSettingsSection('teams', teams);
-    assert.notOk(teams.innerHTML.includes('Loading the games list'));
-  } finally { state.ui.editGameId = null; gateTeardown(); }
-});
-
-test('no builder edit is possible before the first snapshot', () => {
+test('no catalog edit is possible before the first snapshot', () => {
   gateSetup();
   try {
     withToasts((toasts) => {
-      // A day with no games, so deleteDay can only be refused by the gate itself
-      // (a day with games refuses on its own and would hide a missing guard).
-      state.config.days.push({ id: 'd-empty', name: 'Empty day', dow: 6, note: '' });
       const before = JSON.stringify({ c: state.config, r: state.results, b: state.brackets });
-      const id = state.config.games[0].id;
-      state.ui.editGameId = id;
-      ensureGameDraft();
-      gameDraft.name = 'Changed';
-      saveGameDraft();
-      duplicateGame();
-      deleteGame(id);
-      deleteDay('d-empty');
-      restoreDefaults();
+      assert.equal(configEditable(), false);
+      assert.equal(configLocked(), true, 'the guard every catalog writer asks says no, and says why');
       tryImport(JSON.stringify({ config: defaultConfig() }));
-      state.ui.editGameId = null;
       startQuickGame();
+      assert.equal(typeof gmOpenQuick === 'function' && gmUi.open, null, 'the ⚡ quick game did not open a sheet');
       assert.equal(JSON.stringify({ c: state.config, r: state.results, b: state.brackets }), before, 'nothing changed');
-      assert.equal(state.ui.editGameId, null, 'the ⚡ quick game did not open an editor');
-      assert.ok(state.config.days.some((d) => d.id === 'd-empty'), 'the empty day survived deleteDay');
-      assert.ok(toasts.length >= 5 && toasts.every((t) => /still loading/.test(t)), toasts.join(' | '));
+      assert.ok(toasts.length >= 3 && toasts.every((t) => /still loading/.test(t)), toasts.join(' | '));
     });
-  } finally { state.ui.editGameId = null; gameDraft = null; gameDraftFor = null; gateTeardown(); }
+  } finally { gateTeardown(); }
 });
 
 test('the first snapshot opens the gate, adopts the server catalog, and refreshes an open builder', () => {
@@ -141,7 +98,7 @@ test('the first snapshot opens the gate, adopts the server catalog, and refreshe
     remote.updatedAt = '2026-12-01T00:00:00.000Z';
     db.serverSet(CONFIG_PATH, remote);
     state.ui.view = 'settings';
-    state.ui.builderScreen = 'classic';
+    state.ui.builderScreen = 'games';
     db.deliverFirstSnapshots();
     assert.equal(configReady, true);
     assert.equal(configEditable(), true);
@@ -248,7 +205,7 @@ test('an identical first snapshot still repaints the builder (applyRemoteConfig 
   try {
     db.serverSet(CONFIG_PATH, state.config);
     state.ui.view = 'settings';
-    state.ui.builderScreen = 'classic';
+    state.ui.builderScreen = 'games';
     db.deliverFirstSnapshots();
     assert.ok(renders >= 1);
   } finally { renderAll = real; appStarted = wasStarted; state.ui.view = 'home'; gateTeardown(); }
@@ -332,9 +289,7 @@ test('offline from the start: the first snapshot never comes, and the builder st
     db.goOffline();
     assert.equal(configReady, false);
     assert.equal(configEditable(), false);
-    const card = builderCard();
-    renderSettingsSection('games', card);
-    assert.ok(card.innerHTML.includes('Loading the games list'));
+    assert.equal(configLocked(), true, 'every catalog writer is shut');
   } finally { gateTeardown(); }
 });
 
@@ -343,9 +298,7 @@ test('local-only mode (no sync configured) is never gated', () => {
   setMemberRole('editor');
   assert.ok(!window.FIREBASE_CONFIG);
   assert.equal(configEditable(), true);
-  const card = builderCard();
-  renderSettingsSection('days', card);
-  assert.notOk(card.innerHTML.includes('Loading the games list'));
+  assert.equal(configLocked(), false);
   assert.equal(pendingConfigWrites, 0);
   setMemberRole(null);
 });

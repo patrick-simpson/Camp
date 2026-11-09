@@ -24,14 +24,16 @@ function suClose() {
   setMemberRole(null);
 }
 
-test('More → Set up the week opens the hub; a named classic tab opens the classic screen on it; garbage means the hub', () => {
+test('More → Set up the week opens the hub; the old tab names land on their screens (any other: the hub); garbage means the hub; a stored classic screen reads as the hub', () => {
   suOpen();
   try {
     assert.equal(setupScreen(), 'hub', 'nothing stored: the hub');
     setupOnOpen(undefined);
     assert.equal(state.ui.builderScreen, 'hub');
     setupOnOpen('games');
-    assert.equal(state.ui.builderScreen, 'classic', '"Add games" on an empty day lands on the classic Games tab');
+    assert.equal(state.ui.builderScreen, 'games', 'a caller that still names the Games tab lands on the Games screen');
+    state.ui.builderScreen = 'classic'; state.ui.settingsTab = 'data';
+    assert.equal(setupScreen(), 'hub', 'a stale stored classic screen (Step 30 removed it) reads as the hub');
     state.ui.builderScreen = 'wizard';
     assert.equal(setupScreen(), 'hub', 'a screen this build does not have');
     state.ui.builderScreen = { x: 1 };
@@ -43,8 +45,7 @@ test('More → Set up the week opens the hub; a named classic tab opens the clas
     assert.equal(setupScreen(), 'hub');
     state.ui.view = 'home';
     openBuilder('teams');
-    assert.equal(setupScreen(), 'classic');
-    assert.equal(state.ui.settingsTab, 'teams');
+    assert.equal(setupScreen(), 'hub', 'an old tab with no screen of its own: the hub');
   } finally { suClose(); }
 });
 
@@ -74,7 +75,7 @@ test('hub rows open their screens: Camp week, Schedule, Games and Teams → thei
   } finally { suClose(); }
 });
 
-test('Back: a screen goes back to the hub, the hub closes the builder, and a dirty game editor asks first', async () => {
+test('Back: a screen goes back to the hub, the hub closes the builder', async () => {
   suOpen();
   const real = askDialog;
   const asked = [];
@@ -88,43 +89,7 @@ test('Back: a screen goes back to the hub, the hub closes the builder, and a dir
     await setupBack();
     assert.equal(state.ui.view, 'home', 'Back from the hub leaves it');
     assert.equal(asked.length, 0, 'nothing was dirty, so nothing was asked');
-    // A game editor with edits.
-    state.ui.view = 'settings';
-    state.ui.builderScreen = 'classic';
-    state.ui.settingsTab = 'games';
-    state.ui.editGameId = state.config.games[0].id;
-    ensureGameDraft();
-    gameDraft.name = 'Half-typed';
-    assert.ok(builderDirty());
-    await setupBack();
-    assert.equal(asked.length, 1);
-    assert.equal(asked[0].title, 'Discard your changes to “Half-typed”?');
-    assert.deepEqual(asked[0].actions.map((a) => a.label), ['Keep editing', 'Discard'], 'a verb on each, never OK / Cancel');
-    assert.equal(asked[0].actions[1].kind, 'danger');
-    assert.equal(state.ui.builderScreen, 'classic', 'Keep editing stays put');
-    assert.ok(builderDirty(), 'and the draft is intact');
-    answer = 'discard';
-    await setupBack();
-    assert.equal(state.ui.builderScreen, 'hub');
-    assert.equal(builderDirty(), false, 'discarded');
-    assert.equal(state.ui.editGameId, null);
-  } finally { askDialog = real; discardGameDraft(); suClose(); }
-});
-
-test('Keep editing from another tab puts the person back on the game editor', async () => {
-  suOpen();
-  const real = askDialog;
-  askDialog = async () => 'keep';
-  try {
-    state.ui.builderScreen = 'classic';
-    state.ui.settingsTab = 'days';
-    state.ui.editGameId = state.config.games[0].id;
-    ensureGameDraft();
-    gameDraft.name = 'Half-typed';
-    await setupBack();
-    assert.equal(state.ui.settingsTab, 'games');
-    assert.equal(state.ui.builderScreen, 'classic');
-  } finally { askDialog = real; discardGameDraft(); suClose(); }
+  } finally { askDialog = real; suClose(); }
 });
 
 test('a counselor cannot reach the hub: openBuilder, setupGo, a stored screen, every setup sheet and a history entry all refuse', () => {
@@ -543,19 +508,6 @@ test('the frame paints the screen switch and the labelled back, and the builder 
   } finally { shell.sheets.length = 0; suClose(); }
 });
 
-test('a page without the frame\'s markup falls back to v197\'s builder (renderSettings)', () => {
-  suOpen();
-  const realGet = document.getElementById;
-  let settings = 0;
-  const realRS = renderSettings;
-  renderSettings = () => { settings++; };
-  document.getElementById = (id) => (id === 'setup' ? null : realGet(id));
-  try {
-    renderSetupUi(true);
-    assert.equal(settings, 1, 'with no #setup the old builder renders as it always did');
-  } finally { document.getElementById = realGet; renderSettings = realRS; suClose(); }
-});
-
 // ── who's here ──
 test('who\'s here: the hub says "is also here"; on a screen they are also editing the line stays short; a hub row carries their initial', async () => {
   suOpen();
@@ -576,8 +528,7 @@ test('who\'s here: the hub says "is also here"; on a screen they are also editin
     assert.equal(face.textContent, 'P', 'the Games row carries Pat\'s initial: that is where Pat is');
     assert.equal(face.hidden, false);
     assert.equal(document.querySelector('[data-hub-row="teams"]').querySelector('[data-hub-here]').hidden, true);
-    state.ui.builderScreen = 'classic';
-    state.ui.settingsTab = 'games';
+    state.ui.builderScreen = 'games';
     setupUi.where = 'games';
     paintSetupHere();
     assert.equal(setupEl('setup-here-text').textContent, 'Pat is also editing the games', 'short: it has to fit one line at 360 px');

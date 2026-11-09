@@ -123,24 +123,18 @@ Files:
 - `setup-ui.js` — SET UP THE WEEK's behaviour (see "Set up the week: behaviour"
   below): the hub and its checklist (`hubStatus`, pure), the frame's head (sync
   line, who's here), Back, the docked undo pill, `askDialog`, the four sheets,
-  Restore points and hold-to-confirm. Loaded right after settings.js (which it calls
-  for the Classic editor screen); every hook into it is typeof-guarded, so deleting
-  its `<script>` leaves the v197 builder (no `data-screen` on `#setup`)
-- `settings.js` — the settings sheet + week-builder UI. The builder's
-  `jelly-tabs` shell is built ONCE and kept; `renderSettings` refreshes only
-  the active card (through `setHtmlIfChanged`), hidden cards are filled one
-  per idle slice after it (`prefillBuilderCard`) and refreshed when their tab
-  is shown, and the page scroll is put back after every refresh — so a remote
-  config echo no longer rebuilds five cards, re-springs the tab pill or throws
-  the page to the top. `builderDirty()` counts only an OPEN game editor with
-  edits (a stranded draft must not freeze sync or the auto-reload), Back and
-  tab switches never silently discard it, and a tab other than Games carries an
-  "Unsaved changes" reminder while one is open. Every commit to `state.config` or
-  the roster goes through `configEdit` / `stateEdit` (an Undo toast; see "Undo
-  core"), looks its record up by id when it runs, and the game editor writes only
-  the fields it changed (`gameDraftOrigin`, `gameFieldOps`). A strip above the
-  tabs (`configNotesHtml`) lists what the config engine set aside — Put it back /
-  Use mine (see "The week config is a field-op engine")
+  Restore points and hold-to-confirm. Loaded right after settings.js; the builder IS this file (Step 30 removed
+  the v197 classic builder), so deleting its `<script>` leaves an app with no Set up the week:
+  `openBuilder` refuses and More's People row does nothing, and everything else runs
+- `settings.js` — what is left of the v197 classic builder (Step 30 removed its Games / Days / Teams /
+  Notice / Data tabs; the Set up the week screens replaced them): the per-game record maps every
+  screen clears or prunes through (`GAME_RECORD_MAPS`, `gameRecordLabels`, `clearGameRecords`,
+  `takenGameIds`, `pruneOrphanedGameData`), `makeId`, `configLocked` (the guard every catalog writer
+  asks), `startQuickGame`, `backupJSON` and `tryImport` (the backup file path Restore points uses).
+  Every commit to `state.config` or the roster goes through `configEdit` / `stateEdit` (an Undo entry;
+  see "Undo core"), looking its record up by id when it runs. The strip of what the config engine
+  set aside (`configNotesHtml`: Put it back / Use mine, see "The week config is a field-op engine")
+  now lives at the top of the Games screen (`#sg-notes`, setup-ui.js)
 - `chat.js` — Camp Chat (see "Camp chat" below): four channels, automatic
   mention alerts, compressed in-database photos. Self-contained layer,
   loaded after settings.js; every hook in app.js is typeof-guarded
@@ -552,8 +546,8 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
   on its way out. A drag lets go from where the finger left it. The game
   takeover does the same to the right (`renderGameView`'s close branch). `schedule` is the older
   `#schedule-overlay`, which keeps its own markup and only reports in. So do the
-  three remaining jelly-drawers — **Alerts, Change history, Who can sign in**
-  (`SHELL_DRAWERS`: ids `alerts` / `history` / `members`): the shell opens and
+  two remaining jelly-drawers — **Alerts, Change history**
+  (`SHELL_DRAWERS`: ids `alerts` / `history`): the shell opens and
   closes the drawer and files the history entry, and the drawer's own ✕ /
   backdrop / Escape report back through its `close` event (`wireMore`), so phone
   Back closes it instead of popping the tab beneath. They wear the shell sheet's
@@ -1720,11 +1714,8 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   `games`, Step 28's `wizard`, Step 30's `notice` (its CSS line exists; the routing doesn't yet); a later
   screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
   inside `#tab-now`, shown only under `body.builder-open` (which hides every
-  other child of main-wrap: `:not(#setup)`). **No `data-screen` = the v197
-  builder exactly** (only `#settings-view`, with its own back); with one, the
-  frame's head shows, the classic builder's `#settings-back-btn` and `h2` step
-  aside and `.setup-classic-title` ("Classic editor") titles that screen.
-  renderSettings still writes `#settings-view`.
+  other child of main-wrap: `:not(#setup)`). A stored screen this build does not have (the removed
+  `classic`) reads as the hub.
 - **The head** (`.setup-head`, sticky, paper, full bleed): `#setup-back` with
   `#setup-back-label` (the tab the builder was opened from — More, or Games when Add games has no games day to put a game on — on the hub, "Set up the week" on a screen),
   `#setup-undo-dock` (the docked undo; its aria-label is the entry's label),
@@ -1860,16 +1851,12 @@ into it from app.js / settings.js is typeof-guarded.
   `SETUP_SHEETS`; `updateSyncAlert` hands its bar to `setupUiSyncAlert`; `JOY_QUIET`
   gains `#setup`, the four sheets and `#ask-dialog` (the gold buttons must not sparkle).
 - **Screens and Back**: `state.ui.builderScreen` (device-local; `hub` default,
-  `backups`, `classic`; anything else reads as the hub) is mirrored into
+  `backups`, `notice`, …; anything else, a stale `classic` included, reads as the hub) is mirrored into
   `#setup[data-screen]`. More → Set up the week opens the hub; the hub's Games row opens
-  the Games screen (Step 21; the Games tab's Add games opens the game sheet over the tab instead, the screen only when no day takes games), Notice opens the classic screen on its
-  tab (`state.ui.settingsTab`; the classic screen's own tab shell still has the old Games, Days, Teams and Data
-  tabs, but the ⋯ menu no longer lists it: Step 30 removes them), Restore points
+  the Games screen (Step 21; the Games tab's Add games opens the game sheet over the tab instead, the screen only when no day takes games), Notice opens its own screen (Step 30; `openBuilder('notice')` and `openBuilder('games')` still land on theirs, any other old tab name on the hub), Restore points
   opens `backups`, People opens its own screen (Step 25; the Members drawer is retired). Back goes screen → hub →
-  closes the builder; a dirty game editor (`builderDirty()`, named by
-  `builderDirtyName()`) asks through `askDialog` first, and "Keep editing" puts the
-  person back on it. The classic screen still renders through `renderSettings()` and
-  keeps its own tab shell. The hub does not push history entries of its own (the
+  closes the builder (from More's People row, or from Tell everyone's Notice, Back goes back there: `peopleUi.from` / `noticeUi.from`;
+  camper names waiting for the signal ask first). The hub does not push history entries of its own (the
   builder is one entry; the four sheets are shell sheets and do).
 - **Counselors reach none of it**: the More row is editor-only, `openBuilder` / `setupGo`
   refuse without `canEdit()`, `renderAll` closes the builder for anyone who isn't an
@@ -2581,10 +2568,6 @@ What's covered, and why each file exists:
   macrotask after its call and COUNTED while on its way: `inflight()` (exported) is how many
   are owed across all fake databases, which is what `waitQuiet()` waits on. Drive the app's real `fbRef` /
   `fbConfigRef` with `db.ref(...)` instead of a one-method stub.
-  `tests/fixtures/legacy-builder-v183.js` is the game editor's
-  `toEditableDraft` + `saveGameDraft` verbatim from v183 (never edited): the
-  config-engine rebuild's field-diff save must produce the same game from the
-  same draft (`settings-crud.test.js` runs both).
 - `wait.test.js` — the waiting helpers every async test uses (see "Waiting in a test"):
   `waitUntil` resolves at once when the condition holds, takes an async one and names what it
   waited for at its deadline; `waitQuiet` waits out a short timer a timer started and a whole
@@ -2647,11 +2630,8 @@ What's covered, and why each file exists:
   delete / insert), a lost delete leaves its neighbours in place, same-id creates never
   overwrite (in the transaction, on a snapshot, in the first merge), last year's notes
   forgotten, and a seeded fuzz of the first-snapshot merge (both camps).
-- `config-builder.test.js` (+ `.senior`) — the builder side of it: the game editor's
-  field-diff save (a colleague's other field kept silently, a field both changed
-  asked, removed-meanwhile offered back, a no-change save sends nothing, a new game is
-  one whole-record op), the notes strip's markup (escaped) and the repaint after an
-  Undo.
+- `config-builder.test.js` (+ `.senior`) — the config notes strip (Put it back / Use mine, escaped) and its
+  place at the top of the Games screen; the game sheet's own field saves are `games-screen.test.js`.
 - `undo.test.js` (+ `.senior`) — **the undo core**: canonical entries, the Undo/Redo
   toast actions, undo only where the value still equals `after` (partial and refused
   reports), adds/deletes/reorders/days/teams, the offline-clash synthetic entry, the
@@ -2682,18 +2662,16 @@ What's covered, and why each file exists:
   the owner-only leaves, the reveal's bounds and the size budget. It cannot see
   what is published, and it proves nothing about behaviour: that is
   `tests/emulator/` (see "R1").
-- `settings-crud.test.js` — the classic builder's create / edit / delete paths
-  (`validateGameDraft`, `saveGameDraft`, `duplicateGame`, `deleteGame`,
-  `deleteDay`, reorder, `pruneOrphanedGameData`). Everything the app keeps under
-  a game id is ONE list in settings.js, `GAME_RECORD_MAPS` (result, bracket, the
+- `settings-crud.test.js` — what is left of settings.js. Everything the app keeps under
+  a game id is ONE list there, `GAME_RECORD_MAPS` (result, bracket, the
   four-team bracket `brackets4`, score entry, live match, clock,
-  drawing setup; `gameRecordLabels` says each kind once): a format change names and
-  clears all of it after one confirm, `deleteGame` and the import / restore
+  drawing setup; `gameRecordLabels` says each kind once): the Games screen's delete and
+  format change name and clear all of it, and the import / restore
   prune drop all of it (the clock used to be left behind — a "running" clock
   with no game to settle it). Add a new per-game synced map there.
-  **Team counts are fixed** (6 junior, 4 senior — owner-confirmed): the classic
-  Teams tab only renames, sets counselors and reorders. It has no Add / Delete
-  team; "Add team" minted `t-<timestamp>` ids, which fail `isTeamId`
+  **Team counts are fixed** (6 junior, 4 senior — owner-confirmed): the Teams
+  screen only renames, sets counselors and colours. There is no Add / Delete
+  team (the old "Add team" minted `t-<timestamp>` ids, which fail `isTeamId`
   (`/^t\d+$/`) and the push-device prefs rule (`^t[0-9]$`) — teams are
   `t0`…`t(N-1)` — so no code path may add or remove a team. A restore can't
   either: `tryImport` refuses (before its confirm, nothing replaced) a backup
@@ -2891,22 +2869,11 @@ does, so an app device always chooses by its own key.
   after approval (a refused `once()` is harmless), recorded in
   `localStorage.campScoreboardCampsHint` (`{junior:'editor',
   senior:'viewer'}`).
-- **The Members drawer (RETIRED by Step 25: More → People, setup-ui.js section 14, replaced it; its code stays for a build with no
-  setup-ui.js and for the helpers People still uses) managed BOTH camps in one list** (`renderMembers`
-  loads both lists via `once()`; `mergeMemberLists` folds them to one row
-  per person). Each row carries a per-camp None/Viewer/Editor switch:
-  None removes that camp's record (confirmed), Viewer/Editor writes the
-  role, and setting a role where no record exists GRANTS access (a fresh
-  `memberRecord`, name carried over, `teamId` deliberately not — teams are
-  per-camp; the team select on the row edits the ACTIVE camp's record
-  only). A switch is disabled for your own row and for camps where you're
-  not an editor (`campRoleOf`); cross-camp writes go through
-  `campMembersPath(campId, key)` — the only cross-camp write path. The add
-  form gains a "This camp only / Both camps" choice when you're an editor
-  in both. Pending rows stay single-camp (their random key means nothing
-  to the other list) and keep the simple Viewer/Editor + Remove controls.
-  If the other camp's list can't be read (not a member there), the drawer
-  falls back to exactly the single-camp UI.
+- **The Members drawer is gone** (Step 25's More → People replaced it; Step 30 removed its code and markup). Membership is per
+  camp and a person on both lists has a role at each: People's Person sheet writes THIS camp's role and, for a director of both,
+  the other camp's through `campMembersPath(campId, key)` — the only cross-camp write path. The helpers it left in app.js
+  (`inviteText`, `SEED_COUNSELORS` / `missingSeedCounselors`, `campRoleOf`, `createMemberIfAbsent`, `planMemberAdd`,
+  `memberConvertRefusal`) are People's and the engines'.
 - **One spelling per counselor** (decision Q21, 2026-10): Alysa → **Alyssa**,
   Sofie → **Sofia**, Lilly → **Lily**, merged once across `camps.js`
   (`ELECTIVES`, `TEAM_COUNSELORS`, `SEED_COUNSELORS`, `DEFAULT_COUNSELORS`, the
@@ -4378,8 +4345,7 @@ P2 §11.14 in the Step 14 / 15 / 19 frame. Markup in index.html (templates in th
 styles in styles.css's last block, "SET UP THE WEEK: Games"; behaviour in setup-ui.js section 16 (engine first, then the screen, then
 the sheet), pinned by `tests/games-screen.test.js` (+ senior). Hooks are prefixed `sg-` (the screen) and `gm-` (the sheet): `gs-` /
 `gw-` / `games-` belong to the Games tab. **The catalog is written ONLY through `configEdit` (field ops, one undo entry per change);
-there is no draft and no Save.** The classic Games tab still exists in the classic screen (the ⋯ menu no longer lists it; Step 30 removes it), and `saveGameDraft` / the
-v183 parity fixture are untouched.
+there is no draft and no Save.** The classic Games tab, `saveGameDraft` and the v183 parity fixture were removed in Step 30.
 
 - **Routing**: the hub's Games row (`HUB_OPENS.games`) and the schedule item sheet's "Add a game here" (`#si-add-game`, a Games item of a
   day that exists: `schedItemAddGame`) lead to the screen; the Games tab's **Add games** (an empty day) is `gmAddGames(dayId)`: the game
@@ -5182,7 +5148,7 @@ More sync invariants (each fixed after it bit us — don't regress these;
     `askDialog` ("Someone deleted “X” while you were editing it": Discard my changes / Put
     it back with my changes; dismissing it changes nothing — the draft is the only copy).
     The format-change confirm and the editor's own "Discard?" are still native.
-    `tests/fixtures/legacy-builder-v183.js` parity holds. A NEW
+    (The v183 parity fixture went with the editor in Step 30.) A NEW
     game's id (builder, ⚡ quick game, Duplicate) is the name's slug + `-` + 4 random
     base36 (`makeId`, `takenGameIds`: `taken` covers every `GAME_RECORD_MAPS` key too);
     day ids are still `d-<ms>`.
@@ -5829,20 +5795,28 @@ when a single message has structure (per-team assignments, a running order)
 and everyone must see it; reach for an announcement when it's one line that
 should expire on its own.
 
-- **Composed in the week builder**, More → Set up the week → **Notice**
-  (`renderNoticeTab` in settings.js), not typed into a single box: heading,
+- **Composed in Set up the week → Notice** (setup-ui.js section 18), not typed into a single box: heading,
   intro, per-team assignments, numbered steps with bullets, closing line —
   plus a live preview that renders the real card.
-- **Its own screen (Step 30; markup and CSS from the design pass, NOT wired yet)**: `#setup[data-screen="notice"]`,
+- **Its own screen (Step 30)**: `#setup[data-screen="notice"]`,
   `#setup-notice.nbs[data-state=empty|draft|posted|hollow]` (the state picks the headline words, the dock's one button and
   whether there is a picture), in index.html's comment at `#setup-notice` (the copy per state and every row template) and
   styles.css's last block. One grouped sheet per part, in a counselor's reading order: Heading and intro, Where each team
   goes (a row per roster team, its mark, an empty place = not on the notice, Move up only), Steps (numbered, Move up /
   Remove step), Closing line, then `#nbs-preview` (`noticeCardHtml(true, notice)` in Tell everyone's phone outline) and the
   dock (`#nbs-post` gold "Put it on every phone" / the dashed "Write the notice first"; `#nbs-down` "Take it down").
-  Ids are `nbs-` (the classic tab's `notice-*` ids still live in `#settings-view`); field classes keep the classic `nb-`
-  names. No field for the stored `eyebrow` (no phone draws it). `docs/build-notes/verify/step30-design.cjs` draws every
-  state into the real page.
+  Ids are `nbs-`; field classes keep the old tab's `nb-` names. No field for the stored `eyebrow` (no phone draws it; it is
+  the heading's hint when the heading is empty). **Behaviour** (setup-ui.js section 18; `tests/notice-screen.test.js`): every edit
+  writes the live `noticeBoard()` object and saves it whole with `saveState()` + `renderAll()` (no second path); a field commits on
+  its native `change` (blur, only if changed since focus), a team's area is addressed by `data-team`, never by position
+  (typing a place puts the team on, clearing it takes it off, Move up swaps with the previous listed team), steps are
+  positional; the painter (`nbsSyncRows`) patches rows in place and never writes a focused field, so an idle `renderAll`
+  writes nothing; Put it on every phone asks (`askDialog`), Take it down is Tell everyone's `tellNoticeDown()` (10 s Undo);
+  Start again / Clear ask and leave a draft. The preview is `noticeCardHtml(true, notice, { team })` as a counselor on the
+  director's own team (if the notice lists it, else the first listed) would see it. Tell everyone's "Write a full notice"
+  is `setupOpenNotice('tell')` (Back reads "Tell everyone" and comes home to the composer). A counselor reaches none of it
+  (`canEdit()` on every handler); a focused field holds the auto-reload (`editorMidEntry`).
+  `docs/build-notes/verify/step30-design.cjs` draws every state into the real page.
 - **Draft or posted, no timer.** `status: 'draft'` means nobody but the editor
   sees it (keep editing indefinitely); `'posted'` puts it on every device until
   someone puts it back to draft. `setNoticeStatus()` is the only way to flip

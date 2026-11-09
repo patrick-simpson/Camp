@@ -136,7 +136,7 @@ test('adds, deletes and reorders all undo, a deleted game back in its place', ()
       undoEntry(undoRecent()[0].id);
       assert.equal(udGame('brand-new'), undefined, 'undoing an add removes it');
       // reorder
-      configEdit('Moved down', () => { moveItem(state.config.games, 0, 1); });
+      configEdit('Moved down', () => { [state.config.games[0], state.config.games[1]] = [state.config.games[1], state.config.games[0]]; });
       assert.equal(state.config.games[0].id, games[1]);
       undoEntry(undoRecent()[0].id);
       assert.deepEqual(state.config.games.slice(0, 3).map((g) => g.id), games.slice(0, 3), 'order back');
@@ -166,7 +166,7 @@ test('team commits (rename, counselors, reorder) record per field and undo throu
       assert.equal(state.teams[0].name, oldName);
       // reorder
       const order = state.teams.map((t) => t.id);
-      stateEdit('Moved a team', () => { moveItem(state.teams, 0, 1); });
+      stateEdit('Moved a team', () => { [state.teams[0], state.teams[1]] = [state.teams[1], state.teams[0]]; });
       assert.equal(state.teams[0].id, order[1]);
       e = undoRecent()[0];
       assert.ok(e.ops.every((op) => op[0] === 'teams' && /\/_o$/.test(op[1])), 'a reorder is two order ops');

@@ -503,29 +503,6 @@ test('the week builder is a takeover too: it files an entry, Back closes it, and
   assert.equal(window.scrollY, 180, 'at the same place');
 });
 
-test('Back out of a builder with an unsaved game editor asks first, and "no" keeps it', async () => {
-  reset();
-  openBuilder();
-  const realDirty = builderDirty, realConfirm = globalThis.confirm, realSettings = renderSettings;
-  let asked = 0;
-  try {
-    globalThis.renderSettings = () => {}; // the real one needs an open editor behind the dirty flag
-    globalThis.builderDirty = () => true;
-    globalThis.confirm = () => { asked += 1; return false; };
-    history.back();
-    await flush();
-    assert.equal(asked, 1);
-    assert.equal(builderOpen(), true, 'still open');
-    assert.deepEqual(keys(), ['now|', 'now|builder:'], 'the entry was put straight back');
-    globalThis.confirm = () => true;
-    history.back();
-    await flush();
-    assert.equal(builderOpen(), false);
-  } finally {
-    globalThis.builderDirty = realDirty; globalThis.confirm = realConfirm; globalThis.renderSettings = realSettings;
-  }
-});
-
 test('the schedule sheet is on the stack: it files an entry and Back closes it', async () => {
   reset();
   const realClose = closeSchedule;

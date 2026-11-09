@@ -239,8 +239,8 @@ function fakeDrawer() {
   return d;
 }
 
-test('Alerts, Change history and Who can sign in are sheets on the history stack: one entry each, Back closes them', () => {
-  const drawers = { 'alerts-overlay': fakeDrawer(), 'history-overlay': fakeDrawer(), 'members-overlay': fakeDrawer() };
+test('Alerts and Change history are sheets on the history stack: one entry each, Back closes them', () => {
+  const drawers = { 'alerts-overlay': fakeDrawer(), 'history-overlay': fakeDrawer() };
   const realGet = document.getElementById;
   document.getElementById = (id) => drawers[id] || realGet.call(document, id);
   const saveSheets = shell.sheets.slice(); const saveCur = shell.cur;
@@ -250,23 +250,22 @@ test('Alerts, Change history and Who can sign in are sheets on the history stack
   try {
     shell.sheets.length = 0;
     setMemberRole('editor');
-    shellSheetOpen('members');
-    assert.equal(drawers['members-overlay'].open, true, 'opened');
-    assert.deepEqual(shell.sheets, ['members'], 'and filed on the stack');
-    assert.deepEqual(shellSnap().ov.map((o) => o.k + ':' + o.id), ['sheet:members']);
+    shellSheetOpen('history');
+    assert.equal(drawers['history-overlay'].open, true, 'opened');
+    assert.deepEqual(shell.sheets, ['history'], 'and filed on the stack');
+    assert.deepEqual(shellSnap().ov.map((o) => o.k + ':' + o.id), ['sheet:history']);
     // The drawer's own ✕ / backdrop / Escape report back through its close event.
     wireMore();
-    drawers['members-overlay'].removeAttribute('open'); // what the component does on ✕
+    drawers['history-overlay'].removeAttribute('open'); // what the component does on ✕
     assert.deepEqual(shell.sheets, [], 'its entry left the stack with it');
-    // Back (a popstate to a snapshot without the sheet) closes it through shellApply.
     shellSheetOpen('history');
     assert.equal(drawers['history-overlay'].open, true);
     shellSheetClose('history');
     assert.equal(drawers['history-overlay'].open, false, 'closing from the stack closes the drawer');
     // A counselor can never open the directors' drawers, however it is asked.
     setMemberRole('viewer');
-    shellSheetOpen('members');
-    assert.equal(drawers['members-overlay'].open, false);
+    shellSheetOpen('history');
+    assert.equal(drawers['history-overlay'].open, false);
     assert.deepEqual(shell.sheets, []);
     shellSheetOpen('alerts'); // everyone's
     assert.equal(drawers['alerts-overlay'].open, true);

@@ -1958,7 +1958,6 @@ async function restoreApply(body, picks, opts) {
     touchData({ celebrate: false });
     saveState();
   }
-  if (typeof refreshBuilderCards === 'function') refreshBuilderCards();
   if (typeof appStarted !== 'undefined' && appStarted) renderAll();
   return { ok: true, applied, kept: preview.kept, pre: saved.rid };
 }

@@ -225,7 +225,7 @@ test('a reorder goes up as the WHOLE roster, in the new order', async () => {
   const db = await boot();
   try {
     const ids = state.teams.map((t) => t.id);
-    moveItem(state.teams, 0, 1); // the Teams tab's ↓ on the first row
+    [state.teams[0], state.teams[1]] = [state.teams[1], state.teams[0]]; // the Teams tab's ↓ on the first row
     touchData();
     clearTimeout(pushTimer); pushTimer = null;
     const s = spy();

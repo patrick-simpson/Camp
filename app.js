@@ -2959,7 +2959,7 @@ function wireSchedule() {
 
 // ── Drawer fallbacks (the Jelly module never loaded) ─────────────
 // The old gear drawer is gone: its rows live in More (the tab), and the drawers
-// that remain — Change history, Who can sign in, Alerts — are opened from More
+// that remain — Change history, Alerts — are opened from More
 // and sit on the shell's history stack (shellSheetOpen), so phone Back closes them.
 function wireSettings() {
   // Degraded-mode escape hatch: if the Jelly module never loaded, the sheets
@@ -2967,7 +2967,7 @@ function wireSettings() {
   // let Escape close them. (When the component IS registered it owns Escape.)
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || customElements.get('jelly-drawer')) return;
-    ['history-overlay', 'team-picker-overlay', 'members-overlay', 'alerts-overlay'].forEach((id) => {
+    ['history-overlay', 'team-picker-overlay', 'alerts-overlay'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && el.hasAttribute('open')) el.removeAttribute('open');
     });
@@ -3129,22 +3129,10 @@ function renderHistoryRows(rows) {
   return html;
 }
 
-// ── Members (More → Who can sign in) ─────────────────────────
-// Editor-only management of campScoreboard/members — the allowlist the
-// security rules check on every read and write. Same drawer pattern as the
-// change history. All writes here are themselves rule-checked server-side
-// (editors only), so a failure toast means the rules said no, not a bug.
-
-function membersOverlayEl() {
-  return document.getElementById('members-overlay');
-}
-
-// After adding someone, the app hands the editor a ready-to-send invite to
-// paste into their own text/email (the app is a static site and can't send
-// mail itself). Set on a successful add, shown at the top of the list until
-// dismissed or the next add. Cleared when the drawer is (re)opened so a stale
-// invite from earlier doesn't linger.
-let lastInvite = null;
+// ── Members: the helpers behind More → People ─────────────────
+// The Who can sign in drawer was retired (Step 25 replaced it with People, setup-ui.js; Step 30 removed its code). What stays are
+// the helpers People and the engines still use: the invite text, the seed roster, the per-camp role reads, the cross-camp path
+// and the create-only-where-absent write. All writes are rule-checked server-side (editors only).
 
 // Build the copy-and-send invite for a newly added member. Tailored to how
 // they'll sign in (email vs phone) and what their role lets them do.
@@ -3161,64 +3149,15 @@ function inviteText(key, role) {
   return `You’re on the Camp scoreboard app! 🏅\n\n${how}\n\n${can}`;
 }
 
+// More's People row (and the hub's): the People screen. Without setup-ui.js there is nothing to open.
 function openMembers() {
   if (!canEdit()) return;
-  // People (setup-ui.js) replaced this drawer: the same list, by team, with the asking switch and the requests. The drawer's own code
-  // below stays only for a build with no setup-ui.js, and for the helpers (planMemberAdd, inviteText …) People still uses.
-  if (typeof setupOpenPeople === 'function' && setupOpenPeople()) return;
-  lastInvite = null;
-  const overlay = membersOverlayEl();
-  if (!overlay) return;
-  renderMembers();
-  shellSheetOpen('members');
-}
-
-function renderMembers() {
-  const body = document.getElementById('members-body');
-  if (!body) return;
-  if (!fbRef) {
-    body.innerHTML = '<p class="muted">Needs a connection: the member list can’t be reached right now.</p>';
-    return;
-  }
-  // Loading bars only on the first fill. Every role/team/remove tap calls
-  // this again; swapping the list for skeleton bars each time made the drawer
-  // flash and jump back to the top, so a refresh keeps the current list up
-  // (dimmed) until the new one lands. The sequence number drops a slower,
-  // older load that resolves after a newer one.
-  const seq = renderMembers.seq = (renderMembers.seq || 0) + 1;
-  if (body.querySelector('.member-list')) body.classList.add('is-refreshing');
-  else {
-    body.innerHTML = '<p class="muted" role="status">Loading the list…</p>';
-  }
-  // Both camps' lists load side by side. The other camp's read succeeds for
-  // anyone who is a member THERE (the list is that camp's staff directory);
-  // a refused read simply means "manage this camp only" — the drawer then
-  // looks exactly like the single-camp version.
-  const other = CAMPS[otherCampId()];
-  Promise.all([
-    firebase.database().ref(dbPath('members')).once('value').then((s) => s.val() || {}),
-    firebase.database().ref(other.dbRoot + '/members').once('value')
-      .then((s) => s.val() || {})
-      .catch(() => null),
-  ])
-    .then(([active, others]) => {
-      if (seq !== renderMembers.seq) return;
-      body.classList.remove('is-refreshing');
-      const lists = {};
-      lists[CAMP.id] = active;
-      lists[other.id] = others; // null ⇒ single-camp view
-      renderMemberList(body, lists);
-    })
-    .catch(() => {
-      if (seq !== renderMembers.seq) return;
-      body.classList.remove('is-refreshing');
-      body.innerHTML = '<p class="muted">Couldn\'t load the member list — check the connection and try again.</p>';
-    });
+  if (typeof setupOpenPeople === 'function') setupOpenPeople();
 }
 
 // This week's printed counselor roster, per team — per-camp data
 // (camps.js); the seed list behind "Add this week's counselors" in the
-// Members drawer. They start as PENDING members (a name and a team, no
+// People screen. They start as PENDING members (a name and a team, no
 // sign-in yet). An empty list (senior, for now) hides the button.
 const SEED_COUNSELORS = CAMP.seedCounselors;
 
@@ -3241,14 +3180,6 @@ function missingSeedCounselors(members) {
   return out;
 }
 
-// The team <select> shown on every member row and in the add form.
-function memberTeamSelectHTML(cls, teamId, label) {
-  return `<jelly-select class="${cls}" placeholder="— no team —" ${isTeamId(teamId) ? `value="${esc(teamId)}"` : ''} label="${esc(label)}" size="small">
-    <jelly-option value="">— no team —</jelly-option>
-    ${state.teams.map((t) => `<jelly-option value="${esc(t.id)}">${esc(t.name)}</jelly-option>`).join('')}
-  </jelly-select>`;
-}
-
 // This account's role at a given camp — the active camp's is live state,
 // the other camp's comes from the one-shot probe (or its cached hint).
 function campRoleOf(campId) {
@@ -3258,215 +3189,10 @@ function campRoleOf(campId) {
   return h === 'editor' || h === 'viewer' ? h : null;
 }
 
-// One person per row, however many camps they're on: fold the per-camp
-// member lists into { key, camps: { junior: rec|null, senior: rec|null } },
-// sorted by display name. Pure — pinned by tests/camps.test.js.
-function mergeMemberLists(lists) {
-  const rows = new Map();
-  Object.keys(CAMPS).forEach((cid) => {
-    Object.keys(lists[cid] || {}).forEach((key) => {
-      if (!rows.has(key)) rows.set(key, { key, camps: { junior: null, senior: null } });
-      rows.get(key).camps[cid] = lists[cid][key];
-    });
-  });
-  const nameOf = (r) => String((r.camps.junior && r.camps.junior.name) ||
-    (r.camps.senior && r.camps.senior.name) || identityFromKey(r.key));
-  return [...rows.values()].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-}
-
 // The path to one camp's record for a key — the ONLY place a cross-camp
 // members write is spelled out.
 function campMembersPath(campId, key) {
   return CAMPS[campId].dbRoot + '/members/' + key;
-}
-
-// The "Add someone" form's typed state. renderMemberList rebuilds the whole
-// drawer body — form included — so anything half-typed there used to vanish
-// whenever a refresh landed (a removal, an invite dismiss, another add). Read
-// it before the rebuild and put it back after. Returns null when there is no
-// form yet (first fill).
-const MEMBER_ADD_FIELDS = [['id', '#member-add-id'], ['name', '#member-add-name'], ['role', '#member-add-role'],
-  ['camps', '#member-add-camps'], ['team', '.member-add-team']];
-
-function readMemberAddDraft(body) {
-  if (!body.querySelector('#member-add-id')) return null;
-  const draft = {};
-  MEMBER_ADD_FIELDS.forEach(([k, sel]) => {
-    const el = body.querySelector(sel);
-    draft[k] = el ? String(el.value || '') : '';
-  });
-  const err = body.querySelector('#member-add-error');
-  draft.error = err && !err.hidden ? err.textContent : '';
-  return draft;
-}
-
-function restoreMemberAddDraft(body, draft) {
-  if (!draft) return;
-  MEMBER_ADD_FIELDS.forEach(([k, sel]) => {
-    const el = body.querySelector(sel);
-    if (el && draft[k]) el.value = draft[k];
-  });
-  const err = body.querySelector('#member-add-error');
-  if (err && draft.error) { err.textContent = draft.error; err.hidden = false; }
-}
-
-// A successful add starts the form over (the rebuild that follows must not
-// carry the person just added back into it).
-function resetMemberAddForm(body) {
-  const set = (sel, v) => { const el = body.querySelector(sel); if (el) el.value = v; };
-  set('#member-add-id', '');
-  set('#member-add-name', '');
-  set('#member-add-role', 'viewer');
-  set('#member-add-camps', 'active');
-  set('.member-add-team', '');
-  const err = body.querySelector('#member-add-error');
-  if (err) err.hidden = true;
-}
-
-function renderMemberList(body, lists) {
-  const draft = readMemberAddDraft(body);
-  const myKey = identityKey(authUser);
-  const crossCamp = !!lists[otherCampId()]; // other list readable ⇒ show both columns
-  const campIds = crossCamp ? ['junior', 'senior'] : [CAMP.id];
-  const merged = mergeMemberLists(crossCamp ? lists : { [CAMP.id]: lists[CAMP.id] });
-
-  const rows = merged.map(({ key, camps }) => {
-    const activeRec = camps[CAMP.id];
-    const anyRec = activeRec || camps[otherCampId()] || {};
-    const self = key === myKey;
-    const owner = key === OWNER_MEMBER_KEY; // the rules refuse every write to this row
-    const pending = isPendingKey(key);
-    const isPhone = String(key)[0] === '+';
-    const displayName = anyRec.name || identityFromKey(key);
-    const idLine = pending
-      ? `<span class="member-email member-pending">⏳ No sign-in yet — <button type="button" class="link-btn member-add-signin">add email or phone</button></span>`
-      : (anyRec.name ? `<span class="member-email">${isPhone ? '📱 ' : ''}${esc(identityFromKey(key))}</span>` : '');
-
-    // Per-camp access. Pending rows live in ONE camp only (their key means
-    // nothing to the other camp until a real sign-in exists), so they keep
-    // the simple single-camp role control.
-    let accessHTML;
-    if (owner) {
-      accessHTML = ''; // no switches: nothing the app writes here would be accepted
-    } else if (pending) {
-      accessHTML = `<jelly-segmented class="member-role" size="small" label="Role" value="${anyRec.role === 'editor' ? 'editor' : 'viewer'}" ${self ? 'disabled' : ''}>
-          <jelly-segment value="viewer">👀 Viewer</jelly-segment>
-          <jelly-segment value="editor">✏️ Editor</jelly-segment>
-        </jelly-segmented>
-        <button type="button" class="link-btn danger-link member-remove">Remove</button>`;
-    } else {
-      accessHTML = campIds.map((cid) => {
-        const rec = camps[cid];
-        const value = rec ? (rec.role === 'editor' ? 'editor' : 'viewer') : 'none';
-        // You can only change a camp you're an editor OF; your own access is
-        // always someone else's job to change.
-        const disabled = self || campRoleOf(cid) !== 'editor';
-        const label = crossCamp
-          ? `<span class="member-access-camp">${cid === 'senior' ? '🚩 Senior' : '🛡️ Junior'}</span>`
-          : '';
-        return `<div class="member-access-row">
-          ${label}
-          <jelly-segmented class="member-access" size="small" label="${esc(CAMPS[cid].label)} access" value="${value}" data-camp-id="${esc(cid)}" ${disabled ? 'disabled' : ''}>
-            <jelly-segment value="none">None</jelly-segment>
-            <jelly-segment value="viewer">Viewer</jelly-segment>
-            <jelly-segment value="editor">Editor</jelly-segment>
-          </jelly-segmented>
-        </div>`;
-      }).join('');
-    }
-
-    // The team lives on the ACTIVE camp's record (each camp has its own
-    // teams) — set the other camp's team from inside that camp.
-    const teamHTML = !owner && !pending && activeRec
-      ? memberTeamSelectHTML('member-team', activeRec.teamId, displayName + ' team')
-      : '';
-
-    return `<div class="member-row${pending ? ' member-row-pending' : ''}" data-member-key="${esc(key)}">
-      <div class="member-id">
-        <span class="member-name">${esc(displayName)}${self ? ' <span class="member-you">(you)</span>' : ''}</span>
-        ${idLine}
-      </div>
-      ${owner ? '' : `<div class="member-controls">
-        ${accessHTML}
-        ${teamHTML}
-      </div>`}
-      ${owner ? '<p class="muted member-self-note member-owner-note">Owner · only the owner can change this row</p>'
-        : self ? '<p class="muted member-self-note">That\'s you — another editor has to change or remove your access.</p>' : ''}
-    </div>`;
-  }).join('');
-
-  const inviteBanner = lastInvite ? `
-    <div class="member-invite">
-      <div class="member-invite-head">
-        <span class="member-invite-title">✅ Added — send them this</span>
-        <button type="button" class="member-invite-dismiss" aria-label="Dismiss">✕</button>
-      </div>
-      <p class="muted member-invite-note">The app can't email people itself, so copy this and send it however you like (text, email, group chat).</p>
-      <textarea class="member-invite-text" id="member-invite-text" rows="6" readonly>${esc(lastInvite)}</textarea>
-      <jelly-button class="secondary-btn" variant="primary" id="member-invite-copy" block>📋 Copy invite</jelly-button>
-    </div>` : '';
-
-  const missing = missingSeedCounselors(lists[CAMP.id]);
-  const seedBlock = missing.length ? `
-    <div class="member-seed">
-      <p class="muted">Not everyone's on the list yet. Add this week's ${missing.length} missing counselor${missing.length === 1 ? '' : 's'} by name and team — they'll sit here as “no sign-in yet” until you add each person's email or phone.</p>
-      <jelly-button id="member-seed-btn" class="secondary-btn" variant="platinum" block>👥 Add this week's counselors</jelly-button>
-    </div>` : '';
-
-  // The add form can grant the other camp too — but only when this editor
-  // can actually write there.
-  const canAddBoth = crossCamp && campRoleOf(otherCampId()) === 'editor';
-  const addCampsHTML = canAddBoth ? `
-        <div class="form-field">
-          <label class="form-label">Camps</label>
-          <jelly-segmented id="member-add-camps" size="small" label="Camps" value="active">
-            <jelly-segment value="active">${CAMP.id === 'senior' ? '🚩' : '🛡️'} ${esc(CAMP.label.replace(' Camp', ''))} only</jelly-segment>
-            <jelly-segment value="both">⛺ Both camps</jelly-segment>
-          </jelly-segmented>
-        </div>` : '';
-
-  const crossSub = crossCamp
-    ? `<p class="muted members-sub">Each person has a switch per camp: <strong>None</strong> (can't open that camp at all), <strong>Viewer</strong>, or <strong>Editor</strong>. Someone on both camps picks between them in the app.</p>`
-    : '';
-
-  body.innerHTML = `
-    <p class="muted members-sub">Everyone here can open the app. Viewers can look; editors can change scores and manage this list. Anyone not on the list gets nothing — the database itself refuses them.</p>
-    ${crossSub}
-    <p class="muted members-sub">Giving someone a <strong>team</strong> does two things: the app opens on that team for them, and — if they're an editor — it keeps them out of scoring the rounds their own team is in. Teams are per-camp; this drawer sets their ${esc(CAMP.label)} team.</p>
-    ${inviteBanner}
-    <div class="member-list">${rows || '<p class="muted">Nobody yet.</p>'}</div>
-    ${seedBlock}
-    <div class="member-add">
-      <h3>Add someone</h3>
-      <div class="form-field">
-        <label class="form-label">Email or phone number</label>
-        <jelly-input class="form-input" id="member-add-id" type="text" placeholder="name@example.com or 555-123-4567"></jelly-input>
-        <p class="muted member-add-hint">Use the email they sign in with — or a phone number if they'll use phone sign-in. Leave it blank to add someone by name now and fill this in later.</p>
-      </div>
-      <div class="form-row">
-        <div class="form-field">
-          <label class="form-label">Name</label>
-          <jelly-input class="form-input" id="member-add-name" type="text" placeholder="First name"></jelly-input>
-        </div>
-        <div class="form-field">
-          <label class="form-label">Role</label>
-          <jelly-segmented id="member-add-role" size="small" label="Role" value="viewer">
-            <jelly-segment value="viewer">👀 Viewer</jelly-segment>
-            <jelly-segment value="editor">✏️ Editor</jelly-segment>
-          </jelly-segmented>
-        </div>
-      </div>
-      ${addCampsHTML}
-      <div class="form-field">
-        <label class="form-label">Team (optional)</label>
-        ${memberTeamSelectHTML('member-add-team', null, 'Team for the new member')}
-      </div>
-      <jelly-button id="member-add-btn" class="secondary-btn" variant="primary">+ Add member</jelly-button>
-      <p class="entry-error" id="member-add-error" hidden></p>
-    </div>`;
-
-  bindMemberList(body, myKey, lists);
-  restoreMemberAddDraft(body, draft);
 }
 
 // Create a member record ONLY where none exists. A plain set() replaces
@@ -3515,254 +3241,6 @@ function memberConvertRefusal(newKey, myKey, lists) {
   if ((lists[CAMP.id] || {})[newKey]) return 'Already on the list — change their access on their row instead.';
   return '';
 }
-
-// Move a pending row (name + team, no sign-in) onto its real email/phone key.
-// RTDB keys are immutable, so this is a create-then-delete: write the new key
-// first, and only remove the placeholder once that lands — a failure part-way
-// leaves the pending row intact rather than losing the person. The create is
-// absent-only (createMemberIfAbsent): pointing a seed-roster row at someone
-// who is already listed would otherwise overwrite their live record.
-function convertPendingMember(key, rec, lists) {
-  const raw = (prompt('Email address or phone number for ' + (rec.name || 'this person') + ':', '') || '').trim();
-  if (!raw) return;
-  let newKey;
-  if (raw.includes('@')) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) { showToast("That doesn't look like an email address."); return; }
-    newKey = emailKey(raw);
-  } else {
-    newKey = phoneKey(raw);
-    if (!newKey) { showToast("That doesn't look like a phone number — include the area code."); return; }
-  }
-  if (!isValidMemberKey(newKey)) { showToast("That address has a character the database can't use as a key."); return; }
-  const refusal = memberConvertRefusal(newKey, identityKey(authUser), lists || {});
-  if (refusal) { showToast(refusal); return; }
-  const role = rec.role === 'editor' ? 'editor' : 'viewer';
-  const next = memberRecord(role, rec.name, rec.teamId);
-  createMemberIfAbsent(firebase.database().ref(dbPath('members/' + newKey)), next)
-    .then((created) => {
-      if (!created) { showToast('Already on the list — change their access on their row instead.'); return null; }
-      return firebase.database().ref(dbPath('members/' + key)).remove().then(() => {
-        lastInvite = inviteText(newKey, role); // they can sign in now — hand over the invite
-        showToast(identityFromKey(newKey) + ' can now sign in', { mine: true });
-        renderMembers();
-      });
-    })
-    .catch(() => showToast('Change refused — are you still an editor?'));
-}
-
-function bindMemberList(body, myKey, lists) {
-  const activeMembers = lists[CAMP.id] || {};
-  body.querySelectorAll('.member-row').forEach((row) => {
-    const key = row.dataset.memberKey;
-    if (key === OWNER_MEMBER_KEY) return; // read-only row: no controls were rendered
-    const self = key === myKey;
-    const camps = {
-      junior: (lists.junior && lists.junior[key]) || null,
-      senior: (lists.senior && lists.senior[key]) || null,
-    };
-    const rec = camps[CAMP.id] || camps[otherCampId()] || {};
-    const who = rec.name || identityFromKey(key);
-
-    // Pending rows keep the simple single-camp role control.
-    const roleSeg = row.querySelector('.member-role');
-    if (roleSeg) {
-      roleSeg.addEventListener('change', (e) => {
-        const role = e.detail && e.detail.value;
-        if (self || !role || (role !== 'viewer' && role !== 'editor')) return;
-        // A role/team change on an EXISTING record doesn't rebuild the drawer:
-        // the control already shows the new value, and re-creating every row's
-        // segmented + select froze the page for ~1 s at 40 members. The record
-        // this closure holds is patched instead, so a later action on the same
-        // row (convert, grant) reads current data. A refusal still re-renders,
-        // to put the control back.
-        firebase.database().ref(dbPath('members/' + key + '/role')).set(role)
-          .then(() => { rec.role = role; showToast(`${who} is now a ${role}`, { mine: true }); })
-          .catch(() => { showToast('Change refused — are you still an editor?'); renderMembers(); });
-      });
-    }
-
-    // The per-camp access switches. None ⇒ remove that camp's record (with a
-    // confirm); Viewer/Editor on an existing record ⇒ role child write;
-    // Viewer/Editor where there is no record ⇒ grant (write a fresh record,
-    // carrying the name over from their other-camp record).
-    row.querySelectorAll('.member-access').forEach((seg) => {
-      seg.addEventListener('change', (e) => {
-        const value = e.detail && e.detail.value;
-        const cid = seg.dataset.campId;
-        if (self || !cid || !CAMPS[cid] || !value) return;
-        const existing = camps[cid];
-        const label = CAMPS[cid].label;
-        const fail = () => { showToast(`Change refused — are you still an editor at ${label}?`); renderMembers(); };
-        if (value === 'none') {
-          if (!existing) return; // nothing to remove
-          if (!confirm(`Remove ${who} from ${label}? They lose access to it the moment this saves.`)) { renderMembers(); return; }
-          firebase.database().ref(campMembersPath(cid, key)).remove()
-            .then(() => { showToast(`${who} removed from ${label}`, { mine: true }); renderMembers(); })
-            .catch(fail);
-        } else if (value === 'viewer' || value === 'editor') {
-          if (existing) {
-            firebase.database().ref(campMembersPath(cid, key) + '/role').set(value)
-              .then(() => { existing.role = value; showToast(`${who} is now a ${value} at ${label}`, { mine: true }); })
-              .catch(fail);
-          } else {
-            // teamId deliberately not carried over — teams differ per camp.
-            firebase.database().ref(campMembersPath(cid, key)).set(memberRecord(value, rec.name))
-              .then(() => { showToast(`${who} can now sign in to ${label}`, { mine: true }); renderMembers(); })
-              .catch(fail);
-          }
-        }
-      });
-    });
-
-    // Team: a child write, so the parent .validate doesn't re-run. Clearing it
-    // is a remove() — RTDB has no "present but empty" for a string.
-    const teamSel = row.querySelector('.member-team');
-    if (teamSel) {
-      teamSel.addEventListener('change', () => {
-        const teamId = teamSel.value || '';
-        const ref = firebase.database().ref(dbPath('members/' + key + '/teamId'));
-        const done = () => {
-          const activeRec = camps[CAMP.id];
-          if (activeRec) { if (isTeamId(teamId)) activeRec.teamId = teamId; else delete activeRec.teamId; }
-          showToast(isTeamId(teamId) ? `${who} is with ${teamName(teamId)}` : `${who} has no team`, { mine: true });
-        };
-        (isTeamId(teamId) ? ref.set(teamId) : ref.remove())
-          .then(done)
-          // A refusal here usually means the database rules predate team
-          // assignments and still reject an unknown `teamId` field.
-          .catch(() => { showToast("Couldn't save the team — the database rules may need updating."); renderMembers(); });
-      });
-    }
-
-    const convert = row.querySelector('.member-add-signin');
-    if (convert) convert.addEventListener('click', () => convertPendingMember(key, camps[CAMP.id] || rec, lists));
-
-    // Pending rows only (real rows retire via the per-camp None switch).
-    const rm = row.querySelector('.member-remove');
-    if (rm) {
-      rm.addEventListener('click', () => {
-        if (self) return;
-        if (!confirm(`Remove ${who}? They lose access the moment this saves.`)) return;
-        firebase.database().ref(dbPath('members/' + key)).remove()
-          .then(() => { showToast('Removed', { mine: true }); renderMembers(); })
-          .catch(() => showToast('Remove refused — are you still an editor?'));
-      });
-    }
-  });
-
-  // One write for the whole seed list — a multi-path update, so it either all
-  // lands or none of it does.
-  const seedBtn = document.getElementById('member-seed-btn');
-  if (seedBtn) {
-    seedBtn.addEventListener('click', () => {
-      const missing = missingSeedCounselors(activeMembers);
-      if (!missing.length) { renderMembers(); return; }
-      const patch = {};
-      missing.forEach((c) => { patch[pendingKey(c.name)] = memberRecord('viewer', c.name, c.teamId); });
-      firebase.database().ref(dbPath('members')).update(patch)
-        .then(() => { showToast(`Added ${missing.length} counselor${missing.length === 1 ? '' : 's'}`, { mine: true }); renderMembers(); })
-        // Same caveat as the team select: pre-team rules reject both the
-        // `teamId` field and the `pending-…` keys these rows use.
-        .catch(() => showToast("Couldn't add them — the database rules may need updating."));
-    });
-  }
-
-  const addBtn = document.getElementById('member-add-btn');
-  if (addBtn) {
-    addBtn.addEventListener('click', () => {
-      const errEl = document.getElementById('member-add-error');
-      const raw = (document.getElementById('member-add-id').value || '').trim();
-      const name = (document.getElementById('member-add-name').value || '').trim();
-      const roleSeg = document.getElementById('member-add-role');
-      const teamSel = document.getElementById('member-add-team') || body.querySelector('.member-add-team');
-      const campsSeg = document.getElementById('member-add-camps');
-      const teamId = (teamSel && teamSel.value) || '';
-      const role = (roleSeg && roleSeg.value) === 'editor' ? 'editor' : 'viewer';
-      const bothCamps = !!(campsSeg && campsSeg.value === 'both');
-      // Auto-detect: anything with an @ is an email; a blank field means
-      // "by name for now" (a pending row); otherwise a phone number.
-      let key, shownId, pending = false;
-      if (!raw) {
-        if (!name) {
-          errEl.textContent = 'Give at least a name — or an email/phone to let them sign in.';
-          errEl.hidden = false;
-          return;
-        }
-        key = pendingKey(name);
-        shownId = name;
-        pending = true;
-      } else if (raw.includes('@')) {
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
-          errEl.textContent = 'That doesn\'t look like an email address.';
-          errEl.hidden = false;
-          return;
-        }
-        key = emailKey(raw);
-        shownId = raw;
-      } else {
-        key = phoneKey(raw);
-        if (!key) {
-          errEl.textContent = 'That doesn\'t look like a phone number. Include the area code (e.g. 555-123-4567).';
-          errEl.hidden = false;
-          return;
-        }
-        shownId = key; // the normalized +E.164 we're about to store — so they can eyeball it
-      }
-      if (!isValidMemberKey(key)) {
-        errEl.textContent = 'That address has a character the database can\'t use as a key. Try another.';
-        errEl.hidden = false;
-        return;
-      }
-      // Only ever CREATE: someone already on the list keeps their role, name
-      // and team (see planMemberAdd / createMemberIfAbsent).
-      const plan = planMemberAdd({ key, pending, bothCamps, myKey, lists });
-      if (plan.error) {
-        errEl.textContent = plan.error;
-        errEl.hidden = false;
-        return;
-      }
-      errEl.hidden = true;
-      // "Both camps" also writes the other camp's record (no team — teams
-      // are per-camp). A pending row stays single-camp: its random key means
-      // nothing to the other camp's list.
-      const writes = plan.camps.map((cid) => createMemberIfAbsent(
-        firebase.database().ref(campMembersPath(cid, key)),
-        cid === CAMP.id ? memberRecord(role, name, teamId) : memberRecord(role, name)));
-      Promise.all(writes)
-        .then((created) => {
-          if (!created.some(Boolean)) {
-            // Another editor added them since this drawer loaded.
-            errEl.textContent = 'Already on the list — change their access on their row below.';
-            errEl.hidden = false;
-            renderMembers();
-            return;
-          }
-          showToast(pending ? shownId + ' added — no sign-in yet' : shownId + ' can now sign in', { mine: true });
-          // A pending row can't sign in yet, so there's nothing to invite them to.
-          lastInvite = pending ? null : inviteText(key, role);
-          resetMemberAddForm(body); // done with it — the rebuild below must not carry it over
-          renderMembers();
-        })
-        .catch(() => {
-          errEl.textContent = 'Add refused — are you still an editor?';
-          errEl.hidden = false;
-        });
-    });
-  }
-
-  // Invite banner: copy the ready-made message, or dismiss it.
-  const inviteCopy = document.getElementById('member-invite-copy');
-  if (inviteCopy) {
-    inviteCopy.addEventListener('click', () => {
-      copyTextToClipboard(lastInvite || '', inviteCopy);
-    });
-  }
-  const inviteDismiss = body.querySelector('.member-invite-dismiss');
-  if (inviteDismiss) {
-    inviteDismiss.addEventListener('click', () => { lastInvite = null; renderMembers(); });
-  }
-}
-
 
 function wireMembers() {
   const row = document.getElementById('members-row');
@@ -5392,9 +4870,6 @@ function undoEntry(id) {
   const redo = undoLastRecorded;
   if (applied) {
     undoDrop(id);
-    // The builder's text fields commit without repainting (a blur-time rebuild eats the
-    // next tap), so an undo has to bring them up to date itself.
-    if (typeof refreshBuilderCards === 'function') refreshBuilderCards();
     if (appStarted) renderAllWhenIdle();
   }
   const action = redo ? { label: 'Redo', run: () => undoEntry(redo.id) } : null;
@@ -13484,9 +12959,6 @@ function fieldFocused() {
 
 function editorMidEntry() {
   if (fieldFocused()) return true;
-  // A half-built game in the week builder is unsaved in-memory work — the
-  // update-poll auto-reload and remote merges must not wipe it.
-  if (typeof builderDirty === 'function' && builderDirty()) return true;
   // a real edit is typed/queued but not yet synced — including a push an undecided
   // tab is holding (tabMayPush): the timer that asked for it has already fired
   // (and a setup edit still inside its 300 ms window, or a setup push an undecided tab holds)
@@ -13842,11 +13314,9 @@ function shellApply(s) {
       return;
     }
     if (why && typeof campersDiscardHeld === 'function') campersDiscardHeld();
-    if (typeof discardGameDraft === 'function') discardGameDraft();
     state.ui.view = 'home';
   } else if (wantBuilder && !builderOpen() && canEdit()) {
     state.ui.view = 'settings';
-    if (!state.ui.settingsTab) state.ui.settingsTab = 'games';
   }
   state.ui.gameId = game && gameById(game.id) ? game.id : null;
   if (game && game.from) state.ui.gameFrom = game.from;
@@ -14004,7 +13474,6 @@ function shellCloseOverlays() {
     const why = builderLeaveWarning();
     if (why && !confirm(why)) return false;
     if (why && typeof campersDiscardHeld === 'function') campersDiscardHeld();
-    if (typeof discardGameDraft === 'function') discardGameDraft();
     state.ui.view = 'home';
   }
   return true;
@@ -14326,7 +13795,7 @@ function shellGameBackLabel(g) {
 // the shell only OPENS and CLOSES it and files the history entry, so phone Back
 // closes it instead of popping the tab beneath. Their own ✕ / backdrop / Escape
 // report back through the `close` event (wireShell).
-const SHELL_DRAWERS = { alerts: 'alerts-overlay', history: 'history-overlay', members: 'members-overlay' };
+const SHELL_DRAWERS = { alerts: 'alerts-overlay', history: 'history-overlay' };
 
 function shellSheetEl(id) {
   if (id === 'schedule') return null;
@@ -14335,7 +13804,8 @@ function shellSheetEl(id) {
 
 // What a deep link or a Forward may open: the director-only drawers need a director.
 function shellSheetAllowed(id) {
-  if (id === 'members' || id === 'history' || id === 'counselors') return canEdit();
+  if (id === 'members') return false; // the retired Who can sign in drawer: a stale history entry opens nothing (People is the builder's screen)
+  if (id === 'history' || id === 'counselors') return canEdit();
   // The game sheet (setup-ui.js section 16) also opens over the Games tab, with the builder closed: Quick game and Add games are
   // there. Directors only, and only with a game a tap named (a Forward onto a stale entry opens nothing).
   if (id === 'game') return canEdit() && typeof gmSheetReady === 'function' && gmSheetReady();
@@ -15080,7 +14550,7 @@ function shellResume() {
   state.ui.gameId = null;
   state.ui.revealOpen = false;
   state.ui.tool = null;
-  if (builderOpen()) { state.ui.view = 'home'; if (typeof discardGameDraft === 'function') discardGameDraft(); }
+  if (builderOpen()) state.ui.view = 'home';
   state.ui.tab = 'now';
   shell.scroll.now = 0;
   shellStamp();
@@ -15261,13 +14731,9 @@ function renderAll() {
   // navigates by mutating state.ui.view, not by calling open/close helpers.
   if (state.ui.view === 'settings' && !canEdit()) {
     state.ui.view = 'home';
-    // Don't strand a half-edited game behind the closed builder.
-    if (typeof discardGameDraft === 'function') discardGameDraft();
   }
   const inBuilder = builderOpen();
   document.body.classList.toggle('builder-open', inBuilder);
-  const builderView = document.getElementById('settings-view');
-  setHiddenIfChanged(builderView, !inBuilder); // renderAll runs on every snapshot: write only a change
   applyCardVisibility(); // before the shell derives what is open — it may close a hidden card's game
   if (!canEdit()) { closeHistoryForViewer(); shellCloseDisallowedSheets(); } // a demoted editor's (or a preview's) open director sheets
   const historyRow = document.getElementById('history-row');
@@ -15291,10 +14757,8 @@ function renderAll() {
   // The director tools' screens (tell.js, award.js): More's two rows and, while one is open, its takeover.
   if (typeof renderTellEveryone === 'function') renderTellEveryone();
   if (typeof renderAwardPoints === 'function') renderAwardPoints();
-  // The builder's frame (setup-ui.js: hub, head, sheets) paints around the classic builder, which it still calls
-  // for the Classic editor screen; without that file the builder is v197's.
+  // The builder is setup-ui.js's alone (hub, head, screens, sheets): without that file there is no builder, and openBuilder refuses.
   if (typeof renderSetupUi === 'function') renderSetupUi(inBuilder);
-  else if (inBuilder && typeof renderSettings === 'function') renderSettings();
   if (typeof renderChatStatus === 'function') renderChatStatus();
   if (rootChanged) shellRestoreScroll(shell.root); // after the new panel has rendered
   setDownBoardCelebrations();
@@ -15316,7 +14780,6 @@ function builderOpen() {
 // What leaving the builder by a route that has no dialog of its own (the phone's Back, a deep link) would throw away, as the question to ask
 // ('' = nothing): an unsaved game editor, or camper names still waiting for the signal (held in memory only, setup-sync.js "CAMPERS").
 function builderLeaveWarning() {
-  if (typeof builderDirty === 'function' && builderDirty()) return 'Discard your unsaved changes?';
   const n = typeof campersHeldCount === 'function' ? campersHeldCount() : 0;
   return n === 1 ? 'This name hasn’t been saved yet — it’ll be lost. Discard it?' : n ? 'These ' + n + ' names haven’t been saved yet — they’ll be lost. Discard them?' : '';
 }
@@ -15325,14 +14788,12 @@ function builderLeaveWarning() {
 // scroll slot and gets it back when the builder closes — shellRestoreScroll.)
 
 function openBuilder(tab, screen) {
-  if (!canEdit()) return;
+  if (!canEdit() || typeof setupOnOpen !== 'function') return; // the builder lives in setup-ui.js
   state.ui.gameId = null; // one takeover at a time
   state.ui.revealOpen = false;
   state.ui.tool = null;
   state.ui.view = 'settings';
-  if (tab) state.ui.settingsTab = tab;
-  if (!state.ui.settingsTab) state.ui.settingsTab = 'games';
-  if (typeof setupOnOpen === 'function') setupOnOpen(tab, screen); // the hub, a named screen (More → People), or a named classic tab
+  setupOnOpen(tab, screen); // the hub, or a named screen (More → People; the old tab names 'notice' and 'games' still land on theirs)
   shellStamp();
   saveState();
   renderAll();
@@ -16329,8 +15790,7 @@ function hasBothCamps() {
 function hasUnsyncedWork() {
   return pendingWritesTotal() > 0 || dataEditPending || pushTimer != null || pushConfigTimer != null ||
     (typeof setupBusy === 'function' && setupBusy()) ||
-    (typeof campersBusy === 'function' && campersBusy()) ||
-    (typeof builderDirty === 'function' && builderDirty());
+    (typeof campersBusy === 'function' && campersBusy());
 }
 
 // Work saved on this phone that the server never confirmed — including

@@ -775,12 +775,9 @@
       <!-- ── SET UP THE WEEK (P2 §11.0–11.2; editor-only; opened from More →
            Director → Set up the week; body.builder-open hides every sibling
            section while it's up). #setup[data-screen] is the ONE switch the CSS
-           reads, like #app[data-tab]: hub | backups | classic (later steps add
-           week, schedule, games, teams, people, campers, meals, verses, cleanup,
-           electives, wizard — each with its own pair of lines in styles.css).
-           ABSENT data-screen = the v197 builder exactly: only #settings-view
-           shows, with its own back button, so this markup is inert until the
-           hub is wired. Nothing here is rebuilt: a renderer patches text,
+           reads, like #app[data-tab]: hub | backups | week | schedule | rain | games |
+           teams | people | campers | meals | verses | cleanup | electives | notice |
+           wizard — each with its own pair of lines in styles.css. Nothing here is rebuilt: a renderer patches text,
            `hidden` and the data-* below (setTextIfChanged / setHiddenIfChanged).
            Owner-only controls carry data-owner-only and start hidden; CSS also
            keeps them gone unless body.setup-owner (set from isOwner(), never
@@ -2055,6 +2052,10 @@
                  pin; hidden when there's none. -->
             <p class="sg-note" id="sg-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><span id="sg-note-text"></span></p>
           </div>
+          <!-- What the config engine set aside instead of dropping (cfgNotes in app.js): a game somebody removed while an edit of
+               mine was on its way (Put it back with my changes / Discard), and an offline change that lost to a colleague's
+               on the same field (Use mine / Dismiss). Written by setup-ui.js configNotesHtml, empty when there is none. -->
+          <div class="settings-notes" id="sg-notes"></div>
           <!-- The schedule is the original (meta/on/schedule off): games are
                grouped by session there, and a move picks a session. -->
           <p class="setup-note" id="sg-orig" hidden><svg class="ico" aria-hidden="true"><use href="#i-calendar"/></svg><span>Games are grouped by part of the day while the schedule is the original one.</span></p>
@@ -2100,9 +2101,8 @@
              The one big structured message (state.notice) as a screen of the frame, in the clipboard language: the kicker,
              the notice's STATE as the headline, then the parts in the order a counselor reads them — the heading and intro
              (the strip at the top of Now), where each team goes, the numbered steps, the closing line (what See all opens) —
-             then the notice exactly as a counselor's phone draws it, and the dock's one action. Ids are nbs- (the classic
-             Notice tab's notice-* ids live in #settings-view until it is removed, and getElementById would find these first);
-             the field classes keep the classic tab's nb- hook names (nb-field[data-nb-field], nb-zone-place, nb-zone-note,
+             then the notice exactly as a counselor's phone draws it, and the dock's one action. Ids are nbs-;
+             the field classes keep the old Notice tab's nb- hook names (nb-field[data-nb-field], nb-zone-place, nb-zone-note,
              nb-zone-move, nb-step-emoji, nb-step-when, nb-step-items, nb-step-move, nb-step-remove). They never collide with
              the card's own classes (.nb, .nb-zone, .nb-step, .nb-when … in the preview): those are exact class names.
              data-state on the section (the renderer's one switch; the dock reads it):
@@ -2119,7 +2119,7 @@
                                                 lede     "It’s switched on, but phones show nothing until something is written here."
                                                 dock     #nbs-down
              (noticePosted() is the "with words" test; the hub's Notice row says the same thing in its own words.)
-             The kicker reads "Notice board · Junior camp". The stored `eyebrow` (the classic tab's "Small label") has no
+             The kicker reads "Notice board · Junior camp". The stored `eyebrow` (the old tab's "Small label") has no
              field: no phone draws it (the strip falls back to it only when the heading is empty), so the heading field
              shows it as its placeholder in that case and the data is left alone.
              Fields commit on blur / Enter and only when changed since focus (setupFocusIn / Out, P2 §6.4.9); rows are
@@ -2223,13 +2223,6 @@
             <button type="button" class="btn btn-block nbs-down" id="nbs-down"><span class="nbs-down-t">Take it down</span><small class="nbs-down-s">Keeps it here as a draft</small></button>
           </div>
         </section>
-
-        <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
-             of the frame until each section's replacement ships (§11.1);
-             renderSettings still writes #settings-view. In the frame its own
-             back button and heading step aside (CSS). -->
-        <h2 class="setup-title setup-classic-title" data-setup-screen="classic">Classic editor</h2>
-        <section id="settings-view" class="settings-view" data-setup-screen="classic" hidden></section>
       </div>
 
     </main>
@@ -5168,14 +5161,6 @@
     <h2 class="settings-title">Change history</h2>
     <p class="muted history-sub">Every point change, newest first — team, amount, and what caused it.</p>
     <div class="settings-body" id="history-body"></div>
-  </jelly-drawer>
-
-  <!-- ── MEMBERS (editor-only: who can sign in, and as what) ───────
-       The database allowlist the security rules check on every request.
-       Rendered by renderMembers() in app.js. -->
-  <jelly-drawer id="members-overlay" side="bottom" label="Who can sign in">
-    <h2 class="settings-title">Who can sign in</h2>
-    <div class="settings-body" id="members-body"></div>
   </jelly-drawer>
 
   <!-- ── ALERTS (More → This phone → Alerts; everyone) ─────────────

@@ -3877,28 +3877,17 @@ html.calm-motion .rm-go[data-refused] {
 body.builder-open .setup {
   display: block;
 }
-/* No data-screen yet: the v197 builder exactly (the frame stays out). */
-.setup:not([data-screen]) > :not(#settings-view) {
-  display: none;
-}
 /* THE switch: one screen at a time. A step that adds a screen adds its line. */
 .setup[data-screen] [data-setup-screen] {
   display: none;
 }
 .setup[data-screen="hub"] [data-setup-screen="hub"],
 .setup[data-screen="backups"] [data-setup-screen="backups"],
-.setup[data-screen="classic"] [data-setup-screen="classic"],
 .setup[data-screen="week"] [data-setup-screen="week"],
 .setup[data-screen="schedule"] [data-setup-screen="schedule"],
 .setup[data-screen="rain"] [data-setup-screen="rain"],
 .setup[data-screen="games"] [data-setup-screen="games"] {
   display: block;
-}
-/* In the frame, the classic builder's own back and heading step aside: the
-   head's labelled back and the frame's title replace them. */
-.setup[data-screen] #settings-back-btn,
-.setup[data-screen] #settings-view > h2 {
-  display: none;
 }
 /* The frame's head clears the notch itself. */
 body.builder-open .main-wrap:has(> .setup[data-screen]) {
@@ -4273,9 +4262,6 @@ html.calm-motion .setup-intro {
   width: 18px;
   height: 18px;
   stroke-width: 2.6;
-}
-.setup-classic-title {
-  margin: var(--s-4) 2px var(--s-3);
 }
 
 /* One front door at a time (§11.2): plain words on paper and, for the owner,
@@ -6981,34 +6967,10 @@ jelly-tabs:not(:defined) > jelly-tab-panel:not([active]) {
   text-align: center;
 }
 
-/* ============================================================
-   GAME LIST
-   ============================================================ */
-.session-heading {
-  margin: 0.5rem 0 0.1rem;
-  font: var(--t-label); /* sentence case, never letter-spaced capitals (§8.2) */
-  color: var(--ink-2);
-}
-
-.session-empty {
-  margin: 0.25rem 0 0;
-}
-
 .day-panel-body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-}
-
-.game-emoji {
-  font-size: 1.5rem;
-}
-
-/* Format pills are jelly-badge hosts now — the pill chrome (fill, radius,
-   typography) is drawn by the component; the class only carries layout. */
-.format-badge {
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .messtival-banner {
@@ -7407,16 +7369,6 @@ jelly-chip.sched-day-chip .today-dot {
 .sched-station-kids {
   color: var(--color-text-muted);
   font-weight: 500;
-}
-
-/* ============================================================
-   GAME VIEW
-   ============================================================ */
-.back-btn {
-  display: inline-block;
-  margin-bottom: 0.75rem;
-  text-decoration: none;
-  font-weight: 600;
 }
 
 /* ── The "go back" pill (chat header, game view) ────────────────────
@@ -9096,211 +9048,6 @@ html.calm-motion .toast-out { animation: none; }
 .whats-new-dismiss:active { background: color-mix(in srgb, var(--color-text-muted) 20%, transparent); }
 
 /* ============================================================
-   NOTICE BUILDER (Set up the week → Notice; the card itself is the
-   .nb markup in NOW, BLOCK BY BLOCK, drawn by now-ui.js)
-   ============================================================ */
-/* Builder → Notice tab: status banner and the live preview frame. */
-.notice-status-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  padding: 0.75rem 0.85rem;
-  margin-bottom: 1rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
-}
-.notice-status-row.is-posted {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-}
-.notice-status-label {
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: var(--color-text);
-}
-.notice-status-hint {
-  margin: 0.2rem 0 0;
-  font-size: 0.8rem;
-  max-width: 34ch;
-}
-/* The preview renders the real card, so it inherits every .notice-* rule
-   above — this just frames it as a sample rather than the live article. */
-.notice-preview {
-  padding: 0.6rem;
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  border: 1px dashed var(--color-border);
-}
-.notice-preview .nb-preview {
-  margin-top: 0.75rem;
-}
-.notice-emoji-field {
-  flex: 0 0 5.5rem;
-}
-
-/* ── Members drawer (Settings → Who can sign in) ────────────── */
-.members-sub {
-  margin: 0 0 0.9rem;
-  font-size: 0.85rem;
-}
-.member-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1.1rem;
-}
-.member-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-}
-.member-id {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.member-name {
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-.member-you {
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-.member-email {
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
-}
-.member-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-}
-.member-self-note {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: 0.78rem;
-}
-.member-add h3 {
-  margin: 0 0 0.6rem;
-}
-.member-add-hint {
-  margin: 0.25rem 0 0;
-  font-size: 0.78rem;
-}
-/* The copy-and-send invite shown right after adding someone. */
-.member-invite {
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-  padding: 0.75rem;
-  margin-bottom: 1rem;
-}
-.member-invite-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-.member-invite-title {
-  font-weight: 800;
-  color: var(--color-text);
-}
-.member-invite-dismiss {
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 1rem;
-  font-weight: 800;
-  line-height: 1;
-  padding: 0.15rem 0.35rem;
-  cursor: pointer;
-  font-family: inherit;
-  border-radius: var(--radius-md);
-}
-.member-invite-note {
-  margin: 0.3rem 0 0.6rem;
-  font-size: 0.8rem;
-}
-.member-invite-text {
-  width: 100%;
-  box-sizing: border-box;
-  font: inherit;
-  font-size: 0.85rem;
-  line-height: 1.4;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.55rem 0.65rem;
-  resize: vertical;
-  margin-bottom: 0.6rem;
-}
-
-/* Members with no sign-in yet — a name + team an editor fills in later. */
-.member-row-pending {
-  border-style: dashed;
-}
-.member-pending {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem;
-}
-.member-pending .link-btn {
-  font-size: 0.78rem;
-}
-/* Each control gets its own full-width line — a phone-width drawer can't
-   fit two side by side. */
-.member-controls .member-team {
-  flex: 1 1 100%;
-  min-width: 0;
-}
-/* Per-camp access line: "🛡️ Junior  [None|Viewer|Editor]" — the control
-   may wrap under its label on narrow phones rather than overflow. */
-.member-access-row {
-  flex-basis: 100%;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.5rem;
-}
-.member-access-camp {
-  flex: 0 0 4.2rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.member-access-row .member-access {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-}
-/* "Add this week's counselors" — the one-tap seed of the printed roster. */
-.member-seed {
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.75rem;
-  margin-bottom: 1.1rem;
-}
-.member-seed .muted {
-  margin: 0 0 0.6rem;
-  font-size: 0.82rem;
-}
-
-/* ============================================================
    PHONE ALERTS DRAWER (Settings → 📲 Phone alerts; push.js)
    One status card, then grouped lists in the iOS-settings idiom: a single
    bordered box per group with hairline dividers between rows. With ~35
@@ -9846,20 +9593,6 @@ jelly-select.form-input {
 jelly-select.form-input {
   height: 48px;
 }
-jelly-icon-button.reorder-btn {
-  flex: none;
-  width: auto;
-  height: auto;
-  background: none;
-  border: none;
-  border-radius: 0;
-  transition: none;
-  --jelly-icon-button-size: 2.75rem;
-}
-jelly-checkbox.checkbox-field {
-  display: inline-flex;
-  margin: 0.6rem 0;
-}
 
 /* Selectable chips (bonus meal/category/team, verse & cleanup day pickers,
    schedule day row, verse/cleanup point rows) are jelly-chip hosts — strip
@@ -10129,8 +9862,7 @@ jelly-button.winner-btn.winner-ready {
    taller in one frame, top edge and all. Open them at the jelly drawer's own
    max-height (82dvh) instead, so loading and loaded are the same size. (The
    SHEET sizes, not the body inside it.) */
-#history-overlay::part(sheet),
-#members-overlay::part(sheet) {
+#history-overlay::part(sheet) {
   min-height: 82vh;
   min-height: 82dvh;
 }
@@ -10141,16 +9873,6 @@ jelly-button.winner-btn.winner-ready {
   flex-direction: column;
   gap: 0.75rem;
   padding: 0.5rem 0;
-}
-
-/* Members list re-reading after an edit: the old list stays put, dimmed and
-   untappable, instead of collapsing to skeleton bars. The dim waits a beat so
-   a fast reload never visibly flickers. */
-#members-body { transition: opacity 0.12s ease; }
-#members-body.is-refreshing {
-  opacity: 0.55;
-  pointer-events: none;
-  transition: opacity 0.2s ease 0.15s;
 }
 
 .cl-day {
@@ -10584,27 +10306,6 @@ html.view-only #builder-row {
   display: none;
 }
 
-.settings-view {
-  margin: 0;
-}
-
-.settings-view h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.25rem;
-}
-
-.settings-card {
-  margin-top: 0;
-}
-
-/* Builder section nav: a jelly-tabs — stretch its bar to full width. */
-jelly-tabs.settings-tabs {
-  display: block;
-}
-jelly-tabs.settings-tabs::part(tabs) {
-  width: 100%;
-}
-
 .builder-row {
   display: flex;
   align-items: center;
@@ -10620,97 +10321,6 @@ jelly-tabs.settings-tabs::part(tabs) {
 .builder-row .form-input {
   flex: 1;
   min-width: 0;
-}
-
-/* Two-line grid row: name on top, badge underneath — a one-line flex row
-   forces mid-word breaks in game names on a 390px screen. */
-.game-row-main {
-  flex: 1;
-  min-width: 0;
-  min-height: 2.75rem;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  column-gap: 0.5rem;
-  row-gap: 0.2rem;
-  align-items: center;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text);
-  text-align: left;
-  font-family: inherit;
-  font-size: 0.95rem;
-  padding: 0.4rem 0.5rem;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.game-row-main:hover,
-.game-row-main:active {
-  background: var(--color-bg);
-}
-
-.game-row-main .game-emoji {
-  grid-column: 1;
-  grid-row: 1 / span 2;
-  align-self: center;
-}
-
-.game-row-name {
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
-  font-weight: 600;
-  overflow-wrap: break-word;
-}
-
-.game-row-main .format-badge {
-  grid-column: 2;
-  grid-row: 2;
-  justify-self: start;
-}
-
-.game-row-main .result-dot {
-  grid-column: 3;
-  grid-row: 1 / span 2;
-  align-self: center;
-}
-
-/* Game rows carry two reorder buttons plus a badge; slim the buttons a
-   little so the name keeps readable width on a 390px screen. */
-.game-row .reorder-btn {
-  width: 2.25rem;
-  min-width: 2.25rem;
-  height: 2.75rem;
-}
-
-.result-dot {
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: var(--color-primary);
-}
-
-.reorder-btn {
-  flex: none;
-  width: 2.75rem;
-  height: 2.75rem;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 1rem;
-  font-family: inherit;
-  cursor: pointer;
-  transition: transform 0.05s ease;
-}
-
-.reorder-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.reorder-btn:active:not(:disabled) {
-  transform: scale(0.96);
 }
 
 /* ── Forms ── */
@@ -10767,94 +10377,11 @@ select.form-input {
   margin: 0;
 }
 
-/* Builder rows: labels share one grid row and inputs the next (subgrid), so
-   when one label wraps to two lines on a phone the paired inputs still start
-   level — a wrapped "Outs per side" put its input 16px below "Periods".
-   (Bottom-aligning the fields instead knocks the LABELS out of line wherever
-   the two controls differ in height: a jelly-select beside a jelly-input.)
-   Every builder .form-field in a row is exactly label + control. Without
-   subgrid support this falls back to the old top-aligned stacking. */
-#settings-view .form-row {
-  grid-template-rows: auto auto;
-  row-gap: 0;
-}
-
-#settings-view .form-row .form-field {
-  display: grid;
-  grid-row: span 2;
-  grid-template-rows: subgrid;
-}
-
-#settings-view .form-row .form-label {
-  align-self: end; /* a one-line label sits right above its input */
-}
-
 /* ── Segmented control (buttons reuse .team-chip) ── */
 .segmented {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 0.5rem;
-}
-
-/* ── Format picker cards ── */
-.format-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
-  margin: 0.75rem 0;
-}
-
-.format-card {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.75rem;
-  font-family: inherit;
-  color: var(--color-text);
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.format-card.selected {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-  color: var(--color-primary);
-}
-
-.format-card .format-badge {
-  margin-bottom: 0.4rem;
-}
-
-.format-card-desc {
-  font-size: 0.8rem;
-  line-height: 1.35;
-  color: var(--color-text-muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.format-card.selected .format-card-desc {
-  color: inherit;
-}
-
-@media (max-width: 420px) {
-  .format-cards {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  }
-}
-
-/* ── Rules section editor ── */
-.rules-section-editor {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.75rem;
-  margin: 0.75rem 0;
 }
 
 /* ── Notes ── */
@@ -10867,17 +10394,6 @@ select.form-input {
   padding: 0.5rem 0.7rem;
 }
 
-/* The reminder under the builder's tab bar that a game draft is still open on
-   the Games tab (settings.js, syncUnsavedNotes). Empty ⇒ zero height. */
-.settings-unsaved .warn-note {
-  margin: 0.6rem 0 0.75rem;
-}
-.settings-unsaved .link-btn {
-  color: inherit;
-  font: inherit;
-  font-weight: 800;
-}
-
 /* What the config engine set aside (settings.js, configNotesHtml): a record removed
    while an edit of mine was on its way, an offline change that lost a clash. Its
    look is the clash's (SET UP THE WEEK above, next to .clash); only the layout of
@@ -10888,133 +10404,6 @@ select.form-input {
 .settings-notes .config-note-actions {
   display: flex;
   flex-wrap: wrap;
-}
-
-/* The Games / Days tabs before the first config snapshot (settings.js,
-   renderConfigLoading) — same inline dots-spinner treatment as .sync-status. */
-.config-loading {
-  margin: 0.5rem 0;
-  font-weight: 700;
-}
-.config-loading jelly-spinner {
-  vertical-align: middle;
-  margin-right: 0.25rem;
-}
-
-/* ── Danger zone ── */
-.danger-zone {
-  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, var(--color-border));
-  border-radius: var(--radius-md);
-  padding: 0.75rem 1rem;
-  margin-top: 1rem;
-}
-
-.danger-zone h3 {
-  margin: 0 0 0.5rem;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-danger-text);
-}
-
-/* ── Editor footer ── */
-.editor-actions {
-  margin-top: 1rem;
-}
-
-.editor-actions .primary-btn {
-  margin-bottom: 0.6rem;
-}
-
-.editor-actions .link-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--target);
-  min-height: var(--target);
-  margin: 0 auto;
-  padding: 0 14px;
-  text-align: center;
-}
-
-.editor-footer {
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--color-border);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.editor-footer .primary-btn,
-.editor-footer .secondary-btn,
-.editor-footer .danger-link {
-  width: 100%;
-}
-
-.checkbox-field {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.6rem 0;
-  font-size: 0.95rem;
-  min-height: 2rem;
-}
-
-.checkbox-field input[type="checkbox"] {
-  width: 1.25rem;
-  height: 1.25rem;
-  accent-color: var(--color-primary);
-}
-
-.field-help {
-  font-size: 0.8rem;
-  margin: 0.35rem 0 0;
-}
-
-.data-block {
-  padding: 0.5rem 0 1rem;
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: 1rem;
-}
-
-.data-block .secondary-btn {
-  width: 100%;
-  margin-top: 0.5rem;
-}
-
-.day-index-label {
-  font-weight: 700;
-  flex: 1;
-}
-
-.format-card-label {
-  font-weight: 700;
-  font-size: 0.9rem;
-  margin-bottom: 0.25rem;
-}
-
-/* Team builder rows: a control line (arrows, label, ✕) above two stacked,
-   full-width inputs (name + counselor) — beside the controls they were only
-   ~160px wide on a phone, clipping the names being edited. */
-.team-builder-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-top: 0.5rem;
-}
-
-/* Inside this vertical stack a 0% flex-basis (like .builder-row's `flex: 1`
-   on .form-input) collapses a Jelly host to 0px tall — its shadow content is
-   absolutely positioned, so there's no intrinsic min-height to save it. Pin
-   an explicit height. */
-.team-builder-fields .form-input {
-  flex: none;
-  height: 48px;
-}
-
-.team-builder-fields .team-counselor-input {
-  font-size: 14px;
 }
 
 /* Interactive cleanup rota: one block per meal, points inline. */
@@ -19409,7 +18798,6 @@ jelly-chip.sched-day-chip[data-today][selected] {
 .pa-urgent-tag,
 .cl-day,
 .form-label,
-.danger-zone h3,
 .board-period {
   text-transform: none;
   letter-spacing: 0;
@@ -19422,8 +18810,7 @@ jelly-chip.sched-day-chip[data-today][selected] {
 .pic-prompt-label,
 .pa-week-field .pa-week-label,
 .cl-day,
-.form-label,
-.danger-zone h3 {
+.form-label {
   font-size: 0.8125rem; /* the label token's size: the old 11–12px capitals read as 10px words */
 }
 

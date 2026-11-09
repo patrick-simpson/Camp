@@ -698,9 +698,9 @@ test('another camp\'s backup is refused with its name; "copy from the other camp
     const resultsBefore = JSON.stringify(state.results);
     // Refused
     const errs = [];
-    document.getElementById('restore-error'); // (showRestoreError writes there; read it through the draft)
-    tryImport(JSON.stringify(foreign));
-    assert.ok(/not /.test(restoreDraft.error) && restoreDraft.error.includes(CAMPS[other].label), restoreDraft.error);
+    let said = '';
+    tryImport(JSON.stringify(foreign), { say: (m) => { said = m; } });
+    assert.ok(/not /.test(said) && said.includes(CAMPS[other].label), said);
     assert.equal(state.config.games.length, gamesBefore, 'nothing changed');
     // Copied
     tryImport(JSON.stringify(foreign), { copyFromOtherCamp: true });
@@ -721,16 +721,18 @@ test('a hand-edited backup cannot skip the camp check or smuggle a junk catalog:
     const mine = JSON.parse(backupJSON());
     // A v3 file with its camp deleted is unreadable, never "probably mine".
     const noCamp = rsClone(mine); delete noCamp.camp;
-    tryImport(JSON.stringify(noCamp));
-    assert.ok(/doesn't say which camp/.test(restoreDraft.error), restoreDraft.error);
+    let said = '';
+    const say = (m) => { said = m; };
+    tryImport(JSON.stringify(noCamp), { say });
+    assert.ok(/doesn't say which camp/.test(said), said);
     assert.equal(state.config.games.length, gamesBefore);
     assert.equal(restoreParseBody(JSON.stringify(noCamp)).ok === false, true);
     // The other camp's file with the app flag edited away is still the other camp's.
     const flat = rsClone(mine); flat.camp = other; delete flat.app; Object.assign(flat, flat.state); delete flat.state;
     flat.teams = state.teams; // a roster that fits must not be the only backstop
     flat.config = Object.assign({}, flat.config, { games: flat.config.games.slice(0, 1) });
-    tryImport(JSON.stringify(flat));
-    assert.ok(restoreDraft.error.includes(CAMPS[other].label), restoreDraft.error);
+    tryImport(JSON.stringify(flat), { say });
+    assert.ok(said.includes(CAMPS[other].label), said);
     assert.equal(state.config.games.length, gamesBefore, 'nothing changed');
     // A catalog that is not arrays is refused by the restore-point reader.
     const junk = rsClone(mine); junk.config.games = 'x'; junk.config.days = 5;

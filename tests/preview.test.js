@@ -884,9 +884,7 @@ test('nothing a tap can do in a preview reaches the database or changes the week
     assert.equal(takeDownBanner('a1'), false);
     setNoticeStatus('posted');
     toggleCardHidden('verse');
-    const gamesBefore = state.config.games.length;
-    deleteGame(state.config.games[state.config.games.length - 1].id); // the builder's mutators ask configLocked(), which says no to a preview
-    assert.equal(state.config.games.length, gamesBefore, 'the builder\'s delete is refused');
+    assert.equal(configLocked(), true, 'the catalog\'s writers ask configLocked(), which says no to a preview');
     assert.equal(putGamesOnSchedule && putGamesOnSchedule().ok, false);
     assert.equal(typeof commitSetup === 'function' && commitSetup((t) => t, { label: 'x' }).ok, false, 'a setup commit is refused');
     assert.equal((await pushSendAlert({ text: 'hi', audience: 'all' })).ok, false, 'a director alert is refused');
