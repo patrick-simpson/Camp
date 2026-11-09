@@ -130,7 +130,8 @@ Files:
   Notice / Data tabs; the Set up the week screens replaced them): the per-game record maps every
   screen clears or prunes through (`GAME_RECORD_MAPS`, `gameRecordLabels`, `clearGameRecords`,
   `takenGameIds`, `pruneOrphanedGameData`), `makeId`, `configLocked` (the guard every catalog writer
-  asks), `startQuickGame`, `backupJSON` and `tryImport` (the backup file path Restore points uses).
+  asks), `startQuickGame`, `backupJSON` and `tryImport` (the path a backup, picked as a file or pasted as text, takes
+  through Restore points; its refusals are said in plain words through `opts.say`).
   Every commit to `state.config` or the roster goes through `configEdit` / `stateEdit` (an Undo entry;
   see "Undo core"), looking its record up by id when it runs. The strip of what the config engine
   set aside (`configNotesHtml`: Put it back / Use mine, see "The week config is a field-op engine")
@@ -1923,7 +1924,7 @@ into it from app.js / settings.js is typeof-guarded.
   place — see Hold-to-confirm above). `restoreApply` does the work and its refusal
   reasons are worded in `RP_WHY`. A point's own **Keep this point** (write-once, says "Kept points
   can't be deleted from the app") and **Delete this point** (only where `restoreDeletable`) sit in
-  `#rp-manage`. A backup FILE picked on the screen: a v3 file of this camp opens the same sheet
+  `#rp-manage`. The **Backups** group also has **Copy the backup** (`rpCopyBackup`: `backupJSON()` on the clipboard, "Copied" in its own title, never a camper name) and **Restore from pasted text** (`#sheet-backup-paste`, `backupPasteUi`: memory only, holds the deploy reload while it has text, asks "Throw away the pasted backup?" before closing; its refusals are one sentence in `#bp-why`). A backup picked as a FILE or pasted runs ONE function, `rpRestoreText`: a v3 file of this camp opens the same sheet
   (you pick what to put back); another camp's asks once to copy its schedule, games and teams
   (`tryImport(text, { copyFromOtherCamp, confirmed, say })`); an older flat file asks once, then
   `tryImport`. `tryImport`'s new `opts.say` takes its complaints (default: a plain toast) and
@@ -4316,9 +4317,19 @@ there is no draft and no Save.** The classic editor (its Games tab, `saveGameDra
   read) and nothing is "not on the schedule". `loose` = `unscheduledGames`. The day's `warn` (the gold "!"): no games yet, a game on no item,
   a game whose Where still says TBA. Counts are joined to their word with a non-breaking space. A weekday with no competition day says "Not a
   games day" and offers **Make Saturday a games day** (`gmMakeDay`: one `config.days` record at its place in the week, an empty games day is
-  harmless); the day's ⋯ (`#sheet-sg-day`) holds its note (`gmSetDayNote`, saved when focus leaves, ≤ 200) and **Make Wednesday a day
-  with no games** (`gmTakeDayOff`: a day with games asks where they go — every other games day is a choice, never the day itself or a non-games day — and
-  they move there, off any item, onto its natural one as a new game is; they never vanish).
+  harmless); the day's ⋯ (`#sheet-sg-day`, keyed by the DAY'S ID, `gmUi.dayId`: `gmSheetDay()`; the weekday can change under it) holds, each saving
+  on its own as one `configEdit` with an Undo entry, looked up by id when it commits: its **Name** (`gmSetDayName`, ≤ 30, saved when focus leaves and
+  only if changed while focused; emptied it goes back to the weekday's word; the Games tab's chip keeps the weekday's three letters so the picker
+  stays Sun to Sat, its spoken label has both, and the screen's lede says "Shown as “Messtival”"), its **Day of the week** (`gmMoveDay`: the day strip as
+  a radiogroup; a weekday another games day has is dashed and a tap says why — `gmMoveDay` refuses `taken` again when it commits — and never two days
+  on one weekday; the record takes its place in the week, a name that was only the old weekday's word follows it, the games keep their `dayId` so
+  results and brackets stay, and with the schedule edited here a game whose item is not on the new weekday loses that link and is put on the new
+  weekday's natural item as a new game is (`setupAttachNewGame`), else it lands under Not on the schedule; with the original week links are left alone.
+  A day with games asks first and names how many go under Not on the schedule, from a dry run, `gmMovePlan`), its note (`gmSetDayNote`, ≤ 200) and
+  **Delete this games day** (`gmTakeDayOff`, the one delete path, by weekday or by id: a day with games asks where they go — every other games day is a
+  choice, never the day itself — and they move there, off any item, onto its natural one; they never vanish; a day with none asks once). **Reordering
+  days is not built, on purpose**: every reader lists days in week order (a move re-sorts), so a manual order would change nothing anyone sees.
+  A day an older build made with no weekday gets a row under **Days with no weekday** (`#sg-sec-nodow`, `gmOpenDayById`) that opens the same sheet.
 - **The sheet** `gmUi.open = { mode: new | edit | quick, pane: form | when, gid (null until created), dk, bid, form, … }` (the field list is
   in the comment above `GM_EMOJI`). **Progressive**: `data-stage` on the overlay (`name` → `format` → `game`). "How is it scored?" is drawn from
   the first paint (a way tapped before the name is kept and the name field takes the focus), so typing the name moves nothing; once the game

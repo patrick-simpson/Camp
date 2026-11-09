@@ -5,8 +5,8 @@
 // renderAll(), canEdit(), allGames(), configEdit(), configEditable(), migrateState(), normalizeSyncedState(), teamsFromBackup(),
 // restoreAuto(), restoreImportExtras(), putGamesOnSchedule().
 
-// Guard for every writer of state.config (the editor's Save / Duplicate /
-// Delete, Delete day, Restore defaults, Import, the ⚡ quick game). The loading
+// Guard for every writer of state.config (the Games screen's game and day edits,
+// Import, the ⚡ quick game). The loading
 // card above hides their controls, so this only catches a stale handler.
 function configLocked() {
   // The builder is a director's screen and its mutators ask here first: nothing in it writes for a phone that may not
