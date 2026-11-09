@@ -1290,10 +1290,11 @@
                glance (the Camp week screen's tick sheet: the same .wk-* rows and
                their large-text layout). TWO groups, each with its own header,
                because the second column means two different things: for the
-               week this camp built (schedule, games, team names) it is "App's
-               own" — going back to the copy the app came with, which REPLACES
-               a year of edits — never "Clear" (read under "Schedule" as "empty
-               the schedule"); for the rest it is "Clear". Per row the renderer
+               week this camp built (schedule, games) it is "App's own" — going
+               back to the copy the app came with, which REPLACES a year of
+               edits — never "Clear" (read under "Schedule" as "empty the
+               schedule"); for the rest, team names first, it is "Clear" (a
+               cleared team is plain "Team 1", never a built-in name). Per row the renderer
                sets data-choice="keep|clear" and aria-checked on the two ticks;
                the note that matches the choice shows (CSS, from data-choice), so
                the row always says what will happen. The defaults are the spec's
@@ -1320,16 +1321,20 @@
                   <span class="wk-day-name">Games<span class="wk-day-tag" data-when="keep">On the same schedule items. Their results are always cleared.</span><span class="wk-day-tag" data-when="clear">Your edited games are replaced by the ones the app came with.</span></span>
                   <div class="wk-ticks" role="radiogroup" aria-label="Games"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">The app’s games</span></button></div>
                 </div>
-                <div class="wk-day nyw-item" data-nyw-item="teams" data-choice="keep">
-                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Your team names, emoji and colours are replaced by the app’s own.</span></span>
-                  <div class="wk-ticks" role="radiogroup" aria-label="Team names, emoji and colours"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">The app’s names</span></button></div>
-                </div>
               </div>
             </div>
             <div class="more-sec">
               <div class="gl-head"><h3 class="gl-label" id="nyw-carry-label">Keep or clear</h3></div>
               <div class="gl wk-days nyw-carry" id="nyw-carry-rest" aria-labelledby="nyw-carry-label">
                 <div class="wk-day wk-head" aria-hidden="true"><span></span><span class="wk-col">Keep</span><span class="wk-col">Clear</span></div>
+                <!-- Team names (owner's answer of Nov 9, 2026): Clear makes them
+                     plain numbered names, Team 1 to Team N, never the camp's
+                     built-in names, so the row sits here under Keep | Clear and
+                     not with the schedule and games ("App's own"). -->
+                <div class="wk-day nyw-item" data-nyw-item="teams" data-choice="keep">
+                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Each team becomes Team&nbsp;1, Team&nbsp;2 and so on. The short names, emoji and colours you picked go too.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Team names, emoji and colours"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
+                </div>
                 <div class="wk-day nyw-item" data-nyw-item="counselors" data-choice="clear">
                   <span class="wk-day-name">Counselor names typed on teams<span class="wk-day-tag" data-when="keep">Last year’s names show on the teams until people are put on them.</span><span class="wk-day-tag" data-when="clear">Each team shows its counselors once you put people on teams.</span></span>
                   <div class="wk-ticks" role="radiogroup" aria-label="Counselor names typed on teams"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
@@ -5386,6 +5391,22 @@
   <jelly-dialog id="ask-dialog" class="ask" label="">
     <h2 class="ask-title" id="ask-title"></h2>
     <div class="ask-body" id="ask-body"></div>
+    <!-- The tick a question may carry (askDialog's `tick` option; today only
+         the schedule item sheet's Remove…): the item sheet's own "Tell people
+         who follow Supper" row (.sheet-tell, the restore sheet's ink tick),
+         between the question and its buttons, behind a hairline, so the choice
+         is made before the button that acts on it. UNTICKED every time it opens.
+         #ask-tell-label is the label, #ask-tell-note the one line of caveat
+         under it; with no signal #ask-tell-off takes the box's place (and the
+         note hides). Hidden unless a question asks for it; the native-confirm
+         fallback has no tick, which is the unticked answer. -->
+    <div class="ask-tell" id="ask-tell" hidden>
+      <div class="sheet-tell">
+        <jelly-checkbox class="rp-check" id="ask-tell-check"><span class="gl-title" id="ask-tell-label">Tell people who follow this item</span></jelly-checkbox>
+        <p class="sheet-tell-off" id="ask-tell-off" hidden>No signal: the alert can’t go out. Tell people in person.</p>
+      </div>
+      <p class="ask-tell-note" id="ask-tell-note">Only they get an alert, so tell everyone else in person.</p>
+    </div>
     <div class="ask-actions" id="ask-actions"></div>
   </jelly-dialog>
 

@@ -2154,6 +2154,22 @@ jelly-dialog.ask {
 .ask-sub-s {
   font: 600 0.8125rem/1.3 var(--font-ui);
 }
+/* A question's tick (#ask-tell: the schedule item sheet's Remove…, "Tell people who follow Supper"): the item sheet's
+   own .sheet-tell row behind a hairline, between the question and its buttons, with one line of caveat under it. */
+.ask-tell {
+  margin: var(--s-2) 0 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.ask-tell[hidden],
+.ask-tell-note[hidden] {
+  display: none;
+}
+.ask-tell-note {
+  margin: 0 0 var(--s-1);
+  font: 600 0.875rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
 /* Fill evenly's preview: a day label, then a hairline row per meal (time ·
    meal, the teams under it). */
 .ask-table {
