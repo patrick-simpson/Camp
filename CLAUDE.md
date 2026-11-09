@@ -1161,6 +1161,8 @@ sections). Rules for whoever edits them:
 
 ## The standings reveal: the engine (reveal.js)
 
+(R2, big-screen branding: the published group of a shown place carries its teams' look behind `REVEAL_BRANDING_LIVE`; see "R2" under the R1 notes.)
+
 Redesign §4.5, §4.9, §4.10. `reveal.js` is an optional layer (a classic script
 right after app.js, before setup-sync.js; every hook in app.js typeof-guarded) and
 paints NOTHING except emptying the 8 AM grid roots: reveal-ui.js defines
@@ -1390,7 +1392,8 @@ writes nothing (`reveal-ui.test.js` and `reveal-remote.test.js` count the writes
   The place on the big screen / the masked next row is scrolled into view on every new command AND on the first
   paint after the remote opens. The mini TV's board is the big screen's: one sheet, a "Still to come" row per TEAM
   not shown yet (never per place), the place just shown gold-edged, the crown on 1st only at the final table of a
-  finale.
+  finale. **Its marks are a picture of the big screen** (`revealUiTvMarkHtml`, reveal-core's `revealMarkSpec`): a shown place's
+  own look from the node's entry, the printed look on Waiting and the intro, never the phone's own look.
 - **The crown waits for the crowning** (`revealUiCrowned`): `revealView` names the champions the moment a
   finale's 1st place is shown, but the mirror's and the ladder's crown (and the crown's confetti) wait for phase
   `champion` (then `table` / `ended`), so no phone celebrates ahead of the room while the remote still says
@@ -3588,6 +3591,13 @@ rules**; the client code only shapes the UI.
     are the phones' mark order for the big screen. The frozen rules that were live before R2 are
     `tests/emulator/r1.rules.json` (`R1_FROZEN` in lib.mjs, hash prefix `ccf2e5d3`, never edited): `reveal.mjs`,
     `reveal-client.mjs` and `compat-new-client-old-rules.mjs` run the branded command under both files, mutation-checked.
+    **The switch flips only after the owner has published R2 and the read-back matched** (the runbook's step list); until then
+    the shipped client sends plain places and nothing a viewer or a TV sees changes. **Proved in real browsers**
+    (`tests/emulator/reveal-e2e.cjs`, both emulators): with `BRAND=1` the served `reveal.js` has the switch ON for that run only
+    (three teams carry a look: a colour and emoji, a cleared number tile, a real photo the director's phone thumbnails), and
+    extra checks follow each shown place into the public node and onto the big screen under the NEW rules (37 checks), and with
+    `BRAND=1 OLD_RULES=1` under the frozen old rules (37 checks: the branded place is refused once, goes out plain, the reveal
+    plays on and the TV draws the printed look); without `BRAND` it is the original checks (34 with the SDK hash ones) against the new rules, switch off.
   - **Q8 owner-only acts** (no new role; the member record's shape is
     untouched): `setup/meta/on/<section>`, `setup/meta/{epoch,epochAt}` and
     `state/meta/{epoch,epochAt}`, every `setup/meta/wizard` leaf, and the
@@ -4661,10 +4671,10 @@ field, to the camp's own constant while the record doesn't carry it.
   colours and these) serves them. The Teams screen says it in the same words, as a plain line with no gold "!" (`#teams-weak[data-tone="note"]`)
   while only such teams are in it (the "!" is for a colour that is hard to read), and its link counts more than two teams ("Pick colours for
   4 teams"); a plain team's sheet says under the emoji grid "Leave it empty to show the team’s number." Not built, an owner question: a way back to the camp's own printed look for a cleared team.
-- **Known limit, recorded: the big screen keeps the camp's original look (a cleared team still shows its printed shield or flag there until Part 2's R2).** The TV page (`current-standings.js`) is public and reads only
-  `revealPublic`, which has no colour, emoji or photo field (and the rules must not change for this), so a director's new colour, emoji or
-  photo shows on every phone but the big screen still draws the camp's built-in crest, flag colour and mascot emoji (`teamEmojiOf`). A
-  public, laundered branding field in `revealPublic` is a future rules decision for the owner.
+- **The big screen draws a team's own look for a SHOWN place only (R2, see the R1 notes; live once the owner publishes R2 and the switch is
+  flipped).** Waiting and the intro keep the camp's printed marks, because no team's look may be public before its place is shown. The
+  Teams sheet's photo note says the photo shows on the big screen once `REVEAL_BRANDING_LIVE` is on. **Owner question, open:** whether Waiting
+  and the intro should show no team marks at all for a cleared or re-branded team.
 - **A backup file or a restore point can only bring in well-formed branding** (`teamsFromBackup`, used by
   `tryImport`, the restore preview and `restoreApply`): id, name and counselor as they were, the other
   fields only if they pass the checks above, and `photoV` NEVER from the file, because `teamPhotos/<tid>`
@@ -5753,19 +5763,21 @@ directors…" (mockup 11).
   purpose (a count would tell the room a tie exists before it is revealed). No
   keyboard or click advancing exists (the old handlers are gone): the only document
   listener is `visibilitychange`.
-- **Marks are by team id, from files that ship with the page** (`teamMark`): a
-  shield that passes `safeCrestSrc` (junior), else the camp's flag drawn from the
-  page's own `#flag-*` symbols (senior; the SHAPE by the team's slot, so two flags
-  stay apart without colour), else an emoji tile through `safeEmoji`. EVERY team
-  appearance goes through it — waiting, intro, the hero, the board's rows (a node put
-  into each row's empty `.em` after the markup: `paintBoard`) and the champions — and a
-  mascot emoji is never drawn beside a name (§8.6); the mascots fly only as confetti.
-  No P2 team photo, colour or emoji a director typed reaches this public page yet: R2
-  (Part 2 of the team look + branding run) will carry them in each shown place, and the
-  page's CSS already styles the marks it will draw (`img.tv-photo`, the phones' tile
-  `.crest-tile` with `[data-num] > span` and `[data-edge]`, a flag's inline
-  `--flag-fill`; a tie mixing a 480:667 picture with square marks keeps its names on
-  one line).
+- **Marks: a shown place's own look, else the camp's printed one** (`teamMark(id, cls, brand)`, drawn from reveal-core's pure
+  `revealMarkSpec(CAMP, id, brand)`, the phones' own order, which the remote's mini TV also runs through `revealUiTvMarkHtml`).
+  `brand` is a SHOWN place's laundered entry (`k` a palette id, `em`, `pl` cleared, `ph` a small inline photo) that
+  `normalizeRevealPub` already cleaned; Waiting and the intro pass none, so they draw the printed marks. Order: the photo
+  (`img.tv-photo`, a rounded 480:667 card), else, unless cleared, the camp's shipped shield (junior) or flag (senior, filled with
+  a picked colour's palette value as an inline `--flag-fill`), else the phones' tile (`.crest-tile`: a cleared team's number in
+  type, `[data-num] > span`, a keycap emoji drawn as its digit; a picked colour its `[data-edge]` / `--tile-edge`). A cleared team
+  never falls back to the printed look. A database string never becomes markup or a style: colours only SELECT a palette value,
+  the photo is a laundered data address set as a `src` property, the emoji and numeral are `textContent`, and every mark is built
+  as DOM. A mascot emoji is never drawn beside a name (§8.6); confetti flies a team's own emoji (not a keycap), the party set
+  for a cleared team, else the printed mascot (`confettiFor`). EVERY appearance goes through it (the hero, the board's rows
+  put into each row's empty `.em` after the markup, the champions); `groupsSig` carries the look so a changed one repaints.
+  A tie mixing a 480:667 picture with square marks keeps its names on one line. An older sender's node (no look) draws exactly
+  as before. `tests/tv.test.js` pins it per frame and per camp, hostile values inert, and the paths, no-write and CSP pins
+  unchanged (no new host).
 - **One visual system with the phones** (§8): sentence case and Inter 850 with a
   slightly negative track, never letter-spaced capitals ("Current standings", "3rd
   place", "points", "Camp champions" — the markup's "Camp Champions" and "TIE" are

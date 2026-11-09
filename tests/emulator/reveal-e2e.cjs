@@ -15,6 +15,13 @@
 //   Needs: `playwright` resolvable from here (npm i -D playwright, or a global one with
 //   NODE_PATH=$(npm root -g)), and `curl` once to fetch the SDK files (or SDK_DIR pointing at them).
 //   E2E_SHOTS=<dir> writes a screenshot of every context when a check fails.
+//   BRAND=1         R2 (big-screen branding): the served reveal.js has its REVEAL_BRANDING_LIVE switch turned ON (for this
+//                   run only; the shipped file keeps it off until the owner has published R2 and verified it), three teams
+//                   carry a look (a colour + emoji, a cleared number tile, a photo) and extra checks follow each shown
+//                   place onto the big screen and into the public node.
+//   OLD_RULES=1     with BRAND=1: load the rules that were live before R2 (tests/emulator/r1.rules.json) instead of
+//                   database.rules.json, to prove the fallback: the old rules refuse the branded place once, the remote
+//                   sends it plain, and the whole reveal still plays, with the printed look on the big screen.
 //
 //   What it proves (each a numbered check below): a Start, three places, a simultaneous press by
 //   both remotes (one wins), Back, End early; the big screen signed out the whole time and never
@@ -44,6 +51,8 @@ const AUTH = 'http://127.0.0.1:9099';
 const NS = 'camp-89cea-default-rtdb';           // the namespace the shipped databaseURL names
 const CAMP_ROOT = 'campScoreboard';
 const SDK_FILES = ['firebase-app-compat', 'firebase-auth-compat', 'firebase-database-compat'];
+const BRAND = !!process.env.BRAND;
+const OLD_RULES = !!process.env.OLD_RULES;
 const SDK_DIR = process.env.SDK_DIR || path.join(os.tmpdir(), 'camp-e2e-sdk-10.12.0');
 
 const ED1 = { email: 'ed@x.com', key: 'ed@x,com', name: 'Ed One' };
@@ -51,7 +60,7 @@ const ED2 = { email: 'ed2@x.com', key: 'ed2@x,com', name: 'Ed Two' };
 const VW = { email: 'vw@x.com', key: 'vw@x,com', name: 'Vee Counselor', teamId: 't1' };
 
 // Six teams, distinct names, no ties: 1st t0 19 · 2nd t1 17 · 3rd t2 15 · 4th t4 11 · 5th t3 10 · 6th t5 3.
-const TEAMS = [['t0', 'Foxes'], ['t1', 'Turkeys'], ['t2', 'Maples'], ['t3', 'Pumpkins'], ['t4', 'Pilgrims'], ['t5', 'Deersz']];
+const TEAMS = [['t0', 'Foxes'], ['t1', 'Turkeys'], ['t2', 'Maples'], ['t3', BRAND ? 'Team 4' : 'Pumpkins'], ['t4', 'Pilgrims'], ['t5', 'Deersz']];
 const NAME = Object.fromEntries(TEAMS);
 const ORDER = ['t5', 't3', 't4', 't2', 't1', 't0'];   // the order places are revealed: 6th first
 
@@ -97,8 +106,23 @@ function defaultConfig() {
   return vm.runInContext('JSON.parse(JSON.stringify(defaultConfig()))', ctx);
 }
 
+// A real PNG made here (a smooth gradient, small enough for the 100,000-character photo rule), so the director's phone has a photo to turn into a thumbnail.
+function makePng(w, h) {
+  const zlib = require('zlib');
+  const crcT = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
+  const crc = (b) => { let c = 0xffffffff; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const cr = Buffer.alloc(4); cr.writeUInt32BE(crc(td)); return Buffer.concat([len, td, cr]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) { const o = y * (w * 3 + 1); for (let x = 0; x < w; x++) { raw[o + 1 + x * 3] = (y * 255 / h) | 0; raw[o + 2 + x * 3] = 120; raw[o + 3 + x * 3] = 90; } }
+  const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+  return 'data:image/png;base64,' + png.toString('base64');
+}
+// The looks the BRAND run gives three teams: 6th (t5) a colour and an emoji, 4th (t4) a photo, 5th (t3) cleared (number tile).
+const LOOK = { t5: { color: 'teal', emoji: '🦊' }, t4: { photoV: 1 }, t3: { plain: true, emoji: '4\uFE0F\u20E3' } };
+
 async function seed() {
-  await admin('PUT', '/.settings/rules.json', JSON.parse(fs.readFileSync(path.join(ROOT, 'database.rules.json'), 'utf8')));
+  await admin('PUT', '/.settings/rules.json', JSON.parse(fs.readFileSync(OLD_RULES ? path.join(ROOT, 'tests', 'emulator', 'r1.rules.json') : path.join(ROOT, 'database.rules.json'), 'utf8')));
   await admin('DELETE', '/');
   const rec = (role, who, extra) => Object.assign({ role, name: who.name, addedBy: 'e2e', addedAt: '2026-11-02' }, extra || {});
   const config = defaultConfig();
@@ -112,7 +136,8 @@ async function seed() {
       [VW.key]: rec('viewer', VW, { teamId: VW.teamId }),
     },
     config,
-    state: { teams: TEAMS.map(([id, name]) => ({ id, name })), results },
+    state: { ...(BRAND ? { meta: { epoch: 'w20270101', epochAt: 1798761600000 } } : {}), teams: TEAMS.map(([id, name]) => Object.assign({ id, name }, BRAND ? LOOK[id] || {} : {})), results },
+    ...(BRAND ? { teamPhotos: { t4: { v: 1, data: makePng(240, 333) } } } : {}),
   });
 }
 
@@ -142,6 +167,7 @@ function serve() {
     if (!file.startsWith(ROOT) || /\/(\.git|node_modules|tests)\//.test(rel)) { res.writeHead(404); res.end(); return; }
     if (rel === '/firebase-config.js') { res.writeHead(200, { 'Content-Type': MIME['.js'] }); res.end(emulatorConfig()); return; }
     fs.readFile(file, (err, data) => {
+      if (!err && BRAND && rel === '/reveal.js') data = Buffer.from(data.toString('utf8').replace('let REVEAL_BRANDING_LIVE = false;', 'let REVEAL_BRANDING_LIVE = true;')); // test only
       if (err) { res.writeHead(404); res.end('not found'); return; }
       let body = data;
       if (rel.endsWith('.html')) {
@@ -265,6 +291,7 @@ const tvState = (page) => page.evaluate(() => {
     rows: [...document.querySelectorAll('#board .row .nm')].map((e) => e.textContent.trim()),
     final: el('board').classList.contains('final'), finale: el('finale').classList.contains('show'),
     status: el('wait-status-text').textContent,
+    mark: (() => { const m = [...document.querySelectorAll('.hero-shield')].pop(); if (!m) return null; return { tag: m.tagName.toLowerCase(), cls: m.getAttribute('class') || '', src: (m.getAttribute('src') || '').slice(0, 24), num: m.getAttribute('data-num') !== null ? (m.textContent || '').trim() : '', text: (m.textContent || '').trim(), edge: m.style.getPropertyValue('--tile-edge'), fill: m.style.getPropertyValue('--flag-fill') }; })(),
   };
 });
 const phoneState = (page) => page.evaluate(() => {
@@ -366,8 +393,28 @@ const placeWords = (n) => ['', '1st', '2nd', '3rd', '4th', '5th', '6th'][n];
     pub = await nodeOf('real');
     const hidden1 = JSON.stringify(pub);
     check('10. the public node holds 6th place only — no other team\'s name, no member key', pub.ctl.shown === 1 && Object.keys(pub.pub).length === 1 && TEAMS.filter(([id]) => id !== 't5').every(([, n]) => hidden1.indexOf(n) < 0) && hidden1.indexOf('@') < 0, hidden1.slice(0, 400));
+    if (BRAND) {
+      s = await tvState(tv);
+      const e6 = pub.pub.g0.e.t5;
+      if (!OLD_RULES) {
+        check('B1. 6th place (a picked colour and emoji on a junior team that keeps its shield): its public entry carries k and em, and the big screen still draws the shield (the phones order)', e6.k === 'teal' && e6.em === '🦊' && !('ph' in e6) && !('pl' in e6) && !!s.mark && s.mark.tag === 'img' && /images\/team-shields\//.test(s.mark.src), JSON.stringify({ e6, mark: s.mark }));
+      } else {
+        const plainOk = e6.k === undefined && e6.em === undefined;
+        check('B1. under the OLD rules the branded place was refused once and went out plain: the whole place is there, with no look, and the big screen draws the printed look', plainOk && pub.ctl.shown === 1 && !!s.mark && s.mark.tag === 'img', JSON.stringify({ e6, mark: s.mark }));
+      }
+    }
 
     await revealOn(B, 2);   // the other director reveals 5th
+    if (BRAND) {
+      pub = await nodeOf('real');
+      s = await tvState(tv);
+      const e5 = pub.pub.g1 && pub.pub.g1.e && pub.pub.g1.e.t3;
+      if (!OLD_RULES) {
+        check('B2. 5th place (cleared team): the public entry carries pl and its keycap, and the big screen draws its number tile, not the printed shield', !!e5 && e5.pl === true && /^4\uFE0F?\u20E3$/.test(e5.em || '') && !!s.mark && s.mark.tag === 'div' && s.mark.num === '4', JSON.stringify({ e5, mark: s.mark }));
+      } else {
+        check('B2. under the OLD rules 5th place still went out (plain) and the big screen draws the printed look', !!e5 && e5.pl === undefined && e5.em === undefined && !!s.mark && s.mark.tag === 'img' && /images\/team|\/images\//.test(s.mark.src + (await tv.evaluate(() => (document.querySelector('.hero-shield:last-of-type') || {}).src || ''))), JSON.stringify({ e5, mark: s.mark }));
+      }
+    }
     // 4th place: BOTH remotes press at the same moment
     await Promise.all([waitGo(A, 'place 3'), waitGo(B, 'place 3')]);
     await Promise.all([recordToasts(A), recordToasts(B)]);
@@ -380,6 +427,18 @@ const placeWords = (n) => ['', '1st', '2nd', '3rd', '4th', '5th', '6th'][n];
     check('12. the loser is told, in words, that another director already showed it', said.some((t) => /already showed 4th place/i.test(t)), said.join(' | '));
     s = await tvState(tv);
     check('13. the big screen is on 4th place (Patriotic Pilgrims here: Pilgrims)', /4th/.test(s.hero) && s.heroName.indexOf(NAME.t4) >= 0, JSON.stringify(s));
+    if (BRAND) {
+      pub = await nodeOf('real');
+      const e4 = pub.pub.g2.e.t4;
+      const photoElsewhere = JSON.stringify([pub.pub.g0, pub.pub.g1]).indexOf('data:image') >= 0;
+      await sleep(400);
+      s = await tvState(tv);
+      if (!OLD_RULES) {
+        check('B3. 4th place (a photo): its entry carries a small JPEG made on the director\'s phone (at most 20,000 characters), no earlier place carries one, and the big screen draws it as the mark', !!e4 && typeof e4.ph === 'string' && /^data:image\/jpeg;base64,/.test(e4.ph) && e4.ph.length <= 20000 && !photoElsewhere && !!s.mark && s.mark.tag === 'img' && /tv-photo/.test(s.mark.cls) && /^data:image\/jpeg/.test(s.mark.src), JSON.stringify({ len: e4 && e4.ph && e4.ph.length, mark: s.mark, photoElsewhere, a: await A.evaluate(() => ({ thumbs: [...revealThumbs.keys()], mem: [...TEAM_PHOTO_MEM.keys()], v: teamPhotoVersion('t4'), open: revealRemoteOpenFlag, tries: revealThumbTries })), b: await B.evaluate(() => ({ thumbs: [...revealThumbs.keys()], mem: [...TEAM_PHOTO_MEM.keys()], open: revealRemoteOpenFlag })) }));
+      } else {
+        check('B3. under the OLD rules 4th place went out with no photo, and the reveal carried on', !!e4 && e4.ph === undefined && !photoElsewhere && !!s.mark && s.mark.tag === 'img' && !/tv-photo/.test(s.mark.cls), JSON.stringify({ e4, mark: s.mark }));
+      }
+    }
     await until(async () => { const l = (await phoneState(C)).list; return l.indexOf(NAME.t4) >= 0; }, 'the counselor to catch up to 4th', 15000);
     const c3 = await phoneState(C);
     pub = await nodeOf('real');

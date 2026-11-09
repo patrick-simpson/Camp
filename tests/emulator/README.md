@@ -85,7 +85,7 @@ own CSP except for the emulator hosts it adds for the run; `firebase-config.js` 
 counselor three seconds behind), both remotes pressing at once, Back, End early, an anonymous read of `revealPublic` showing only the places
 shown, a practice that never reaches the counselor, a real Start taking the big screen over from a practice, and the big screen never
 loading an Auth SDK or talking to anything but the database. `E2E_SHOTS=<dir>` writes screenshots when a check fails, `E2E_DEBUG=1` prints
-the pages' console errors.
+the pages' console errors. `BRAND=1 node reveal-e2e.cjs` turns the branding switch ON in the served `reveal.js` for that run (three teams carry a look, one a real photo) and adds checks B1–B3 under the new rules (37 checks); `BRAND=1 OLD_RULES=1` loads `r1.rules.json` instead and proves the fallback (37 checks).
 
 `camp-data.mjs` builds the `setup` seed the suites use. `buildSeed(id, sections)` is now the REAL seed (Step 15's `buildSeed`, run
 through the unit-test harness's vm; the schedule alone by default, `ALL_SECTIONS` for Step 20's switches). `buildSeedFixture(id)` is
