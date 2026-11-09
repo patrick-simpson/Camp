@@ -198,6 +198,23 @@ test('hostile names, short names, emoji and colours render as text in the rows a
   tsClose();
 });
 
+test('teams: the photo note says it shows on the big screen only while big-screen branding is switched on', () => {
+  tsOpen();
+  teamOpen('t0');
+  const was = REVEAL_BRANDING_LIVE;
+  const wasRef = fbRef;
+  fbRef = {};
+  try {
+    REVEAL_BRANDING_LIVE = false;
+    renderTeamEditSheet();
+    assert.notOk(/big screen/.test(tsEl('team-photo-note').textContent), 'the switch ships off: the note says nothing about the big screen');
+    REVEAL_BRANDING_LIVE = true;
+    renderTeamEditSheet();
+    assert.ok(/It shows on the big screen when this team’s place is revealed\./.test(tsEl('team-photo-note').textContent));
+  } finally { REVEAL_BRANDING_LIVE = was; fbRef = wasRef; }
+  tsClose();
+});
+
 // ── the sheet ──
 
 test('opening a team and saving without a change writes nothing and offers no Undo', () => {

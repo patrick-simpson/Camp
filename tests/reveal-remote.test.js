@@ -369,6 +369,38 @@ test('the mini TV is tvFrame: waiting, intro, a place\'s hero (the name alone, t
   afterDirector();
 });
 
+test('the mini TV is a picture of the big screen: a shown place draws its own look (photo, colour, number tile), Waiting and the intro the printed look, hostile values inert', async () => {
+  await bootDirector();
+  await openRemote();
+  const PHOTO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+  const brand = (g, o) => { g.entries[0] = Object.assign({}, g.entries[0], o); };
+  // Waiting and the intro: the camp's printed marks, whatever any team has picked
+  await setNode({ phase: 'intro', cur: -1, shown: 0, at: T0 - 1000 }, 0); renderRevealRemote();
+  assert.ok(!/tm-photo|data-num/.test(el('mtv-intro-marks').innerHTML + el('mtv-wait-marks').innerHTML), 'no team look before a place is shown');
+  // a shown place: the node carries the look in its entry
+  const ctl = mkCtl({ cur: 0, shown: 1, at: T0 - 1000, sa: T0 - 1000 });
+  const top = groupsOf(N)[0];
+  const e0 = top.entries[0];
+  const wire = (extra) => ({ place: top.place, e: { [e0.id]: Object.assign({ nm: e0.nm, p: e0.p, g: 1, s: 1, b: 1, v: 1, m: 1, c: 1 }, extra) } });
+  const put = async (extra) => {
+    theDb.serverSet(dbPath('revealPublic/real'), { ctl: Object.assign({}, ctl, { seq: ctl.seq + 1 }), pub: { g0: wire(extra) } });
+    ctl.seq += 1;
+    await waitUntil(() => confirmedReveal.real && confirmedReveal.real.ctl.seq === ctl.seq, 'the node');
+    renderRevealRemote();
+    return el('mtv-hero-marks').innerHTML;
+  };
+  let h = await put({ ph: PHOTO });
+  assert.ok(/class="tm tm-shield tm-photo"/.test(h) && h.indexOf(PHOTO) > 0, 'a photo is the mark');
+  h = await put({ pl: true, em: '4\uFE0F\u20E3', k: 'teal' });
+  assert.ok(/tm-tile" data-num="4"/.test(h) && /--tm-accent:#[0-9a-f]{6}/i.test(h) && !/<img/.test(h), 'a cleared team is its number tile with its colour edge, no shield');
+  h = await put({ k: 'purple' });
+  assert.ok(/<img class="tm tm-shield"/.test(h) || /data-flag/.test(h), 'a colour alone keeps the printed shield or flag');
+  h = await put({ ph: 'https://evil.example/x.png', k: 'red"><script>', em: '<b>x</b>', pl: 'yes' });
+  assert.ok(!/evil|<script|<b>/.test(h), 'hostile values never reach the markup: ' + h);
+  closeReveal();
+  afterDirector();
+});
+
 test('the ladder: 1st at the top, hidden places named by place and nothing else, ONE masked next row, shown places with their team', async () => {
   await bootDirector();
   await openRemote();

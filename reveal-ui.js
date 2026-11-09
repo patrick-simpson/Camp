@@ -503,8 +503,25 @@ function renderRevealGamesLink() {
 // ════════════════════════════════════════════════════════════════════
 // The mini TV: tvFrame() — the same pure function the big-screen page runs — drawn into the static slots. Always the
 // TV's own light colours (CSS), in container units, so the 352px stage and the 150px thumbnail are one picture.
-function revealUiMarksHtml(ids, size) {
-  return ids.map((id) => teamMarkHtml(id, { size })).join('');
+// One team's mark exactly as the big screen draws it (reveal-core revealMarkSpec, the same pure rule current-standings.js
+// runs): `brand` is a SHOWN place's laundered entry, or null for the camp's printed look, which Waiting and the intro always
+// show. Never the phone's own look: this is a picture of the big screen. Every value is a laundered one (a palette hex, a
+// data address that passed the crest check, an emoji that passed safeEmoji), and each is escaped on the way in anyway.
+function revealUiTvMarkHtml(id, brand, size) {
+  const spec = revealMarkSpec(CAMP, id, brand);
+  const tm = '--tm:' + size + 'px';
+  if (spec.kind === 'photo' || spec.kind === 'shield') {
+    return '<img class="tm tm-shield' + (spec.kind === 'photo' ? ' tm-photo' : '') + '" src="' + esc(spec.src) + '" alt="" style="' + tm + '" width="' + size + '" height="' + Math.round(size * 667 / 480) + '" decoding="async">';
+  }
+  if (spec.kind === 'flag') {
+    return '<svg class="tm flag" data-flag="' + esc(spec.color) + '" style="' + tm + (spec.fill ? ';--flag-fill:' + esc(spec.fill) : '') + '" viewBox="0 0 32 32" aria-hidden="true"><use href="#flag-' + esc(spec.shape) + '"/></svg>';
+  }
+  return '<span class="tm tm-tile"' + (spec.num ? ' data-num="' + esc(spec.num) + '"' : '') + ' style="' + tm + (spec.edge ? ';--tm-accent:' + esc(spec.edge) : '') + '" aria-hidden="true">' + esc(spec.num || spec.emoji) + '</span>';
+}
+
+// ids → the printed look (Waiting, the intro); entries → each shown place's own look (the hero, the champions).
+function revealUiMarksHtml(items, size) {
+  return items.map((it) => (typeof it === 'string' ? revealUiTvMarkHtml(it, null, size) : revealUiTvMarkHtml(it.id, it, size))).join('');
 }
 
 // The board as the big screen draws it (current-standings.js paintBoard): one sheet, best place first, a faint "Still to
@@ -522,7 +539,7 @@ function revealUiBoardHtml(groups, o) {
     g.entries.forEach((e) => {
       const crown = o.crown && g.place === 1 ? '<svg class="ico mtv-row-crown" aria-hidden="true"><use href="#i-crown"/></svg>' : '';
       rows.push('<li class="mtv-row" data-key="g' + g.place + '-' + esc(e.id) + '" data-pl="' + g.place + '"' + (o.nowIdx === g.idx ? ' data-now' : '') + '><span class="mtv-pl">' + crown + esc(ordinal(g.place)) + '</span>' +
-        '<span class="mtv-mk">' + teamMarkHtml(e.id, { size: 24 }) + '</span><span class="mtv-nm">' + esc(e.nm) + '</span><span class="mtv-pts">' + e.p + '</span></li>');
+        '<span class="mtv-mk">' + revealUiTvMarkHtml(e.id, e, 24) + '</span><span class="mtv-nm">' + esc(e.nm) + '</span><span class="mtv-pts">' + e.p + '</span></li>');
     });
   });
   return rows.join('');
@@ -554,7 +571,7 @@ function revealUiPaintTv(m) {
     const g = frame.groups.find((x) => x.idx === frame.heroIdx);
     if (g) {
       setTextIfChanged(revealUiEl('mtv-hero-place'), ordinal(g.place) + ' place' + (g.entries.length > 1 ? ' · tie' : ''));
-      setHtmlIfChanged(revealUiEl('mtv-hero-marks'), revealUiMarksHtml(g.entries.map((e) => e.id), 112));
+      setHtmlIfChanged(revealUiEl('mtv-hero-marks'), revealUiMarksHtml(g.entries, 112));
       setTextIfChanged(revealUiEl('mtv-hero-name'), g.entries.map((e) => e.nm).join(' & '));
       setTextIfChanged(revealUiEl('mtv-hero-points'), String(g.entries[0].p));
       setTextIfChanged(revealUiEl('mtv-hero-break'), g.entries.length === 1 ? g.entries[0].g + ' gold · ' + g.entries[0].s + ' silver · ' + g.entries[0].b + ' bronze' : '');
@@ -568,7 +585,7 @@ function revealUiPaintTv(m) {
     }));
   } else if (frame.mode === 'champion') {
     const first = frame.groups.find((x) => x.place === 1);
-    setHtmlIfChanged(revealUiEl('mtv-champ-marks'), first ? revealUiMarksHtml(first.entries.map((e) => e.id), 64) : '');
+    setHtmlIfChanged(revealUiEl('mtv-champ-marks'), first ? revealUiMarksHtml(first.entries, 64) : '');
     setTextIfChanged(revealUiEl('mtv-champ-name'), first ? first.entries.map((e) => e.nm).join(' & ') : '');
   }
   setTextIfChanged(revealUiEl('reveal-tv-now'), revealUiTvWords(frame, m));
