@@ -1803,8 +1803,8 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   An empty `.cb-list` is no box. Restore points, recent changes, devices, and
   Step 15's schedule, rain plan, swap and move rows are all these.
 - **Sheets** (shell sheets, editors only, ONE at a time — ⋯ → Devices closes
-  the menu first): `#sheet-setup-menu` (`[data-setup-act=changes|devices|
-  classic]`; the owner group `.setup-owner-sec` with `new-year|undo-new-year|
+  the menu first): `#sheet-setup-menu` (`[data-setup-act=changes|devices]`; the
+  Classic editor row is gone from the markup since Step 30's design pass; the owner group `.setup-owner-sec` with `new-year|undo-new-year|
   original|advanced`, each `data-owner-only hidden`; one that can't be used
   right now gets `aria-disabled="true"` and its reason in `[data-setup-why]`),
   `#sheet-setup-changes` (`#setup-changes-list`, `#setup-changes-empty`),
@@ -1863,8 +1863,8 @@ into it from app.js / settings.js is typeof-guarded.
   `backups`, `classic`; anything else reads as the hub) is mirrored into
   `#setup[data-screen]`. More → Set up the week opens the hub; the hub's Games row opens
   the Games screen (Step 21; the Games tab's Add games opens the game sheet over the tab instead, the screen only when no day takes games), Notice opens the classic screen on its
-  tab (`state.ui.settingsTab`; the Classic editor in the ⋯ menu still has the old Games tab;
-  Teams has its own screen since Step 25), Restore points
+  tab (`state.ui.settingsTab`; the classic screen's own tab shell still has the old Games, Days, Teams and Data
+  tabs, but the ⋯ menu no longer lists it: Step 30 removes them), Restore points
   opens `backups`, People opens its own screen (Step 25; the Members drawer is retired). Back goes screen → hub →
   closes the builder; a dirty game editor (`builderDirty()`, named by
   `builderDirtyName()`) asks through `askDialog` first, and "Keep editing" puts the
@@ -1957,7 +1957,7 @@ into it from app.js / settings.js is typeof-guarded.
   only with a point a tap opened (`setupSheetReady`), so a Forward or a stale history entry
   can't raise an empty one.
 - **Sheets** (ONE open at a time: `setupSheet` closes the others first): the menu (⋯:
-  Recent changes, Director devices, Classic editor, then the owner's rows), Recent changes
+  Recent changes, Director devices, then the owner's rows), Recent changes
   (`undoRecent()`, each row ends in its own Undo or Redo), Director devices (`devicesList()`),
   and the restore sheet.
 - **Restore points**: `refreshRestoreIndex()` reads `restoreList()` once (never a listener) when
@@ -4378,7 +4378,7 @@ P2 §11.14 in the Step 14 / 15 / 19 frame. Markup in index.html (templates in th
 styles in styles.css's last block, "SET UP THE WEEK: Games"; behaviour in setup-ui.js section 16 (engine first, then the screen, then
 the sheet), pinned by `tests/games-screen.test.js` (+ senior). Hooks are prefixed `sg-` (the screen) and `gm-` (the sheet): `gs-` /
 `gw-` / `games-` belong to the Games tab. **The catalog is written ONLY through `configEdit` (field ops, one undo entry per change);
-there is no draft and no Save.** The classic Games tab stays reachable from the ⋯ menu's Classic editor, and `saveGameDraft` / the
+there is no draft and no Save.** The classic Games tab still exists in the classic screen (the ⋯ menu no longer lists it; Step 30 removes it), and `saveGameDraft` / the
 v183 parity fixture are untouched.
 
 - **Routing**: the hub's Games row (`HUB_OPENS.games`) and the schedule item sheet's "Add a game here" (`#si-add-game`, a Games item of a
