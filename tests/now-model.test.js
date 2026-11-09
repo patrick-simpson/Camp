@@ -453,6 +453,29 @@ test('nowModel: a director sees the cleanup keys with the lock on their own team
   done();
 });
 
+test('nowModel: a day whose verse is still "to be announced" is a plain Bible study card for a counselor and a preview, the line and keys for a director', () => {
+  boot('editor', T()[0]);
+  const bible = nowBlocks(WED).find((x) => x.kind === 'bible');
+  if (!bible) return;
+  const real = verseFor;
+  verseFor = () => ({ text: 'Verse to be announced.', ref: '' });
+  const vm = bible.start + 5;
+  const dir = at(WED, vm);
+  assert.equal(dir.card.kind, 'bible', 'a director keeps the card');
+  assert.equal(dir.body.verse.tba, true, 'and the "hasn\u2019t been added yet" line');
+  setMemberRole('viewer'); counselorPreviewOn = false;
+  setStandingsGuardThrows(true);
+  const c = at(WED, vm);
+  assert.equal(c.card.kind, 'activity', 'a counselor: Bible study is a plain activity');
+  assert.ok(!c.body || !c.body.verse, 'no verse box');
+  assert.ok(!c.moment || c.moment.kind !== 'verse', 'no verse keys');
+  setStandingsGuardThrows(false);
+  setMemberRole('editor'); counselorPreviewOn = true;
+  assert.equal(at(WED, vm).card.kind, 'activity', 'a counselor preview too');
+  counselorPreviewOn = false;
+  verseFor = real;
+  done();
+});
 
 test('nowModel: a live game past its block keeps the card — capped 45 minutes, never past the next games block', () => {
   boot('viewer', T()[0]);

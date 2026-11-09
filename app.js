@@ -1609,6 +1609,7 @@ function nowCtx(opts) {
     date: typeof opts.date === 'string' ? opts.date : campDateStr(),
     forced: opts.forced !== undefined ? !!opts.forced : !!campNowOverride(), // a ?now= preview ignores the camp week's dates
     director: canEdit(),
+    viewer: viewRole() !== 'editor', // a counselor or a counselor preview (a director's view-only second tab still reads as a director)
     points: standingsVisible(),
     myTeam: nowMyTeam(),
     identity: state.identity,
@@ -2093,6 +2094,9 @@ function nowVerse(dow, ctx) {
   const v = verseFor(dow);
   if (!v || !(String(v.text || '').trim() || String(v.ref || '').trim())) return null;
   const tba = (o) => /\bto be announced\b/i.test(String(o.text || '')) && !String(o.ref || '').trim();
+  // A day still saying "to be announced" is a director's to-do, not a counselor's card: Bible study is a plain activity for
+  // a counselor and a preview (no verse box, no "hasn't been added yet" line, no keys). Directors keep the line and the keys.
+  if (ctx && ctx.viewer && tba(v)) return null;
   const t = verseTheme();
   const tTitle = t && String(t.title || '').trim().toLowerCase() !== String(CAMP.label || '').trim().toLowerCase() ? String(t.title || '') : '';
   const theme = t && (tTitle || String(t.ref || '').trim()) ? { title: tTitle, ref: String(t.ref || '') } : null;
