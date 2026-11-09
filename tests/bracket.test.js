@@ -34,7 +34,7 @@ function wizard(g) {
   });
   bodyEl.querySelectorAll = (sel) => {
     const h = bodyEl.innerHTML;
-    if (sel === '.winner-btn') return [...h.matchAll(/class="winner-btn"[^>]*data-winner="([^"]+)"/g)].map((m) => fake(m[1], 'winner'));
+    if (sel === '.winner-btn') return [...h.matchAll(/class="btn winner-btn"[^>]*data-winner="([^"]+)"/g)].map((m) => fake(m[1], 'winner'));
     if (sel === '.tiebreak-chip') return [...h.matchAll(/class="team-chip tiebreak-chip[^"]*" data-team-id="([^"]+)"/g)].map((m) => fake(m[1], 'tie'));
     if (sel === '.team-chip') return [...h.matchAll(/class="team-chip[^"]*" data-team-id="([^"]+)"/g)].map((m) => fake(m[1], 'chip'));
     return realAll.call(bodyEl, sel);

@@ -8363,11 +8363,6 @@ body.builder-open .sync-status-footer {
   margin: 0 0.3rem;
 }
 
-.winner-btn-row {
-  display: flex;
-  gap: 0.6rem;
-}
-
 .completed-matches {
   margin-top: 1rem;
   font-size: 0.9rem;
@@ -8858,10 +8853,6 @@ html.calm-motion .toast-out { animation: none; }
    RESPONSIVE
    ============================================================ */
 @media (max-width: 420px) {
-  .winner-btn-row {
-    flex-direction: column;
-  }
-
   .score-input-row input {
     width: 5.5rem;
   }
@@ -9371,9 +9362,7 @@ jelly-button.primary-btn,
 jelly-button.secondary-btn,
 jelly-button.counter-btn,
 jelly-button.timer-main-btn,
-jelly-button.timer-side-btn,
-jelly-button.winner-btn,
-jelly-button.copy-matchup-btn {
+jelly-button.timer-side-btn {
   background: none;
   border: none;
   border-radius: 0;
@@ -9418,35 +9407,6 @@ jelly-button.timer-main-btn {
 jelly-button.timer-side-btn {
   --jelly-button-height: 60px;
 }
-jelly-button.winner-btn {
-  flex: 1;
-  --jelly-button-height: 48px;
-  --jelly-button-font-size: 1rem; /* in rem, so the label follows the phone's text size (it stayed 16px at 200%) */
-}
-jelly-button.copy-matchup-btn {
-  width: 100%;
-  --jelly-button-height: 44px;
-  --jelly-button-font-size: 0.9rem;
-}
-/* A long team name or large text wraps INSIDE the pill: the button grows to fit (the painted pill follows the host's size) instead
-   of the words spilling out of a fixed 48px. */
-jelly-button.winner-btn::part(button),
-jelly-button.copy-matchup-btn::part(button) {
-  height: auto;
-  min-height: var(--jelly-button-height);
-  padding-block: 10px;
-  line-height: 1.2;
-  text-align: center;
-  white-space: normal;
-}
-jelly-button.copy-matchup-btn .ico {
-  width: 1.1em;
-  height: 1.1em;
-  margin-right: 6px;
-  vertical-align: -0.2em;
-  stroke-width: 2.3;
-}
-
 /* Week-builder controls on Jelly hosts: strip the legacy field/button chrome
    (the components draw their own) and keep only sizing/layout. */
 jelly-input.form-input,
@@ -9586,18 +9546,6 @@ jelly-icon-button.bonus-remove-btn {
   font-size: 0.92rem;
   font-weight: 700;
   color: var(--color-text);
-}
-/* Once a team hits 21, spotlight the "won" button that advances the bracket.
-   .winner-btn is a jelly-button whose pill is painted on its shadow canvas, so
-   host background/border/box-shadow never show. Recolor through Jelly's
-   fill/label hooks instead (overriding the azure variant — a light-DOM rule at
-   equal-or-higher specificity wins), and lift the whole element: transform and
-   drop-shadow both follow the painted pill, so the glow stays pill-shaped. */
-jelly-button.winner-btn.winner-ready {
-  --jelly-fill: var(--color-primary);
-  --jelly-label: var(--jelly-color-foreground-on-accent, #fff);
-  transform: scale(1.03);
-  filter: drop-shadow(0 3px 10px color-mix(in srgb, var(--color-primary) 45%, transparent));
 }
 /* Bye screen: the suggested (lowest-points) winner */
 .team-chip.suggested-chip {
@@ -18299,12 +18247,6 @@ jelly-chip.sched-day-chip[data-today][selected] {
   border-bottom: 1px solid var(--line);
   border-radius: 0;
   background: none;
-}
-/* The bracket's "… won" keys are equal choices: ink, not the camp blue (which is the tab blob and focus,
-   never a button, §8.3). The one gold action of the score screens is Save. */
-#takeover-game jelly-button.winner-btn {
-  --jelly-fill: var(--ink);
-  --jelly-label: var(--paper);
 }
 #takeover-game jelly-button.primary-btn {
   --jelly-fill: var(--gold);

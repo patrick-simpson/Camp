@@ -649,7 +649,7 @@ function tap(box, what) {
 
 // The screen's offers, read from its markup: which data-four actions and winner buttons it holds.
 const offers = (box) => [...String(box.innerHTML).matchAll(/data-four="([a-z-]+)"/g)].map((m) => m[1]);
-const winnerBtns = (box) => [...String(box.innerHTML).matchAll(/class="winner-btn"[^>]*data-winner="([^"]+)"/g)].map((m) => m[1]);
+const winnerBtns = (box) => [...String(box.innerHTML).matchAll(/class="btn winner-btn"[^>]*data-winner="([^"]+)"/g)].map((m) => m[1]);
 
 function withToasts(fn) {
   const real = showToast; const said = [];

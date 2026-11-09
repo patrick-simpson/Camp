@@ -7793,10 +7793,14 @@ function copyTextToClipboard(text, btn) {
   const done = () => {
     if (typeof btn === 'function') { btn(); return; } // a caller that says "Copied" its own way
     if (!btn) return;
-    const orig = btn.textContent;
-    btn.textContent = '✓ Copied!';
-    btn.setAttribute('disabled', '');
-    setTimeout(() => { btn.textContent = orig; btn.removeAttribute('disabled'); }, 1500);
+    // A button with a label span (the bracket's copy line) swaps only the words, so its icon stays and it is never disabled
+    // (a disabled control drops the keyboard focus).
+    const label = btn.querySelector && btn.querySelector('.copy-t');
+    const target = label || btn;
+    const orig = target.textContent;
+    target.textContent = '✓ Copied!';
+    if (!label) btn.setAttribute('disabled', '');
+    setTimeout(() => { target.textContent = orig; if (!label) btn.removeAttribute('disabled'); }, 1500);
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(done).catch(() => legacyCopy(text, done));
@@ -7842,10 +7846,9 @@ function matchupCalloutHTML(aId, bId) {
     <p class="call-next-teams">${esc(teamName(aId))} <span class="vs">vs</span> ${esc(teamName(bId))}</p>
     ${counselors.length === 2 ? `<p class="call-next-counselors">Counselors: ${esc(counselors[0])} &amp; ${esc(counselors[1])}</p>` : ''}
     ${blockedByOwnTeam(aId, bId) ? '' : `<div class="winner-btn-row">
-      <jelly-button class="winner-btn" variant="azure" block data-winner="${aId}">${esc(teamName(aId))} won</jelly-button>
-      <jelly-button class="winner-btn" variant="azure" block data-winner="${bId}">${esc(teamName(bId))} won</jelly-button>
+      ${[aId, bId].map((id) => `<button type="button" class="btn winner-btn" data-winner="${id}" data-joy><span class="winner-mark" aria-hidden="true">${bracketMarkHtml(id, 28)}</span><span class="winner-t">${esc(teamName(id))} won</span></button>`).join('\n      ')}
     </div>`}
-    <jelly-button class="copy-matchup-btn" variant="platinum" block><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg>Copy matchup for text</jelly-button>
+    <button type="button" class="btn-quiet copy-matchup-btn"><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg><span class="copy-t">Copy matchup for text</span></button>
   </div>`;
 }
 
