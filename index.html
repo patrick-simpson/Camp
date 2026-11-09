@@ -1913,7 +1913,7 @@
         </section>
 
         <!-- ── People (P2 §11.8; Step 25) ──
-             One list by team for everyone on THIS camp (the Members drawer's data, <root>/members), the asking switch and the
+             One list by team for everyone on THIS camp (<root>/members), the asking switch and the
              people asking to join. Everything a requester typed is untrusted and goes through esc(). Written by the renderer:
                #people-requests rows (keyed r-<key>):
                  <button class="cb-row ppl-row ppl-req" data-key="r-<key>" data-req="<key>">
@@ -1927,7 +1927,7 @@
                    <span class="cb-time"><i class="ppl-face">A</i></span>
                    <span class="cb-main"><span class="cb-title">Alyssa<span class="ppl-tag">you</span></span>
                      <span class="cb-sub">Signed in · Counselor</span></span> <span class="cb-end">chevron</span></button>
-                 The owner's row is a <div> (no chevron): "Owner · managed in the Firebase console". A pending row says "No sign-in yet".
+                 The owner's row is a <div> (no chevron): "Owner · only Patrick can change this row" (ownerName()). A pending row says "No sign-in yet".
              Four shell sheets follow the screen (editors only, one at a time): the person, a request, Put people on teams, Add
              people, Blocked. -->
         <section class="setup-screen sec people" id="setup-people" data-setup-screen="people" aria-labelledby="people-title">

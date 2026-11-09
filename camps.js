@@ -499,10 +499,10 @@ CAMPS.junior = {
 
 // ════════════════════════════════════════════════════════════════════
 // SENIOR CAMP — ages 13–18, four teams with flags, no electives.
-// Everything here is a PLACEHOLDER until Patrick fills in the real week
-// (teams and games via Settings → Set up the week; schedule/meals/verses/
-// cleanup rota by editing this profile). The daily rhythm below is the
-// published senior-camp sample day.
+// Everything here is a PLACEHOLDER until the real week is filled in through
+// More → Set up the week (this profile is the built-in copy a section shows
+// while it is not edited there). The daily rhythm below is the published
+// senior-camp sample day.
 // ════════════════════════════════════════════════════════════════════
 (function () {
 
@@ -597,7 +597,7 @@ function seniorDefaultConfig() {
       const game = {
         id: idBase + '-' + dayId, name: gname, emoji: emoji, dayId: dayId, session: session,
         location: 'TBA', format: 'placement', headline: headline,
-        rules: [{ h: 'How it works', items: ['Details to come — edit this game in Settings → Set up the week.'] }],
+        rules: [{ h: 'How it works', items: ['Details to come — edit this game in More → Set up the week → Games.'] }],
       };
       if (bracket) {
         game.format = 'tournament';

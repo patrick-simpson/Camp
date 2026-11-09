@@ -537,20 +537,20 @@ function pushErrorMessage(err) {
   const code = (err && (err.pushCode || err.code)) || '';
   const server = err && err.serverError;
   if (server === 'not-editor') return 'Only directors can send alerts.';
-  if (server === 'not-member') return "The alert sender doesn't think you're on the camp list. Try signing out and back in.";
+  if (server === 'not-member') return "The alert sender doesn’t think you’re on the camp list. Try signing out and back in.";
   if (server === 'rate') return 'Give it a few seconds between sends.';
   if (err && err.serverMessage) return err.serverMessage;
   switch (code) {
-    case 'unsupported': return "This browser can't get phone alerts.";
-    case 'sw-timeout': return "This phone didn't finish setting up alerts. Close Camp completely, reopen it, and try again.";
-    case 'sw-failed': return "This phone couldn't start the alerts helper. Close Camp completely, reopen it, and try again.";
-    case 'vapid': return "Couldn't reach the alert sender — check your connection and try again.";
+    case 'unsupported': return "This browser can’t get phone alerts.";
+    case 'sw-timeout': return "This phone didn’t finish setting up alerts. Close Camp completely, reopen it, and try again.";
+    case 'sw-failed': return "This phone couldn’t start the alerts helper. Close Camp completely, reopen it, and try again.";
+    case 'vapid': return "Couldn’t reach the alert sender — check your connection and try again.";
     case 'subscribe': return 'This phone refused to set up alerts. Check that notifications are allowed for Camp, then try again.';
-    case 'save-timeout': return "Couldn't save — check your connection and try again.";
-    case 'not-signed-in': return "You're not signed in — sign in again and retry.";
+    case 'save-timeout': return "Couldn’t save — check your connection and try again.";
+    case 'not-signed-in': return "You’re not signed in — sign in again and retry.";
     case 'network': return pushCspBlocked
-      ? "The site's security settings are blocking the alert sender (see the note under Camp week)."
-      : "Couldn't reach the alert sender — check your connection.";
+      ? "The site’s security settings are blocking the alert sender (see the note under Camp week)."
+      : "Couldn’t reach the alert sender — check your connection.";
     case 'timeout': return 'The alert sender took too long to answer — try again in a moment.';
     case 'PERMISSION_DENIED': case 'permission_denied':
       return "The database refused — phone alerts may not be switched on in the rules yet (ask Patrick).";
@@ -841,7 +841,7 @@ async function pushRewriteRecord() {
   } catch (e) {
     if (e && e.pushCode === 'save-timeout') return; // queued — lands when back online
     console.warn('[push] saving prefs failed', e);
-    showToast("Couldn't save your alert settings — check your connection and try again.");
+    showToast("Couldn’t save your alert settings — check your connection and try again.");
   }
 }
 
@@ -913,7 +913,7 @@ async function pushDisable() {
       // The browser subscription is shared with the other camp, so it can't
       // be dropped — and with the record still here this phone would keep
       // buzzing. Say so rather than pretend.
-      showToast("Couldn't turn alerts off — check your connection and try again.");
+      showToast("Couldn’t turn alerts off — check your connection and try again.");
       return;
     }
     pushSetOn(false);
@@ -939,7 +939,7 @@ async function pushSendTest() {
     const n = (Number(res.sent) || 0) + (Number(res.queued) || 0);
     showToast(n
       ? '✅ Test sent — it should buzz in a few seconds.'
-      : "The sender couldn't find this phone. Turn alerts off and on again.", { mine: !!n });
+      : "The sender couldn’t find this phone. Turn alerts off and on again.", { mine: !!n });
   } catch (e) {
     console.warn('[push] test failed', e);
     showToast(pushErrorMessage(e));
@@ -1078,7 +1078,7 @@ function pushNotifyChat(ch, msgId, text) {
       // An announcement is the one message people count on getting. Say so —
       // quietly — rather than let the poster believe every phone buzzed.
       if (ch === 'announcements' && typeof showToast === 'function') {
-        showToast('📣 Posted — but phone alerts may not have gone out. It\'s on everyone\'s screen when they open Camp.');
+        showToast('📣 Posted — but phone alerts may not have gone out. It’s on everyone’s screen when they open Camp.');
       }
       return null;
     });
@@ -1265,7 +1265,7 @@ function pushScheduleTellWords(r, many) {
       const who = typeof ownerName === 'function' ? ownerName() : 'the owner';
       return 'The change is saved, but the alert sender needs an update before it can send schedule alerts. Tell ' + who + '.';
     }
-    if (r.code === 'rate') return "The change is saved, but the alert didn't go out yet: alerts go out at most once every 10 seconds.";
+    if (r.code === 'rate') return "The change is saved, but the alert didn’t go out yet: alerts go out at most once every 10 seconds.";
     return "The change is saved, but the alert didn't go out. Check your signal.";
   }
   const n = (r.sent || 0) + (r.queued || 0);
@@ -1712,7 +1712,7 @@ function renderPushWeekStatus() {
   if (status) {
     status.textContent = pushWeekStart === undefined ? 'Loading…'
       : !pushWeekStart ? 'Not set — schedule alerts are off until you pick the Sunday camp starts.'
-        : over ? `Last set for ${label} — that week is over. Pick next camp's Sunday when it's time.`
+        : over ? `Last set for ${label} — that week is over. Pick next camp’s Sunday when it’s time.`
           : `Schedule alerts are live for ${label}.`;
   }
   if (note) {
@@ -1727,8 +1727,8 @@ function renderPushHealth() {
   if (pushHealth === undefined) { el.textContent = 'Sender: checking…'; return; }
   if (pushHealth === null) {
     el.textContent = pushCspBlocked
-      ? `Sender: ❌ blocked by this site's security policy — add ${pushServiceBase()} to connect-src in index.html.`
-      : "Sender: ❌ can't reach it right now.";
+      ? `Sender: ❌ blocked by this site’s security policy — add ${pushServiceBase()} to connect-src in index.html.`
+      : "Sender: ❌ can’t reach it right now.";
     return;
   }
   const h = pushHealth;
@@ -1736,7 +1736,7 @@ function renderPushHealth() {
   // Connected but unable to sign pushes: nobody can turn alerts on and nothing
   // gets sent, so this must not read as green just because the timer ticks.
   if (h.vapid === false || h.ok === false) {
-    el.textContent = "Sender: ❌ running, but its signing key has a problem — open the sender's web address to see its status page.";
+    el.textContent = "Sender: ❌ running, but its signing key has a problem — open the sender’s web address to see its status page.";
     return;
   }
   const now = Number(h.time) || Date.now();
@@ -1772,7 +1772,7 @@ function renderPushRecent() {
   const el = document.getElementById('pa-recent');
   if (!el) return;
   if (pushRecentRows === undefined) { el.innerHTML = '<p class="pa-note">Loading…</p>'; return; }
-  if (pushRecentRows === null) { el.innerHTML = '<p class="pa-note">Couldn\'t load recent alerts.</p>'; return; }
+  if (pushRecentRows === null) { el.innerHTML = '<p class="pa-note">Couldn’t load recent alerts.</p>'; return; }
   if (!pushRecentRows.length) { el.innerHTML = '<p class="pa-note">No alerts sent yet.</p>'; return; }
   el.innerHTML = pushRecentRows.map((r) => {
     const sent = Number(r.sent) || 0;
@@ -1816,8 +1816,8 @@ function renderPushDevices() {
       if (!/^[A-Za-z0-9_-]{8,64}$/.test(id || '')) return;
       btn.setAttribute('disabled', '');
       pushRemoveRecord(CAMP.id, id)
-        .then(() => { delete pushDevices[id]; renderPushDevices(); showToast('Removed — that device won\'t get alerts any more.'); })
-        .catch(() => { btn.removeAttribute('disabled'); showToast("Couldn't remove it — check your connection."); });
+        .then(() => { delete pushDevices[id]; renderPushDevices(); showToast('Removed — that device won’t get alerts any more.'); })
+        .catch(() => { btn.removeAttribute('disabled'); showToast("Couldn’t remove it — check your connection."); });
     });
   });
 }
@@ -1969,7 +1969,7 @@ async function pushSendAlert(opts) {
   const urgent = !!pushAlertDraft.urgent;
   const who = pushAudienceLabel(audience);
   if (urgent && !confirm(`Send an URGENT alert to ${who}? It rings through even on phones that muted director alerts.`)) return;
-  if (!urgent && audience === 'all' && !confirm("Send this alert to everyone's phone?")) return;
+  if (!urgent && audience === 'all' && !confirm("Send this alert to everyone’s phone?")) return;
   pushSending = true;
   const send = document.getElementById('pa-send');
   if (send) send.setAttribute('disabled', '');
@@ -1979,7 +1979,7 @@ async function pushSendAlert(opts) {
     const n = res.sent + res.queued;
     const failed = res.failed;
     pushSetResult(n
-      ? `✅ Sent to ${n} phone${n === 1 ? '' : 's'}${failed ? ` · ${failed} couldn't be reached` : ''}.`
+      ? `✅ Sent to ${n} phone${n === 1 ? '' : 's'}${failed ? ` · ${failed} couldn’t be reached` : ''}.`
       : `Nobody in "${who}" has phone alerts on yet — nothing was sent.`);
     pushAlertDraft = { text: '', audience, urgent: false };
     pushResetComposer();
@@ -2038,7 +2038,7 @@ async function pushSaveWeekStart(value) {
   } catch (e) {
     if (e && e.pushCode === 'save-timeout') {
       pushWeekStart = value;
-      showToast('🗓️ Saved on this phone — it will reach everyone when you\'re back online.');
+      showToast('🗓️ Saved on this phone — it will reach everyone when you’re back online.');
     } else {
       console.warn('[push] saving the week failed', e);
       showToast(pushErrorMessage(e));

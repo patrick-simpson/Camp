@@ -5039,8 +5039,8 @@ async function wizardUndo(rid) {
 // ════════════════════════════════════════════════════════════════════
 // PEOPLE: who is on the list, who is asking to join, who is blocked (setup-rebuild-spec §11.8, §11.18 — Step 25)
 // ════════════════════════════════════════════════════════════════════
-// The data half of the People screen (setup-ui.js section 14) and of the denied screen's Ask to join (app.js). Same data as the
-// retired Members drawer (<root>/members, through the same createMemberIfAbsent / memberRecord / planMemberAdd), plus the two
+// The data half of the People screen (setup-ui.js section 14) and of the denied screen's Ask to join (app.js). The data is
+// <root>/members (the retired Members drawer's, written through the same createMemberIfAbsent / memberRecord / planMemberAdd), plus the two
 // nodes R1 published for walk-ups:
 //   <root>/accessRequests/<key> = { name ≤ 60, note? ≤ 200, at: server time }   a signed-in NON-member writes their OWN row, only
 //        while a director has switched asking on (setup/meta/joinOpen), not blocked, at most one write a minute; editors read the
@@ -5101,7 +5101,7 @@ function pplNormRequest(key, v) {
   return note ? { key: k, name, note, at } : { key: k, name, at };
 }
 
-// The text of a typed email or phone as a member key ('' when it is neither). The same reading the Members drawer's add form has.
+// The text of a typed email or phone as a member key ('' when it is neither). People's add form reads a typed key this way.
 function peopleKeyFromTyped(raw) {
   const t = String(raw || '').trim();
   if (!t) return '';
@@ -5528,7 +5528,7 @@ async function peopleAddMember(o) {
   } catch (e) { return { ok: false, reason: 'refused' }; }
 }
 
-// A pending row gets its real sign-in: create-then-delete, absent-only, exactly the Members drawer's convert (typed text, no prompt()).
+// A pending row gets its real sign-in: create-then-delete, absent-only, People's Add their sign-in (typed text, no prompt()).
 async function peopleAddSignIn(pendKey, typed) {
   const g = pplGuard();
   if (g) return g;

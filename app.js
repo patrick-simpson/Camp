@@ -519,7 +519,7 @@ function blockedByOwnTeam(...teamIds) {
 // The standard explanation, shown wherever the guard takes controls away.
 function ownTeamNoteHTML(what) {
   const mark = typeof bracketMarkHtml === 'function' ? bracketMarkHtml(memberTeamId, 20) : teamEmoji(memberTeamId);
-  return `<p class="own-team-note"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>You're on ${mark} <strong>${esc(teamName(memberTeamId))}</strong>, so ${esc(what)} is read-only for you. Another director records it.</span></p>`;
+  return `<p class="own-team-note"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>You’re on ${mark} <strong>${esc(teamName(memberTeamId))}</strong>, so ${esc(what)} is read-only for you. Another director records it.</span></p>`;
 }
 
 // The member list is keyed by a person's SIGN-IN IDENTITY: their email (for
@@ -655,7 +655,7 @@ function pendingKey(name) {
 
 // A member key is about to be concatenated into a database path, so it has to
 // be a legal RTDB key first. `.`/`#`/`$`/`[`/`]`/`/` are illegal there and make
-// ref() THROW — which, from the members drawer, surfaces as a button that does
+// ref() THROW — which, from People's add form, surfaces as a button that does
 // nothing. The email regex upstream allows `#` and `$` in the local part, and
 // emailKey() only rewrites dots, so this is the check that actually holds.
 function isValidMemberKey(key) {
@@ -2368,7 +2368,7 @@ function nowGapCard(ctx, blocks, upcoming) {
         body: { countdown: { title: first.head, start: first.start, place: first.place }, welcome: nowWelcome(ctx, blocks) }, basis };
     }
     if (ctx.minutes < NOW_MORNING_FROM_MIN) {
-      return { card: nowCard('night', { k: 'Tonight', title: 'Lights out', sub: "Everyone's sleeping" }), body: { heading: 'Today', rows: nowFirstRows(ctx, ctx.dow) }, basis };
+      return { card: nowCard('night', { k: 'Tonight', title: 'Lights out', sub: "Everyone’s sleeping" }), body: { heading: 'Today', rows: nowFirstRows(ctx, ctx.dow) }, basis };
     }
     return { card: nowCard('morning', { k: 'Today', title: 'Good morning' }), body: { heading: 'Today', rows: nowFirstRows(ctx, ctx.dow) }, basis };
   }
@@ -3074,7 +3074,7 @@ function renderHistory() {
       if (tb) tb.addEventListener('click', () => { historyShowEarlier = !historyShowEarlier; renderHistory(); });
     })
     .catch(() => {
-      body.innerHTML = '<p class="muted">Couldn\'t load the history (offline?). Close and reopen to try again.</p>';
+      body.innerHTML = '<p class="muted">Couldn’t load the history (offline?). Close and reopen to try again.</p>';
     });
 }
 
@@ -3216,10 +3216,10 @@ function createMemberIfAbsent(ref, rec) {
 // not be a way around that).
 function planMemberAdd({ key, pending, bothCamps, myKey, lists }) {
   if (key === OWNER_MEMBER_KEY) {
-    return { error: 'That account is the owner — it is managed in the Firebase console.' };
+    return { error: 'That’s the owner’s account, which can’t be changed here.' };
   }
   if (!pending && key === myKey) {
-    return { error: "That's your own account — another editor has to change your access." };
+    return { error: "That’s your own account — another director has to change your access." };
   }
   const here = CAMP.id;
   const there = otherCampId();
@@ -3235,8 +3235,8 @@ function planMemberAdd({ key, pending, bothCamps, myKey, lists }) {
 // Why a pending row can't be pointed at this new key ('' when it can): it is
 // the editor's own account, or somebody is already listed under it.
 function memberConvertRefusal(newKey, myKey, lists) {
-  if (newKey === OWNER_MEMBER_KEY) return 'That account is the owner — it is managed in the Firebase console.';
-  if (newKey === myKey) return "That's your own account — another editor has to change your access.";
+  if (newKey === OWNER_MEMBER_KEY) return 'That’s the owner’s account, which can’t be changed here.';
+  if (newKey === myKey) return "That’s your own account — another director has to change your access.";
   if ((lists[CAMP.id] || {})[newKey]) return 'Already on the list — change their access on their row instead.';
   return '';
 }
@@ -6820,7 +6820,7 @@ function toggleNotify() {
     // medal), which is all the standings secrecy lets them know.
     showToast(standingsVisible()
       ? "🔔 You'll get an alert whenever a team's points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open."
-      : "🔔 You'll get an alert when a game finishes, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open.");
+      : "🔔 You’ll get an alert when a game finishes, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open.");
   } else {
     state.notify = false;
     updateNotifyButton();
@@ -6941,7 +6941,7 @@ function notifyMatchupChanges(changes) {
     const mine = aId === state.followTeam || bId === state.followTeam;
     if (mine) anyMine = true;
     const msg = `${teamEmoji(aId)} ${teamName(aId)} vs ${teamEmoji(bId)} ${teamName(bId)} — ${game.name}`;
-    showToast(mine ? "You're up next! " + msg : "Up next: " + msg, { mine });
+    showToast(mine ? "You’re up next! " + msg : "Up next: " + msg, { mine });
     if (mine) maybeNativeNotification('🏅 Your team is up next!', msg, 'camp-matchup-' + game.id);
   });
   if (anyMine) playMineChime(); else playAlertChime();
@@ -7605,7 +7605,7 @@ function bindPicRound(wrap, g) {
         w.lapsTotal = picLapsSum(round);
         saveState();
       } else if (a === 'reset-round') {
-        if (!confirm("Reset this team's round? All their times and photos for this game are cleared.")) return;
+        if (!confirm("Reset this team’s round? All their times and photos for this game are cleared.")) return;
         round.laps.forEach((_, i) => delPhoto(picPhotoKey(teamId, i)).catch(() => {}));
         round.laps = [];
         round.done = false;
@@ -8414,7 +8414,7 @@ function renderTeamPickerOptions() {
         return;
       }
       if (turnedOnNotify) {
-        pickerNotifyToast = `🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they play and win medals.`;
+        pickerNotifyToast = `🔔 Following ${teamEmoji(id)} ${teamName(id)} — you’ll get alerts here when they play and win medals.`;
       }
       // The identity step exists to show YOUR electives — a camp without
       // electives (senior) has nothing to ask, so the picker just closes.
@@ -8506,7 +8506,7 @@ const BONUS_PROBLEMS = {
   teams: 'Pick at least one team.',
   points: 'Enter a non-zero point value.',
   range: 'Points must be a whole number from 1 to 100.',
-  'own-team': "Your own team's points are awarded by another director.",
+  'own-team': "Your own team’s points are awarded by another director.",
 };
 
 // What is wrong with the draft, as a code ('' = nothing): the message above, or Award points' button words.
@@ -15182,9 +15182,9 @@ function showSignInError(err) {
   } else if (code === 'auth/network-request-failed') {
     msg = 'You look offline — signing in needs an internet connection.';
   } else if (code === 'auth/unauthorized-domain') {
-    msg = 'This copy of the site isn\'t authorized for sign-in (unauthorized domain).';
+    msg = 'This copy of the site isn’t authorized for sign-in (unauthorized domain).';
   } else {
-    msg = 'Sign-in didn\'t work (' + (code || 'unknown error') + '). Try again.';
+    msg = 'Sign-in didn’t work (' + (code || 'unknown error') + '). Try again.';
   }
   showAuthScreen('signin', { error: msg });
 }
@@ -15533,7 +15533,7 @@ function startAuth() {
   try {
     if (!firebase.apps.length) firebase.initializeApp(cfg);
   } catch (e) {
-    showAuthScreen('signin', { error: 'Sign-in couldn\'t start — reload to try again.' });
+    showAuthScreen('signin', { error: 'Sign-in couldn’t start — reload to try again.' });
     return;
   }
   // Returning from an emailed sign-in link? Complete it before (well,
@@ -15818,7 +15818,7 @@ function switchCamp(campId) {
   // offline director must never be wedged on the wrong camp.
   flushPendingPush();
   if (hasUnsyncedWork() &&
-      !confirm("A score you saved hasn't reached the server yet. Switching camps now can lose it. Switch anyway?")) {
+      !confirm("A score you saved hasn’t reached the server yet. Switching camps now can lose it. Switch anyway?")) {
     paintSeg(document.getElementById('camp-switch'), CAMP.id); // it already moved — put it back
     return;
   }
@@ -15829,7 +15829,7 @@ function switchCamp(campId) {
   try {
     localStorage.setItem(ACTIVE_CAMP_KEY, campId);
   } catch (e) {
-    showToast("This browser is blocking site storage, so the camp can't be remembered. Turn off private browsing and try again.");
+    showToast("This browser is blocking site storage, so the camp can’t be remembered. Turn off private browsing and try again.");
     return;
   }
   // Hand the destination camp's cached role to the pre-paint guard so the
@@ -15957,7 +15957,7 @@ function signOutAndClear() {
     ? `This phone still holds ${strandedN} change${strandedN === 1 ? '' : 's'} from last camp week that never synced. Signing out deletes ${them}; Download ${them} from the bar at the top first if you want ${them}.\n\n`
     : '';
   const msg = strandedNote + ((hasUnsyncedWork() || hasUnconfirmedLocalWork())
-    ? "A score you saved hasn't reached the server yet — signing out now will lose it. Sign out anyway?"
+    ? "A score you saved hasn’t reached the server yet — signing out now will lose it. Sign out anyway?"
     : 'Sign out? Camp data stored on this device will be cleared.');
   if (!confirm(msg)) return;
   signingOut = true;

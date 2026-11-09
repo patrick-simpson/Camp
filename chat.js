@@ -374,7 +374,7 @@ function sendChatMessage(ch) {
   if (!text) return;
   if (previewRefuses()) return; // a counselor preview sends nothing; the words stay in the box
   const myKey = identityKey(authUser);
-  if (!myKey || typeof firebase === 'undefined') { showToast("Couldn't send — you're not signed in."); return; }
+  if (!myKey || typeof firebase === 'undefined') { showToast("Couldn’t send — you’re not signed in."); return; }
   if (!chatSendAllowed()) return; // a double-tap shouldn't post twice
   const msg = {
     at: firebase.database.ServerValue.TIMESTAMP,
@@ -397,7 +397,7 @@ function sendChatMessage(ch) {
       const box = document.getElementById('chat-input');
       if (box && state.ui.chatChannel === ch && !box.value) { box.value = text; chatSetDraft(ch, text); chatFitComposer(box); } // give the words back
       else if (!chatDrafts[ch]) chatSetDraft(ch, text); // they've moved on: the draft waits in that channel
-      showToast("Couldn't send — check your connection and try again.");
+      showToast("Couldn’t send — check your connection and try again.");
     })
     .then(() => { chatOwnSendIds.delete(id); chatSendsInFlight = Math.max(0, chatSendsInFlight - 1); });
 }
@@ -454,7 +454,7 @@ function sendChatPhoto(ch, file) {
         [rateKey]: firebase.database.ServerValue.TIMESTAMP,
       }, rateKey).then(() => { settled(); chatNotifyPhones(ch, msgId, ''); }, (err) => { settled(); throw err; });
     })
-    .catch(() => showToast("Couldn't send the photo — try a different one, or check your connection."))
+    .catch(() => showToast("Couldn’t send the photo — try a different one, or check your connection."))
     .then(() => {
       chatSendsInFlight = Math.max(0, chatSendsInFlight - 1);
       chatPhotosInFlight = Math.max(0, chatPhotosInFlight - 1);
@@ -506,7 +506,7 @@ function deleteChatMessage(ch, msg) {
       // Best-effort: the photo is invisible without its message anyway.
       if (msg.photoId) firebase.database().ref(dbPath('chatPhotos/' + msg.photoId)).remove().catch(() => {});
     })
-    .catch(() => showToast("Couldn't delete — only your own messages (editors can delete any)."));
+    .catch(() => showToast("Couldn’t delete — only your own messages (directors can delete any)."));
 }
 
 // Editor housekeeping: empties a channel AND its photos (the storage that
@@ -536,7 +536,7 @@ function clearChatChannel(ch) {
       return removeBatch();
     })
     .then(() => { chatMsgs[ch] = []; showToast('Channel cleared', { mine: true }); renderChatView(true); renderChatStatus(); })
-    .catch(() => showToast("Couldn't clear the channel — are you still an editor?"));
+    .catch(() => showToast("Couldn’t clear the channel — are you still a director?"));
 }
 
 // ── Mentions ──────────────────────────────────────────────────────
@@ -750,8 +750,8 @@ function toggleChatSub(ch) {
   setChatSub(ch, on);
   const c = chatChannelById(ch);
   showToast(on
-    ? `You'll get an alert for every message in ${c ? c.short : ch}.`
-    : `${c ? c.short : ch} is muted. You'll still get an alert when someone mentions you.`,
+    ? `You’ll get an alert for every message in ${c ? c.short : ch}.`
+    : `${c ? c.short : ch} is muted. You’ll still get an alert when someone mentions you.`,
     { mine: on });
   renderChatView(true);
 }
@@ -978,7 +978,7 @@ function chatBubbleHTML(ch, msg) {
 }
 
 function chatListHTML(ch) {
-  if (chatDenied) return `<p class="muted chat-note">Chat isn't available yet — the database rules need updating (ask Patrick).</p>`;
+  if (chatDenied) return `<p class="muted chat-note">Chat isn’t available yet — the database rules need updating (ask Patrick).</p>`;
   if (chatSyncOff()) return `<p class="muted chat-note">Chat needs live sync, which is off on this device.</p>`;
   if (!chatReady[ch]) {
     return '<p class="muted chat-note" role="status">Loading messages…</p>'; // one quiet line, no skeleton bars (§8.8)
@@ -1355,7 +1355,7 @@ function openChatLightbox(photoId) {
         box.innerHTML = '<div class="chat-lightbox-spinner">This photo is gone.</div>';
       }
     })
-    .catch(() => { if (!box.hidden && mine === chatLightboxSeq) box.innerHTML = '<div class="chat-lightbox-spinner">Couldn\'t load the photo.</div>'; });
+    .catch(() => { if (!box.hidden && mine === chatLightboxSeq) box.innerHTML = '<div class="chat-lightbox-spinner">Couldn’t load the photo.</div>'; });
 }
 
 // ── Wiring (called once from init() via typeof guard) ─────────────
