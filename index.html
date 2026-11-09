@@ -1294,7 +1294,7 @@
                back to the copy the app came with, which REPLACES a year of
                edits — never "Clear" (read under "Schedule" as "empty the
                schedule"); for the rest, team names first, it is "Clear" (a
-               cleared team is plain "Team 1", never a built-in name). Per row the renderer
+               cleared team is plain "Team 1" with its number for a mark, never a built-in look). Per row the renderer
                sets data-choice="keep|clear" and aria-checked on the two ticks;
                the note that matches the choice shows (CSS, from data-choice), so
                the row always says what will happen. The defaults are the spec's
@@ -1327,12 +1327,15 @@
               <div class="gl-head"><h3 class="gl-label" id="nyw-carry-label">Keep or clear</h3></div>
               <div class="gl wk-days nyw-carry" id="nyw-carry-rest" aria-labelledby="nyw-carry-label">
                 <div class="wk-day wk-head" aria-hidden="true"><span></span><span class="wk-col">Keep</span><span class="wk-col">Clear</span></div>
-                <!-- Team names (owner's answer of Nov 9, 2026): Clear makes them
-                     plain numbered names, Team 1 to Team N, never the camp's
-                     built-in names, so the row sits here under Keep | Clear and
-                     not with the schedule and games ("App's own"). -->
+                <!-- Team names (owner's answers of Nov 9, 2026): Clear makes each
+                     team plain — "Team 1" to "Team N", short name the same, its
+                     number as its emoji, no colour, and marked `plain` so the
+                     camp's shipped shield, flag, emoji and colour never come
+                     back; the mark is the number tile until a director picks a
+                     colour, emoji or photo. So the row sits here under Keep |
+                     Clear, not with the schedule and games ("App's own"). -->
                 <div class="wk-day nyw-item" data-nyw-item="teams" data-choice="keep">
-                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Each team becomes Team&nbsp;1, Team&nbsp;2 and so on, with the camp’s original short name, emoji and colour until you change them on the Teams screen.</span></span>
+                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Each team becomes Team&nbsp;1, Team&nbsp;2 and so on, with its number for its emoji and no colour, shield or flag, until you pick new ones on the Teams screen.</span></span>
                   <div class="wk-ticks" role="radiogroup" aria-label="Team names, emoji and colours"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
                 </div>
                 <div class="wk-day nyw-item" data-nyw-item="counselors" data-choice="clear">
@@ -1914,7 +1917,10 @@
                <button class="cb-row sec-row tms-row" data-key="t-t0" data-team-open="t0" [data-warn]>
                  <span class="cb-time tms-mark">the team's mark (shield, flag, photo or emoji tile)</span>
                  <span class="cb-main"><span class="cb-title">Ferocious Foxes</span>
-                   <span class="cb-sub">Foxes · 🦊 · ● Pumpkin</span>            (short · emoji · colour dot + name; "same as Turkey" when shared)
+                   <span class="cb-sub">Foxes · 🦊 · ● Pumpkin</span>            (short · emoji · colour dot + name; "same as Turkey" when shared;
+                                                                       the short name is left out when it equals the name, the emoji
+                                                                       when the mark already is its tile: a team the new-year setup
+                                                                       cleared reads "Team 1" over "No colour yet", its number tile beside)
                    <span class="cb-sub tms-staff">Sam, Alyssa</span></span>      (or "No counselors yet")
                  <span class="cb-end">chevron</span></button>
              The gold "!" before the sub (data-warn) marks a team the hub would flag (two teams on one colour, a missing name).
@@ -1929,7 +1935,9 @@
           <p class="setup-note" id="teams-repair" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="teams-repair-text"></span></p>
           <div class="gl cb-list sec-list" id="teams-list"></div>
           <!-- Original colours that are hard to read on a theme, NAMED ("Pumpkins is hard to read in light mode, Pilgrims in dark mode."):
-               the gold "!" (never the pennant, which is the Teams icon and senior's own marks) and a plain link named for the same teams. -->
+               the gold "!" (never the pennant, which is the Teams icon and senior's own marks) and a plain link named for the same teams.
+               The same block lists the teams the new-year setup cleared that have no colour yet ("6 teams have no colour yet." ·
+               "Pick colours for all 6 teams" / "Pick colours for Team 2 and Team 4"), into the same #sheet-team-colors. -->
           <div class="tms-weak" id="teams-weak" hidden>
             <p class="setup-note setup-bang"><span id="teams-weak-text"></span></p>
             <button type="button" class="sched-add tms-weak-btn" id="teams-weak-btn"><span id="teams-weak-btn-text"></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></button>

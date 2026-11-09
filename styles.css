@@ -326,12 +326,14 @@ body.dark-theme,
 /* Team accent: the older surfaces (the Your team card, the Big Board's team columns and tally rows) read
    --team-accent. The renderer writes the light / dark pair (app.js teamAccentVars: the ONE place a team colour
    is laundered, from a palette swatch or the camp's older single colour) and these rules pick the half for the
-   theme in force. A team with no colour writes neither, so --team-accent is invalid and every
-   var(--team-accent, var(--color-primary)) falls back to the app primary, as before.
+   theme in force. A team with no colour writes neither, so --team-accent is invalid and every consumer keeps its
+   app-primary fallback; but a Big Board column with no colour at all (a team the new-year setup cleared, before a
+   director picks one) is drawn NEUTRAL by the rules after .board-score, keyed on the missing style, never the
+   app's blue, which would read as a Blue team beside one.
    --team-fill is for a SOLID fill under white text (the Big Board's "+"): always the LIGHT half,
    in both themes. The dark half is a pastel (it is text and outline colour on the dark surface), and white on
-   it measured 1.7–2.3:1; the light half carries white at 5.4:1 and up. Without a colour it is the camp-blue
-   roof (white 6.5:1), never --color-primary, which is a pastel in dark too. */
+   it measured 1.7–2.3:1; the light half carries white at 5.4:1 and up. A column with no colour draws its "+"
+   as the filled ink key instead (below, .board-col:not([style*="--team-accent"])). */
 .board-col {
   --team-accent: var(--team-accent-l);
 }
@@ -1846,7 +1848,8 @@ html.view-only #more-director {
 /* ── Team marks (teamMark, app.js; redesign §8.4) ───────────────
    One element per team look, sized by --tm: a shield image, a flag (the .flag
    colours above) or an emoji tile. The tile is the last resort and still
-   carries the team's own colour as its edge. */
+   carries the team's own colour as its edge. A team the new-year setup cleared
+   (its record's `plain`) is always a tile: never the camp's shield or flag. */
 .tm {
   flex: none;
 }
@@ -1868,9 +1871,27 @@ html.view-only #more-director {
   height: var(--tm, 34px);
   border-radius: 28%;
   background: var(--paper-2);
-  box-shadow: inset 0 0 0 2px var(--tm-accent, var(--line-2));
+  /* No colour (a cleared team before a director picks one): a thin edge in INK, the text colour, which is no team's
+     colour in either theme (navy-black in light, near-white in dark; 14:1 on paper, so the boundary clears §8.1's 3:1),
+     and 1.5px, thinner than a team's own 2px colour, so a plain tile reads as plain, never as a twelfth swatch. */
+  box-shadow: inset 0 0 0 1.5px var(--ink);
   font-size: calc(var(--tm, 34px) * .56);
   line-height: 1;
+}
+/* A team colour: teamMarkHtml writes `--tm-accent:var(--team)` into the style only when the team has one (and the team
+   sheet's preview writes it for an unsaved pick), so the edge follows the attribute, not a class to keep in step. */
+.tm-tile[style*="--tm-accent"] {
+  box-shadow: inset 0 0 0 2px var(--tm-accent);
+}
+/* A keycap emoji (1️⃣ … a cleared team's own) is drawn as its numeral in type (teamMarkHtml: data-num, the digit as the
+   tile's text): the platform's keycap glyph is a tinted box of its own (blue-grey on phones), which would nest a box in
+   the tile and lend the team a colour it does not have. In px like every mark, so it never grows with the text size. */
+.tm-tile[data-num] {
+  color: var(--ink);
+  /* 700, a step under the 800 of a place number, so "2 [1] Team 1" in the standings reads as a place beside a team's box. */
+  font: 700 calc(var(--tm, 34px) * .5)/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
 }
 /* The mark slots in the header, the sheet and More's team row hold whatever
    size paintTeamMark gives them. */
@@ -3342,6 +3363,15 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
 .mtv .tm.flag,
 .mtv .tm-tile {
   height: var(--mk);
+}
+/* The TV is always light (its own literal colours), so a tile in it is too: the well and the ink edge / numeral of the
+   light theme, whatever the phone's theme. */
+.mtv .tm-tile {
+  --ink: #141a48;
+  background: #ebe2cf;
+}
+.mtv .tm-tile[data-num] {
+  font-size: calc(var(--mk) * .5);
 }
 .mtv-marks {
   --mk: calc(var(--u) * 40);
@@ -10315,6 +10345,21 @@ select.form-input {
     color: color-mix(in oklab, var(--team-accent, var(--color-primary)) 55%, var(--ink));
   }
 }
+/* A column with no colour (teamAccentAttr writes the pair into the column's style only for a team that has one, so the
+   attribute is the switch): neutral, never the app's blue. No wash, the score in ink, and the "+" the filled ink
+   key with a paper "+" (the app's own chosen-key look, which flips with the theme and is 14:1 in both). After the dark
+   .board-score rules on purpose: the same specificity, so order decides. */
+.board-col:not([style*="--team-accent"]) {
+  background: var(--color-surface);
+}
+.board-col:not([style*="--team-accent"]) .board-score {
+  color: var(--ink);
+}
+.board-col:not([style*="--team-accent"]) .board-stepper .board-plus {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
 
 .board-dash {
   font-size: 1.8rem;
@@ -14533,6 +14578,9 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
 }
 .nm-list .aw-mark .tm-tile {
   font-size: 0.8125rem;
+}
+.nm-list .aw-mark .tm-tile[data-num] {
+  font-size: 12px;
 }
 .nm-list .aw-name {
   overflow: hidden;

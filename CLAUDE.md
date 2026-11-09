@@ -667,7 +667,10 @@ never rebuilds a segmented control under a finger.
   colour picked on the Teams screen FILLS the flag, `spec.accent` → an inline
   `--flag-fill:var(--team)` beside `teamAccentVars`' pair, so one team wears one
   colour everywhere; the TV page has no team records and keeps the built-in hue), else an
-  emoji **tile** (its accent goes into `style` only if it is a plain hex).
+  emoji **tile** (its accent goes into `style` only if it is a plain hex; with none
+  the tile wears a 1.5px INK edge, never a team's colour; styles.css reads the
+  inline `--tm-accent` for the 2px colour edge, and `.tm-tile[data-num]` draws a keycap
+  emoji as its numeral in type).
   `teamMarkHtml(id, {size, label})` is the markup (`.tm`, sized by `--tm`);
   **`paintTeamMark(el, id, opts)` writes through `setHtmlIfChanged`**, so the
   `<img>` of a long-lived spot (header, Your team sheet, More's team row) is
