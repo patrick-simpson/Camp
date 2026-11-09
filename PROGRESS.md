@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Sun Nov 8, 6:10 PM ET** (update this line every time the file changes)
+Last updated: **Sun Nov 8, 10:18 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -144,6 +144,7 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
+- **Step 30 LIVE** (v212, commit COMMITHASH, Sun Nov 8, 10:18 PM ET) — tidy-up: the old classic week builder and the retired Who can sign in drawer are gone, the Notice board now has its own Set up the week screen (also reached from Tell everyone's Write a full notice), and CLAUDE.md is trimmed to what is true; owner action: the phone checks listed in the commit message (Notice screen, People, and whether you still want Restore default games & days, Copy backup and paste Import, which were removed).
 - **Step 29 LIVE** (v211, commit 9b017ba, Sun Nov 8, 6:10 PM ET) — the senior pass and polish: sections with nothing in them (senior's empty verse and cleanup) are left out for counselors, one camp name on the sign-in, team marks and day strips in one look, and every screen checked for contrast and 44px taps; owner action: the real-phone rehearsal listed in BUILD-PLAN Step 29 (two directors, two counselors, a real TV), plus the small phone checks in the deploy commit message.
 - **RESUMED (Sun Nov 8, 5:01 PM ET, the Sunday safety net):** run `wf_6d898f85-fb8` had stopped Sat afternoon when the weekly usage limit ran out, at Step 29's design fix-up (the design pass, both build sessions and both reviews were done and committed in its worktree; nothing was left half-done). Resumed from cache; it carries on with the fix-ups, Step 29's deploy, then Step 30. **Test sign-in Bravo deleted** (Sun 5:02 PM ET; Firebase confirms it is gone), so every Step 27 test login is cleaned up; the mistaken empty junior reveal from the alert test hid itself at 8 AM today.
 - **RUNNING (Sat Nov 7, 6:35 AM ET): Steps 29 → 30**, one agent at a time (workflow run `wf_6d898f85-fb8`, script copy `docs/build-notes/runs/build-run8.js`). Step 29: the senior pass, a last look at every screen, the copy pass, a sweep of every item earlier steps deferred, and two reusable audits (every mockup screen; contrast in both themes); its rehearsal is the owner's. Step 30: the Notice board gets its own Set up the week screen, then the classic builder and the retired Members drawer are removed and CLAUDE.md gets its final pass. If the container restarts, resume with Workflow({scriptPath: <the run's script>, resumeFromRunId: 'wf_6d898f85-fb8'}). The Sunday 5 PM safety net now points at this run. Run `wf_c81ea437-92c` finished (Steps 17, 18, 21, 22, 26, 28 live); its worktree and stray emulators were removed.
