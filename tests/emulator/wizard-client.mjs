@@ -139,7 +139,7 @@ for (const R of ROOTS) {
     await p.until(`wizardModel().state === 'mine'`, 'the claim to arrive as mine');
     const claim = await val(owner(), `${R}/setup/meta/wizard`);
     if (!claim || claim.step !== 1 || claim.byKey !== OWNER.key || claim.fromEpoch !== 'legacy') fail('claim: ' + jstr(claim));
-    p.run(`wizardAnswer({ weekStart: '2027-07-18', double: 'same' })`);
+    p.run(`wizardAnswer({ weekStart: '2027-07-18', double: 'same', carry: { teams: 'clear' } })`);
     ok(await p.run(`wizardSetStep(3)`), 'step 3');
     const arch = ok(await p.run(`wizardArchive()`), 'archive');
     const point = await val(owner(), `${R}/restoreIndex/${arch.rid}`);
@@ -159,6 +159,10 @@ for (const R of ROOTS) {
     for (const k of ['campers', 'accessRequests', 'revealPublic', 'revealFull']) if (await val(owner(), `${R}/${k}`) !== null) fail(k + ' was not cleared');
     if ((await val(owner(), `${R}/state/notice/status`)) !== 'draft') fail('the notice is not a draft');
     if ((await val(owner(), `${R}/state/teams/0/counselor`)) != null) fail('the typed counselor name is still there');
+    // owner's answer of Nov 9: Clear on team names makes plain "Team 1" … "Team N", accepted by the rules
+    const teamsNow = await val(owner(), `${R}/state/teams`);
+    const tl = Array.isArray(teamsNow) ? teamsNow : Object.values(teamsNow || {});
+    if (!tl.length || tl.some((t, i) => t.name !== 'Team ' + (i + 1))) fail('team names are not plain Team N: ' + jstr(tl.map((t) => t.name)));
     const members = await val(owner(), `${R}/members`);
     if (!members[OWNER.key] || same(members[OWNER.key], null)) fail('the owner row is gone');
     if (members[ED2.key].teamId !== undefined || members[VW.key].teamId !== undefined) fail('a counselor kept a team: ' + jstr(members[VW.key]));

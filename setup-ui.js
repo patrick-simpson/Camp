@@ -2691,7 +2691,6 @@ function renderScheduleScreen() {
   if (empty) {
     setTextIfChanged(setupEl('sched-empty-text'), dayKey === 'typical' ? 'Start with the first thing in the morning, usually breakfast.' : SETUP_DAY_WORDS[dayKey] + ' has nothing yet. Start with the first thing, or copy another day.');
     setHiddenIfChanged(setupEl('sched-copy-from'), dayKey === 'typical');
-    setHiddenIfChanged(setupEl('sched-copy-archive'), true);
   }
   const copyDays = schedCopyWeekDays(tree);
   const showCopy = shared && canEdit() && dayKey === 'typical' && blocks.length >= 3 && copyDays.length > 0;

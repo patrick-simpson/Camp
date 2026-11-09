@@ -847,8 +847,8 @@ the same switches through `applyCardVisibility`. The Your team sheet's facts and
 **Kinds.** A kind comes from `type` / the Meal tag (through `blockMeal`) first, then the label's head (before " — "): games, elective (only where
 `CAMP.features.electives`), meal, bible, meeting, worship, activity, bedtime; Saturday is the `sendoff`, Sunday up to the first worship block (all of it
 with none) the `arrival`. `card.kind` is a block kind or `between | morning | night | none | over | notice`: a `bedtime` block with no time is `night`, a
-Saturday `noTime` block is `over`, a `sendoff` block with a posted notice is `notice` (the notice IS the card, the strip leaves it out), a `bible` block with no verse for the day is `activity`; a verse still saying "to be announced" with no reference (senior's seed) keeps the card and its
-keys but `verse.tba` draws "Today's verse hasn't been added yet" in plain words, never scripture, and a theme titled with the camp's own name is left out.
+Saturday `noTime` block is `over`, a `sendoff` block with a posted notice is `notice` (the notice IS the card, the strip leaves it out), a `bible` block with no verse for the day is `activity`; a verse still saying "to be announced" with no reference is a DIRECTOR's to-do: a director keeps the card and its
+keys, `verse.tba` drawing "Today's verse hasn't been added yet" in plain words, never scripture; for a counselor and a counselor preview (`ctx.viewer` = `viewRole() !== 'editor'`) `nowVerse` is null, so Bible study is a plain activity card (no verse box, no line, no keys; owner's answer of Nov 9). A theme titled with the camp's own name is left out.
 The generated empty states (Good morning, Lights out, Camp starts …, See you next year, No camp week …) carry no emoji (§8.6). **Every minute of every day is a block or a named empty state.** The picture: `at`, `week { phase }`, `reveal`,
 `messages`, `card { kind, k, when, tag, title, emoji, status, sub, lead, over, notes, hold, down }`, `block`, `moment`, `body` (the kind's data), `next`, `later`
 (+ `laterHeading`), `todo` + `todoMore`, `wholeDay`, the clock part and `wake`. With no camp dates anywhere (`phase: unset`) the printed weekday schedule
@@ -2053,7 +2053,7 @@ every handler in setup-ui.js sections 8–11; the mutators in setup-sync.js sect
   preview (the rain link also on a day with nothing on it); `#sched-door` (same parts as the week's); `#sched-day-note`
   / `-text` (where a day differs), `#sched-scope-note` / `-text` (the typical day: "Changes
   Mon–Fri, except days that have their own version of this"); the guided first build
-  `#sched-empty` (`-text`, `#sched-add-first`, `#sched-copy-from`, `#sched-copy-archive`) and
+  `#sched-empty` (`-text`, `#sched-add-first`, `#sched-copy-from`) and
   `#sched-copy` (`-text`, `#sched-copy-week`) — `.sched-start` is a wrapping flex row, the
   line on its own row and the actions from one left edge; `#sched-sec-skipped` /
   `#sched-skipped-label` / `#sched-skipped-list` (rows with `[data-sched-bring]` Bring back);
@@ -2217,8 +2217,8 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
   ids, `typical:false`, patches gone, one commit), follow again / clear (confirm, a
   `pre-delete` restore point first — a device with no sync has nowhere to keep one and goes
   on, any other refusal stops it — and the games on removed items listed as not on the
-  schedule). Copy to Mon–Fri turns on the Mon–Fri days with nothing of their own. "Start from
-  last year's Sunday" is not built (no archive yet).
+  schedule). Copy to Mon–Fri turns on the Mon–Fri days with nothing of their own. ("Start from
+  last year's Sunday" is not wanted, owner's answer of Nov 9: no control for it exists.)
 - **The rain plan** (`rainOpen` → the `rain` screen). A plan is `{dk, epoch, at, items:
   {path: {base, staged, g?}}, games: {gid: {base, staged}}}`: every staged field keeps the
   value it had when first staged (`rainStage`: a field put back to its base leaves the plan;
@@ -2872,8 +2872,8 @@ does, so an app device always chooses by its own key.
   every Firebase path and localStorage key is exactly what it always was —
   `tests/camps.test.js` pins this, plus a deep-equal of the whole junior
   week data against `tests/fixtures-junior-week.json` (dumped before the
-  move; regenerated ONCE, for the spelling merge — its diff is only those three
-  spellings — and never edited since). Senior lives under the SIBLING root `seniorScoreboard/*` with
+  move; regenerated TWICE on purpose and never edited otherwise: once for the spelling merge — its diff is only those three
+  spellings — and once for the starter notice's copy, the owner's answer of Nov 9, whose diff is only the `defaultNotice` text). Senior lives under the SIBLING root `seniorScoreboard/*` with
   `':senior'`-suffixed storage keys and its own members list.
 - **Every Firebase path goes through `dbPath(sub)`** and every per-camp
   storage key through `lsKey(base)` (both in camps.js). Never write a
@@ -4067,8 +4067,9 @@ constant itself. Both camps run all of it.
   that change ("… · told 23 phones", `setupPillNote`), a "nobody" outcome is an 8 s toast, a failure a toast with **Try
   again** (the sender gave the claim back, so the same ids find the change); a 10-second-rate refusal is retried once by
   itself. **Undoing a told change tells the same phones** (`setupTellLog`, in memory: `setupUndoRun` sends `alert:true`
-  for the undo's ids — "Undone. Told 23 phones it's back as it was." — and so does its Redo). Not built: a tick on the
-  item sheet's Remove… (skip / remove is settled quietly). `campSetupAlertIntent` (the old kept intent) is gone; its key is
+  for the undo's ids — "Undone. Told 23 phones it's back as it was." — and so does its Redo). **Remove…'s question carries the same tick** (`schedRemoveTell`, `askWithTick`: skip just this day / remove from every day / delete a one-off): offered only while `pushScheduleAlertOffered()`
+  and one of the occurrences it takes away is one the sender would tell (`pushScheduleTimeTellable`; for a typical item every day that follows it), UNTICKED every time the question opens (`#ask-tell`, the
+  native-confirm fallback has no tick), named to the sender quietly when unticked (so its baseline keeps up), told with `setupTellAfter` when ticked (pill: "Supper skipped · told 3 phones", and its Undo re-tells). `campSetupAlertIntent` (the old kept intent) is gone; its key is
   only wiped on sign-out. Tests: `push-schedule-tell.test.js` (+ senior), `schedule-screen.test.js`, `rain-plan.test.js`.
 - **The whole-week calendar file** (app.js next to `buildDayIcs`, P2 §12.4):
   `buildWeekIcs({dows, fromDow, now})` is null with no camp dates (`campWeek().start`); else
@@ -4896,7 +4897,9 @@ owner acts: with no claim and no epoch every other engine is untouched.
   counselor: refused, the clear and the undo as a whole. It also runs Advanced's Start a section again (`setupRestartSection`, every section, on
   an edited one) and checks that the clear takes `setup/meta/finaleDow` (last year's finale day; Undo brings it back). The archive's label is
   "2026 camp week · Junior Camp", its year the same `campWeek().start` year the screens say (`wizardOutgoingYear`). Team names' Clear (step 2)
-  resets them to the generic names: kept as built, an owner question. No rules change belongs to this step.
+  renames each team plain "Team 1" … "Team N" (N = `CAMP.teamCount`; owner's answer of Nov 9) and drops its short name, emoji and colour; the done record carries `teams` so step 5 says
+  "Teams renamed Team 1 to Team N". The 2026 roster migration stays legacy-week only, so it never swaps "Team N" back once the epoch is stamped (`wizard.test.js` pins it).
+  **Recorded, an owner question:** a cleared team's shield (junior), built-in emoji and flag colour still come back from its slot, because "no mark at all" needs a rules change. No rules change belongs to this step.
 
 ## The new-year wizard: the screens (setup-ui.js §17 — Step 28, session 2)
 
