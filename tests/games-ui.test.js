@@ -556,6 +556,38 @@ test('a tap on a key picks, the same key clears, a refusal says why in a toast; 
   done();
 });
 
+test('a podium SWAP: a tap on a team that holds another medal, in a row that holds a team, trades them in ONE update, says so, and pops both checks', () => {
+  boot('editor');
+  const g = pgame();
+  const t = T();
+  state.ui.gameId = g.id;
+  const key = (medal, team) => ({ dataset: { team }, closest: () => ({ dataset: { medal } }) });
+  podiumPick(g.id, 'gold', t[0]); podiumPick(g.id, 'silver', t[1]);
+  // the spoken label of the taken key names the swap, with the team it trades with
+  const swapKey = gamesPodium(g).rows.find((r) => r.medal === 'silver').teams.find((k) => k.team === t[0]);
+  assert.ok(new RegExp(', has gold\\. Tap to make them silver and ' + teamName(t[1]).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' gold$').test(swapKey.label), swapKey.label);
+  // the pick goes up as ONE saveState (both draft leaves in the same push)
+  const realSave = saveState; let saves = 0;
+  saveState = () => { saves++; return realSave(); };
+  guiToasts.length = 0;
+  let r;
+  try { r = gamesPodiumTap(key('silver', t[0])); } finally { saveState = realSave; }
+  assert.deepEqual([r.action, r.medal, r.team, r.from, r.other], ['swap', 'silver', t[0], 'gold', t[1]]);
+  assert.deepEqual([state.drafts[g.id].medals.gold, state.drafts[g.id].medals.silver], [t[1], t[0]], 'both leaves moved');
+  assert.equal(saves, 1, 'one save carries both leaves');
+  assert.equal(guiToasts[0].m, nowTeamWord(t[0]) + ' and ' + nowTeamWord(t[1]) + ' swapped: ' + nowTeamWord(t[0]) + ' has silver, ' + nowTeamWord(t[1]) + ' has gold.');
+  // the picker, patched in place, pops the check of the two keys that changed hands and no other
+  const writes = { n: 0 };
+  const root = fakeRoot(['gold', 'silver', 'bronze'], T(), writes);
+  state.drafts[g.id].medals = { gold: t[0], silver: t[1] };
+  gamesPodiumPatch(root, gamesPodium(g));
+  state.drafts[g.id].medals = { gold: t[1], silver: t[0] };
+  const popped = gamesPodiumPatch(root, gamesPodium(g));
+  assert.deepEqual(popped.sort(), [root.rows.gold.keys[1].ok, root.rows.silver.keys[0].ok].sort(), 'both new checks pop');
+  state.ui.gameId = null;
+  done();
+});
+
 test('Save in the dock: the dashed well goes to the row still to pick, the gold button saves and moves the focus to Next game', () => {
   boot('editor');
   stubCelebrate();

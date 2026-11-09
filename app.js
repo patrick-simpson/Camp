@@ -12056,6 +12056,7 @@ function bracketSummaryHtml(g, b) {
 
 // The podium comes from the bracket as it is when the button is tapped, never from the screen that was drawn.
 function sixSaveResult(g) {
+  if (!canEdit()) return { ok: false }; // a counselor, a preview and a view-only tab save nothing, whoever calls (the four-team wrappers refuse the same way)
   const live = sixLive(g, 'summary');
   if (!live) return { ok: false };
   finishBracket(g, 'six', sixMedals(live));

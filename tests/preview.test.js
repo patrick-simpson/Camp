@@ -616,6 +616,51 @@ test('a four-team bracket under way, in a preview: the counselor\'s view of it a
   done();
 });
 
+test('a six-team bracket under way, in a preview: the counselor\'s Results phase and every step before it carry no control, no suggestion, no point, no place - and no tap records anything', () => {
+  boot('editor');
+  if (teamIds().length !== 6) return done(); // a four-team camp plays the four-team bracket: the test above walks that one
+  const g = state.config.games.find((x) => x.format === 'tournament');
+  assert.ok(g, 'the sandbox has a tournament game');
+  delete state.results[g.id];
+  const mk = (phase, extra) => Object.assign({ phase, pool: [], selectedPair: [], matches: [], byeTeamId: null }, extra || {});
+  const stage = {
+    round1: mk('round1', { pool: ['t0', 't1', 't2', 't3', 't4', 't5'], selectedPair: ['t0', 't1'], matches: [{ winner: 't2', loser: 't3' }] }),
+    bye: mk('bye', { matches: [{ winner: 't0', loser: 't3' }, { winner: 't1', loser: 't4' }, { winner: 't2', loser: 't5' }] }),
+    semifinal: mk('semifinal', { byeTeamId: 't0', matches: [{ winner: 't0', loser: 't3' }, { winner: 't1', loser: 't4' }, { winner: 't2', loser: 't5' }], semifinal: { a: 't1', b: 't2' } }),
+    championship: mk('championship', { byeTeamId: 't0', matches: [{ winner: 't0', loser: 't3' }, { winner: 't1', loser: 't4' }, { winner: 't2', loser: 't5' }], semifinal: { a: 't1', b: 't2', winner: 't1', loser: 't2' }, championship: { a: 't0', b: 't1' } }),
+    summary: mk('summary', { byeTeamId: 't0', matches: [{ winner: 't0', loser: 't3' }, { winner: 't1', loser: 't4' }, { winner: 't2', loser: 't5' }], semifinal: { a: 't1', b: 't2', winner: 't1', loser: 't2' }, championship: { a: 't0', b: 't1', winner: 't0', loser: 't1' } }),
+  };
+  state.followTeam = 't0';
+  state.ui.tab = 'games';
+  state.brackets = { [g.id]: JSON.parse(JSON.stringify(stage.summary)) };
+  openGame(g.id, { from: 'games' }); renderAll();
+  assert.ok(/Ready to save|save-bracket-btn|data-bracket/.test(el('entry-area').innerHTML + el('tools-area').innerHTML + el('entry-area').outerHTML), 'precondition: the director\'s own screen is the Results step');
+  previewStart();
+  setStandingsGuardThrows(true);
+  const seen = [];
+  const out = record(() => {
+    Object.keys(stage).forEach((k) => {
+      state.brackets = { [g.id]: JSON.parse(JSON.stringify(stage[k])) };
+      openGame(g.id, { from: 'games' }); renderAll(); shellTick();
+      seen.push([k, el('entry-area').innerHTML]);
+    });
+  });
+  seen.forEach(([k, html]) => {
+    assert.notOk(/winner-btn|start-bracket-btn|save-bracket-btn|undo-match-btn|undo-bye-btn|cancel-bracket|data-live=|Suggested by the points|bye-chip|data-bye/.test(html), k + ': a control or a suggestion on a counselor\'s screen: ' + html.slice(0, 160));
+    assert.ok(/live-watch/.test(html), k + ': the spectator\'s view');
+  });
+  assert.ok(/Played so far/.test(seen[1][1]), 'the matches played are listed in words a counselor reads');
+  assert.ok(/All matches played/.test(seen[4][1]), 'the Results phase says a director is saving it, and names no winner');
+  assert.deepEqual(leaksIn(out), [], 'a sink carried a point, a place or a gap');
+  assert.deepEqual(leaksIn(__domSweep()), [], 'markup left in a node');
+  state.brackets = { [g.id]: JSON.parse(JSON.stringify(stage.summary)) };
+  const was = JSON.stringify(state.brackets);
+  assert.equal(sixSaveResult(g).ok, false, 'a preview cannot save the six-team result');
+  assert.equal(JSON.stringify(state.brackets), was, 'nothing changed');
+  assert.ok(!state.results[g.id], 'and no result was written');
+  done();
+});
+
 test('every door a counselor has no key to stays shut in a preview: the director tools, the remote, the builder, the drawers, the owner\'s acts', () => {
   boot('editor');
   previewStart();

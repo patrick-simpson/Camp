@@ -50,6 +50,42 @@ test('the kicking-team refresh rewrites the mark only when the team changes (the
   assert.ok(/nm\.textContent = teamName\(kid\)/.test(src), 'the name is text');
 });
 
+test('the kicking-team refresh, driven through the DOM: an idle refresh writes nothing, a changed team rewrites the mark only', () => {
+  const g = started('kangaroo-kickball');
+  assert.ok(g.liveTracker, 'the sandbox game has a live tracker');
+  let markWrites = 0, nameWrites = 0, dataWrites = 0;
+  let mark = { dataset: { team: 't0' }, _html: bracketMarkHtml('t0', 22), get innerHTML() { return this._html; }, set innerHTML(v) { markWrites++; this._html = v; } };
+  const origData = mark.dataset;
+  mark.dataset = new Proxy(origData, { set(o, k, v) { if (o[k] !== v) dataWrites++; o[k] = v; return true; } });
+  let nameText = 'x';
+  const name = { get textContent() { return nameText; }, set textContent(v) { nameWrites++; nameText = v; } };
+  name.textContent = teamName('t0'); nameWrites = 0;
+  const kt = { querySelector: (sel) => (sel === '.live-kicking-mark' ? mark : sel === '.live-kicking-name' ? name : null) };
+  let click = null;
+  const btn = { dataset: { live: 'half-toggle' }, addEventListener: (ev, fn) => { if (ev === 'click') click = fn; } };
+  const container = {
+    querySelector: (sel) => (sel === '#live-kicking-team' ? kt : null),
+    querySelectorAll: (sel) => (sel === '[data-live]' ? [btn] : []),
+  };
+  bindLiveTracker(container, g, 't0', 't1');
+  assert.ok(click, 'the tracker bound its keys');
+  // a tap that leaves the kicking team alone (an inning's own tap, here an out) is no rewrite at all
+  btn.dataset.live = 'out-up';
+  click();
+  assert.deepEqual([markWrites, dataWrites], [0, 0], 'the same kicking team: the mark is untouched');
+  // the half flips: the other team kicks, and ONLY the mark and its name are rewritten
+  btn.dataset.live = 'half-toggle';
+  click();
+  assert.equal(markWrites, 1, 'the mark is rewritten once for the new team');
+  assert.equal(mark.dataset.team, 't1');
+  assert.equal(mark.innerHTML, bracketMarkHtml('t1', 22));
+  assert.equal(nameText, teamName('t1'));
+  // and tapping again to flip back writes the first team's mark again, never more than one rewrite per change
+  click();
+  assert.equal(markWrites, 2);
+  assert.equal(mark.dataset.team, 't0');
+});
+
 test('the six-team summary: a second render with nothing changed writes nothing; a change writes again', () => {
   const g = started('jeb-ball');
   state.brackets[g.id] = {
