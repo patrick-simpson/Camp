@@ -488,7 +488,7 @@ test('taking a day off the games days: games must have somewhere to go (they mov
     const tid = gmDayRecs(target)[0].id;
     games.forEach((id) => { const g = gameById(id); assert.equal(g.dayId, tid, id + ' moved to ' + target); });
     assert.equal(gmGamesOnDay(dk).length, 0);
-    assert.equal(gsLastUndo().label, 'Took ' + SETUP_DAY_WORDS[dk] + ' off the games days');
+    assert.equal(gsLastUndo().label, 'Deleted ' + SETUP_DAY_WORDS[dk] + '’s games day');
     // a day with no games: no question
     const empty = SETUP_DK.find((d) => gmIsGamesDay(d) && !gmGamesOnDay(d).length) || (gmMakeDay('sat'), 'sat');
     assert.equal(gmTakeDayOff(empty, '').ok, true);
@@ -1735,4 +1735,238 @@ test('a new game never inherits a record the id scan did not see: whatever sits 
     assert.ok(c.ok);
     assert.equal(state.results[c.id], undefined, 'a copy inherits no result either');
   } finally { makeId = realMakeId; gsEnd(); }
+});
+
+// ── the day's own sheet: rename, change weekday, delete (the classic Days tab's abilities, back in the new screens) ──
+const gsFreeDay = () => SETUP_DK.find((d) => !gmIsGamesDay(d) && gsBlocks(d).length) || SETUP_DK.find((d) => !gmIsGamesDay(d));
+async function gsAsking(answers, fn) {
+  const real = askDialog; const asked = [];
+  askDialog = async (o) => { asked.push(o); return answers.shift(); };
+  try { await fn(asked); } finally { askDialog = real; }
+}
+
+test('renaming a games day: one entry, trimmed and cut to 30, emptied it goes back to the weekday; the Games tab picker shows the name and keeps the weekday chip', () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    const rec = gmDayRecs(dk)[0];
+    const id = rec.id;
+    assert.equal(gmSetDayName(id, '  Messtival  ').changed, true);
+    assert.equal(dayById(id).name, 'Messtival');
+    assert.equal(gsLastUndo().label, 'Renamed ' + SETUP_DAY_WORDS[dk]);
+    assert.deepEqual(gsPaths(gsLastUndo()), ['days/' + id + '/name']);
+    assert.equal(gmSetDayName(id, 'Messtival').changed, false, 'the same name writes nothing');
+    const m = gamesModel();
+    const chip = m.days.find((d) => d.id === id);
+    assert.equal(chip.name, 'Messtival');
+    assert.equal(chip.short, SETUP_DAY_WORDS[dk].slice(0, 3), 'the chip keeps the weekday so the picker stays in week order');
+    assert.ok(chip.label.indexOf('Messtival (' + SETUP_DAY_WORDS[dk] + ')') === 0, 'the spoken label has both');
+    assert.ok(/^Shown as “Messtival” · /.test(gmDayModel(dk).lede));
+    assert.equal(gmSetDayName(id, 'x'.repeat(80)).name.length, 30);
+    assert.equal(gmSetDayName(id, '<b>Hi</b> & "you"').name.indexOf('<'), -1, 'no markup characters');
+    assert.equal(gmSetDayName(id, '   ').name, SETUP_DAY_WORDS[dk], 'emptied: the weekday’s word');
+    // undo and redo through the engine
+    undoClear();
+    gmSetDayName(id, 'Field day');
+    const e = gsLastUndo();
+    undoEntry(e.id);
+    assert.equal(dayById(id).name, SETUP_DAY_WORDS[dk]);
+    undoEntry(gsLastUndo().id);
+    assert.equal(dayById(id).name, 'Field day', 'Redo');
+    // a colleague's change to another field survives an Undo of the rename
+    dayById(id).note = 'Bring a towel';
+    undoEntry(gsLastUndo().id);
+    assert.equal(dayById(id).note, 'Bring a towel');
+    // a day that was deleted elsewhere
+    assert.equal(gmSetDayName('d-nope', 'X').reason, 'gone');
+  } finally { gsEnd(); }
+});
+
+test('a day with no weekday keeps a name (nothing to go back to) and is renamed, noted and deleted by its id', () => {
+  gsStart();
+  try {
+    state.config.days.push({ id: 'd-nodow', name: 'Field day', note: '' });
+    assert.equal(gmNoWeekdayDays().length, 1);
+    assert.equal(gmSetDayName('d-nodow', '').reason, 'empty');
+    assert.equal(dayById('d-nodow').name, 'Field day');
+    assert.equal(gmSetDayName('d-nodow', 'Big day').changed, true);
+    assert.equal(gmSetDayNoteById('d-nodow', ' Wear red ').changed, true);
+    assert.equal(dayById('d-nodow').note, 'Wear red');
+    const r = gmTakeDayOff('d-nodow', '');
+    assert.equal(r.ok, true);
+    assert.equal(dayById('d-nodow'), undefined);
+    assert.equal(gsLastUndo().label, 'Deleted Big day’s games day');
+  } finally { gsEnd(); }
+});
+
+test('moving a games day to another weekday: its games and results stay with it, it takes its place in the week, the schedule links are put right, one Undo', () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    const to = gsFreeDay();
+    assert.ok(to, 'a weekday with no games day');
+    const id = gmDayRecs(dk)[0].id;
+    const before = gmGamesOnDay(dk).map((g) => g.id);
+    assert.ok(before.length);
+    state.results[before[0]] = { medals: { gold: state.teams[0].id }, savedAt: 1 };
+    const r = gmMoveDay(id, to);
+    assert.deepEqual([r.ok, r.changed], [true, true]);
+    assert.equal(gmDayRecs(dk).length, 0);
+    assert.equal(gmDayRecs(to)[0].id, id);
+    assert.deepEqual(gmGamesOnDay(to).map((g) => g.id).sort(), before.slice().sort(), 'the games went with it');
+    assert.ok(state.results[before[0]], 'and so did the result');
+    assert.equal(state.ui.sgDay, to);
+    assert.equal(dayById(id).name, SETUP_DAY_WORDS[to], 'a name that was only the old weekday follows it');
+    const days = state.config.days.filter((d) => Number.isInteger(d.dow)).map((d) => d.dow);
+    assert.deepEqual(days, days.slice().sort((a, b) => a - b), 'the days stay in week order');
+    const here = {};
+    planForDow(SETUP_DK.indexOf(to)).forEach((b) => { here[b.id] = true; });
+    gmGamesOnDay(to).forEach((g) => { if (typeof g.blockId === 'string') assert.ok(here[g.blockId], g.id + ' sits on an item of the new weekday'); });
+    assert.equal(gsLastUndo().label, 'Moved the ' + SETUP_DAY_WORDS[dk] + ' games day to ' + SETUP_DAY_WORDS[to]);
+    undoEntry(gsLastUndo().id);
+    assert.equal(gmDayRecs(dk)[0].id, id, 'Undo puts it back on its weekday');
+    assert.equal(gmDayRecs(to).length, 0);
+    undoEntry(gsLastUndo().id);
+    assert.equal(gmDayRecs(to)[0].id, id, 'Redo');
+  } finally { gsEnd(); }
+});
+
+test('moving a day with the original week: the links are left alone (nothing reads them), the games still go with it; a weekday that already has a games day is refused', () => {
+  gsStart({ off: true });
+  try {
+    const dk = SETUP_DK.find((d) => gmIsGamesDay(d) && gmGamesOnDay(d).length);
+    const to = gsFreeDay();
+    const id = gmDayRecs(dk)[0].id;
+    const ids = gmGamesOnDay(dk).map((g) => g.id);
+    const other = SETUP_DK.find((d) => d !== dk && gmIsGamesDay(d));
+    assert.equal(gmMoveDay(id, other).reason, 'taken');
+    assert.equal(gmDayRecs(dk)[0].id, id, 'a refusal changes nothing');
+    assert.equal(gsLastUndo(), null);
+    assert.equal(gmMoveDay(id, to).ok, true);
+    assert.deepEqual(gmGamesOnDay(to).map((g) => g.id).sort(), ids.slice().sort());
+    assert.equal(gmMoveDay(id, to).changed, false, 'to where it already is: nothing');
+    assert.equal(gmMoveDay('d-gone', dk).reason, 'gone');
+    assert.equal(gmMoveDay(id, 'nope').reason, 'day');
+  } finally { gsEnd(); }
+});
+
+test('the move question names what happens to the games; a refused weekday is explained in the sheet; a day with no games moves without a question', async () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    const to = gsFreeDay();
+    gmUi.dayDk = dk; gmUi.dayId = gmDayRecs(dk)[0].id;
+    const plan = gmMovePlan(gmUi.dayId, to);
+    assert.equal(plan.games, gmGamesOnDay(dk).length);
+    await gsAsking(['no'], async (asked) => {
+      const r = await gmDayDowTap(to);
+      assert.equal(r.reason, 'cancelled');
+      assert.equal(asked[0].title, 'Move this games day to ' + SETUP_DAY_WORDS[to] + '?');
+      assert.ok(/^Its \d+ games? and their results go with it\.$/.test(asked[0].body[0]));
+      assert.deepEqual(asked[0].actions.map((a) => a.label), ['Not now', 'Move it to ' + SETUP_DAY_WORDS[to]]);
+    });
+    assert.equal(gmIsGamesDay(dk), true, 'Not now changes nothing');
+    const taken = SETUP_DK.find((d) => d !== dk && gmIsGamesDay(d));
+    const r2 = await gmDayDowTap(taken);
+    assert.equal(r2.reason, 'taken');
+    assert.equal(setupEl('sg-day-dow-why').hidden, false);
+    assert.equal(setupEl('sg-day-dow-why').textContent, SETUP_DAY_WORDS[taken] + ' is already a games day. Move or delete that one first.');
+    await gsAsking(['go'], async () => { assert.equal((await gmDayDowTap(to)).ok, true); });
+    assert.equal(gmIsGamesDay(to), true);
+    // no games: no question
+    const empty = gmMakeDay(SETUP_DK.find((d) => !gmIsGamesDay(d))); // a new empty day
+    gmUi.dayId = empty.id; gmUi.dayDk = gmDkOfDayId(empty.id);
+    const free = SETUP_DK.find((d) => !gmIsGamesDay(d));
+    if (free) await gsAsking([], async (asked) => { assert.equal((await gmDayDowTap(free)).ok, true); assert.equal(asked.length, 0); });
+  } finally { gmUi.dayDk = ''; gmUi.dayId = ''; gsEnd(); }
+});
+
+test('deleting a games day: refused while it has games until they are given somewhere to go; one without games asks once; every write is a director’s', async () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    gmUi.dayDk = dk; gmUi.dayId = gmDayRecs(dk)[0].id;
+    assert.equal(gmTakeDayOff(gmUi.dayId, '').reason, 'where');
+    assert.equal(dayById(gmUi.dayId) !== undefined, true);
+    await gsAsking(['no'], async (asked) => {
+      assert.equal((await gmTakeDayOffFlow()).reason, 'cancelled');
+      assert.ok(/ still has \d+ games?$/.test(asked[0].title));
+      assert.ok(asked[0].actions.some((a) => /^Move them to /.test(a.label)));
+    });
+    assert.ok(dayById(gmUi.dayId), 'Not now keeps the day');
+    const empty = gmMakeDay(SETUP_DK.find((d) => !gmIsGamesDay(d)));
+    gmUi.dayId = empty.id; gmUi.dayDk = gmDkOfDayId(empty.id);
+    await gsAsking(['go'], async (asked) => {
+      assert.equal((await gmTakeDayOffFlow()).ok, true);
+      assert.equal(asked[0].actions[1].label, 'Delete it');
+    });
+    assert.equal(dayById(empty.id), undefined);
+    undoEntry(gsLastUndo().id);
+    assert.ok(dayById(empty.id), 'Undo brings the day back');
+    // counselors, previews and a view-only tab write nothing
+    const id = gmDayRecs(dk)[0].id;
+    const before = JSON.stringify(state.config.days);
+    setMemberRole('viewer');
+    assert.equal(gmSetDayName(id, 'X').reason, 'locked');
+    assert.equal(gmMoveDay(id, gsFreeDay()).reason, 'locked');
+    assert.equal(gmTakeDayOff(id, 'mon').reason, 'locked');
+    setMemberRole('editor');
+    counselorPreviewOn = true;
+    try { assert.equal(gmSetDayName(id, 'X').reason, 'locked'); assert.equal(gmMoveDay(id, gsFreeDay()).reason, 'locked'); } finally { counselorPreviewOn = false; }
+    const wasWriter = tabWriter; tabWriter = false;
+    try { assert.equal(gmMoveDay(id, gsFreeDay()).reason, 'locked'); } finally { tabWriter = wasWriter; }
+    assert.equal(JSON.stringify(state.config.days), before);
+  } finally { gmUi.dayDk = ''; gmUi.dayId = ''; gsEnd(); }
+});
+
+test('the day sheet follows its day by id: a day deleted on another phone closes it; a move from elsewhere keeps it open on the same day', () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    const id = gmDayRecs(dk)[0].id;
+    gmUi.dayDk = dk; gmUi.dayId = id;
+    renderGmDaySheet();
+    assert.equal(setupEl('sheet-sg-day-title').textContent, SETUP_DAY_WORDS[dk]);
+    assert.equal(setupEl('sg-day-off-title').textContent, 'Delete this games day');
+    assert.equal(setupEl('sg-day-name').placeholder, SETUP_DAY_WORDS[dk]);
+    const to = gsFreeDay();
+    dayById(id).dow = SETUP_DK.indexOf(to); // a colleague's move arriving
+    renderGmDaySheet();
+    assert.equal(setupEl('sheet-sg-day-title').textContent, SETUP_DAY_WORDS[to], 'still this day, now on its new weekday');
+    assert.equal(setupSheetReady('sg-day'), true);
+    state.config.days.splice(state.config.days.findIndex((d) => d.id === id), 1);
+    assert.equal(setupSheetReady('sg-day'), false, 'a deleted day has no sheet');
+    // the name saves when focus leaves, only if changed while focused
+    const dk2 = SETUP_DK.find((d) => gmIsGamesDay(d));
+    const id2 = gmDayRecs(dk2)[0].id;
+    gmUi.dayId = id2; gmUi.dayDk = dk2;
+    const box = setupEl('sg-day-name'); box.tagName = 'INPUT';
+    box.value = SETUP_DAY_WORDS[dk2];
+    gmFieldIn(box);
+    undoClear();
+    gmDayNameBlur();
+    assert.equal(gsLastUndo(), null, 'a bare blur writes nothing');
+    box.value = 'Messtival';
+    gmDayNameBlur();
+    assert.equal(dayById(id2).name, 'Messtival');
+  } finally { gmUi.dayDk = ''; gmUi.dayId = ''; gsEnd(); }
+});
+
+test('days with no weekday get their own rows on the Games screen, only for a director; an idle paint writes nothing', () => {
+  gsStart();
+  try {
+    state.config.days.push({ id: 'd-nodow', name: 'Field day', note: '' });
+    renderGmNoWeekday(true);
+    assert.equal(setupEl('sg-sec-nodow').hidden, false);
+    const html = setupEl('sg-nodow-list').innerHTML;
+    assert.ok(html.indexOf('data-sg-dayid="d-nodow"') !== -1 && html.indexOf('Field day') !== -1);
+    state.config.days[state.config.days.length - 1].name = '<img src=x onerror=1>';
+    renderGmNoWeekday(true);
+    assert.equal(setupEl('sg-nodow-list').innerHTML.indexOf('<img'), -1, 'escaped');
+    renderGmNoWeekday(false);
+    assert.equal(setupEl('sg-sec-nodow').hidden, true);
+    assert.equal(setupEl('sg-nodow-list').innerHTML, '');
+    gmOpenDayById('d-nodow');
+    assert.equal(gmUi.dayId, 'd-nodow');
+  } finally { shell.sheets.includes('sg-day') && shellSheetClose('sg-day'); gmUi.dayDk = ''; gmUi.dayId = ''; gsEnd(); }
 });

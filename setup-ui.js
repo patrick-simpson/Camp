@@ -1410,7 +1410,7 @@ function setupSheetReady(id) {
   if (id === 'camper-edit') return !!campersUi.edit;
   if (id === 'camper-add') return !!campersUi.add;
   if (id === 'game') return typeof gmSheetReady === 'function' && gmSheetReady();
-  if (id === 'sg-day') return gmIsGamesDay(gmUi.dayDk);
+  if (id === 'sg-day') return !!gmSheetDay();
   if (id === 'setup-advanced') return isOwner();
   if (id === 'nyw-staff') return isOwner() && nywUi.staffOpen;
   if (id === 'nyw-undo') return isOwner() && !!nywUi.undo;
@@ -7424,6 +7424,9 @@ function gmDayModel(dk) {
     if (loose.length) bits.push((loose.length === 1 ? '1' + GM_NBSP + 'isn’t' : loose.length + GM_NBSP + 'aren’t') + ' on the schedule');
     lede = (today ? 'Today · ' : '') + bits.join(' · ');
   }
+  // A renamed day says what the Games tab calls it, so the name typed in its sheet is never a mystery.
+  const shown = isDay ? String(recs[0].name || '').trim() : '';
+  if (isDay && shown && shown !== dayWord) lede = 'Shown as “' + shown + '” · ' + lede;
   return { dk, dow, isDay, live, games, groups, loose, n, warn, today, lede, headline: dayWord, note: isDay ? String(recs[0].note || '').trim() : '' };
 }
 
@@ -7746,21 +7749,35 @@ function gmSetDayNote(dk, text) {
   return ok === false ? { ok: false, reason: 'gone' } : { ok: true, changed: true };
 }
 
-// Take a weekday off the games days. A day with games asks where they go (every other games day is a choice; they never just
-// vanish): the games move to that day, off any item they were on (they get their natural one there, as a new game does).
-// `moveTo`: the weekday key the games go to ('' when the day holds none).
-function gmTakeDayOff(dk, moveTo) {
+// The same note for a day with no weekday (it has only its id).
+function gmSetDayNoteById(dayId, text) {
   if (configLocked()) return { ok: false, reason: 'locked' };
-  const recs = gmDayRecs(dk);
+  const rec = dayById(dayId);
+  if (!rec) return { ok: false, reason: 'day' };
+  const v = String(text || '').trim().slice(0, 200);
+  if (v === String(rec.note || '').trim()) return { ok: true, changed: false };
+  const ok = configEdit('Edited the note for ' + String(rec.name || 'the day'), () => { const d = dayById(dayId); if (!d) return false; d.note = v; return undefined; });
+  return ok === false ? { ok: false, reason: 'gone' } : { ok: true, changed: true };
+}
+
+// Delete a games day. A day with games asks where they go (every other games day is a choice; they never just vanish): the games
+// move to that day, off any item they were on (they get their natural one there, as a new game does). `which` is a weekday key or
+// a day's id (a day with no weekday has only its id); `moveTo`: the weekday key the games go to ('' when the day holds none).
+function gmTakeDayOff(which, moveTo) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const byWeekday = SETUP_DK.indexOf(which) !== -1;
+  const recs = byWeekday ? gmDayRecs(which) : [dayById(which)].filter(Boolean);
   if (!recs.length) return { ok: true, changed: false };
   const ids = recs.map((d) => d.id);
-  const games = gmGamesOnDay(dk);
-  // The games go to ANOTHER games day: the day being taken off is never its own destination (its record is deleted below, which
+  const word = byWeekday ? SETUP_DAY_WORDS[which] : String(recs[0].name || 'The day');
+  const games = allGames().filter((g) => g && ids.indexOf(g.dayId) !== -1);
+  // The games go to ANOTHER games day: the day being deleted is never its own destination (its record is deleted below, which
   // would leave them on a day that isn't there).
-  const target = moveTo && moveTo !== dk ? (gmDayRecs(moveTo)[0] || null) : null;
+  const dest = moveTo ? gmDayRecs(moveTo)[0] : null;
+  const target = dest && ids.indexOf(dest.id) === -1 ? dest : null;
   if (games.length && !target) return { ok: false, reason: 'where' };
   const moved = games.map((g) => g.id);
-  const ok = configEdit('Took ' + SETUP_DAY_WORDS[dk] + ' off the games days', () => {
+  const ok = configEdit('Deleted ' + word + '’s games day', () => {
     moved.forEach((id) => {
       const g = gameById(id);
       if (!g) return;
@@ -7776,6 +7793,77 @@ function gmTakeDayOff(dk, moveTo) {
   if (ids.indexOf(state.ui.day) !== -1) state.ui.day = defaultDay(state.config);
   saveState();
   return { ok: true, changed: true, moved: moved.length };
+}
+
+// A day's name, as the Games tab shows it. Emptied, it goes back to the weekday's word (a day with no weekday has nothing to go
+// back to, so it keeps a name). One configEdit; the record is looked up by id when it commits (P10).
+const GM_DAY_NAME_MAX = 30;
+function gmSetDayName(dayId, text) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const rec = dayById(dayId);
+  if (!rec) return { ok: false, reason: 'gone' };
+  const wk = Number.isInteger(rec.dow) && rec.dow >= 0 && rec.dow <= 6 ? SETUP_DAY_WORDS[SETUP_DK[rec.dow]] : '';
+  let v = String(text == null ? '' : text).replace(/[\u0000-\u001f\u007f<>&"]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, GM_DAY_NAME_MAX).trim();
+  if (!v) v = wk;
+  if (!v) return { ok: false, reason: 'empty' };
+  if (v === String(rec.name || '')) return { ok: true, changed: false };
+  const was = wk || String(rec.name || '');
+  const ok = configEdit('Renamed ' + was, () => { const d = dayById(dayId); if (!d) return false; d.name = v; return undefined; });
+  return ok === false ? { ok: false, reason: 'gone' } : { ok: true, changed: true, name: v };
+}
+
+// Move a games day to another weekday. The pure half works on any config (the confirm question dry-runs it on a copy): the record
+// takes its place in the week (the order the Games tab lists days), a name that was only the old weekday's word becomes the new one,
+// and — only while the schedule is edited here — a game whose item is not on the new weekday loses that link and is put on the new
+// weekday's natural item, as a new game is (setupAttachNewGame). Games keep their dayId, so results and brackets stay.
+function gmMoveDayApply(config, dayId, dow) {
+  const list = config.days;
+  const rec = list.find((d) => d && d.id === dayId);
+  if (!rec) return false;
+  const was = Number.isInteger(rec.dow) ? SETUP_DAY_WORDS[SETUP_DK[rec.dow]] : '';
+  rec.dow = dow;
+  if (was && rec.name === was) rec.name = SETUP_DAY_WORDS[SETUP_DK[dow]];
+  list.splice(list.indexOf(rec), 1);
+  const at = list.findIndex((d) => d && Number.isInteger(d.dow) && d.dow > dow);
+  if (at === -1) list.push(rec); else list.splice(at, 0, rec);
+  if (typeof scheduleIsShared === 'function' && scheduleIsShared()) {
+    const here = {};
+    planForDow(dow).forEach((b) => { here[b.id] = true; });
+    const mine = (config.games || []).filter((g) => g && g.dayId === dayId);
+    mine.forEach((g) => { if (typeof g.blockId === 'string' && !here[g.blockId]) { delete g.blockId; delete g.ord; } });
+    mine.forEach((g) => { if (typeof g.blockId !== 'string' && typeof setupAttachNewGame === 'function') setupAttachNewGame(config, g); });
+  }
+  return true;
+}
+// What a move would do, without doing it: { games, off } — off = games that end up on no item.
+function gmMovePlan(dayId, dk) {
+  const mine = allGames().filter((g) => g && g.dayId === dayId);
+  if (!mine.length) return { games: 0, off: 0 };
+  const copy = { days: JSON.parse(JSON.stringify(state.config.days)), games: JSON.parse(JSON.stringify(state.config.games || [])) };
+  gmMoveDayApply(copy, dayId, gmDow(dk));
+  const live = typeof scheduleIsShared === 'function' && scheduleIsShared();
+  const off = live ? copy.games.filter((g) => g && g.dayId === dayId && typeof g.blockId !== 'string').length : 0;
+  return { games: mine.length, off };
+}
+function gmMoveDay(dayId, dk) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const dow = gmDow(dk);
+  if (dow < 0) return { ok: false, reason: 'day' };
+  const rec = dayById(dayId);
+  if (!rec) return { ok: false, reason: 'gone' };
+  if (rec.dow === dow) return { ok: true, changed: false };
+  if (competitionDays().some((d) => d && d.id !== dayId && d.dow === dow)) return { ok: false, reason: 'taken' };
+  const was = Number.isInteger(rec.dow) ? SETUP_DAY_WORDS[SETUP_DK[rec.dow]] : String(rec.name || 'The day');
+  const ok = configEdit('Moved the ' + was + ' games day to ' + SETUP_DAY_WORDS[dk], () => {
+    // Looked up by id and checked again when it commits: a colleague's snapshot may have put another day on this weekday.
+    if (state.config.days.some((d) => d && d.id !== dayId && d.dow === dow)) return false;
+    return gmMoveDayApply(state.config, dayId, dow) ? undefined : false;
+  });
+  if (ok === false) return { ok: false, reason: dayById(dayId) ? 'taken' : 'gone' };
+  gmUi.dayDk = dk;
+  state.ui.sgDay = dk;
+  saveState();
+  return { ok: true, changed: true };
 }
 
 // ── the ⚡ quick game ──
@@ -7812,6 +7900,8 @@ function gmQuickTarget() {
 const gmUi = {
   open: null,          // the open game sheet (see gmOpenSheet)
   dayDk: '',           // the weekday the ⋯ sheet is about
+  dayId: '',           // the day's id (the sheet is keyed by it: the weekday can change under it)
+  dowShown: '',        // the strip last scrolled to this day + weekday
   stripDay: undefined, // the day the strip last scrolled to
   stripPlaced: false,  // the strip opened scrolled to today once per visit
   closing: false,      // a close is flushing the field being typed: that blur saves a game, it never makes one
@@ -7968,6 +8058,21 @@ function renderGamesScreen() {
   setHiddenIfChanged(setupEl('sg-add'), !(m.isDay && !empty && editable));
   setTextIfChanged(setupEl('sg-add-text'), 'Add a game to ' + word);
   renderGmBracketNotes(editable);
+  renderGmNoWeekday(editable);
+}
+
+// Days an older build made with no weekday: they show on the Games tab but have no chip in the strip, so each is a row here that
+// opens its sheet (give it a weekday, rename it, or delete it).
+function gmNoWeekdayDays() { return competitionDays().filter((d) => d && !(Number.isInteger(d.dow) && d.dow >= 0 && d.dow <= 6)); }
+function renderGmNoWeekday(editable) {
+  const rows = editable ? gmNoWeekdayDays().map((d) => {
+    const n = allGames().filter((g) => g && g.dayId === d.id).length;
+    return '<button type="button" class="cb-row sg-game" data-key="nd-' + esc(d.id) + '" data-sg-dayid="' + esc(d.id) + '"><span class="cb-main"><span class="cb-title"><span>' + esc(d.name || 'A day') + '</span></span>' +
+      '<span class="cb-sub">' + (n ? hubPlural(n, 'game', 'games') + ' · ' : '') + 'Give it a weekday to see them here</span></span>' +
+      '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+  }) : [];
+  setHiddenIfChanged(setupEl('sg-sec-nodow'), !rows.length);
+  setHtmlIfChanged(setupEl('sg-nodow-list'), rows.join(''));
 }
 
 // Brackets that need a look, whichever day is open (the hub's Games row says so, and this is where it is put right): a late tap after
@@ -7996,61 +8101,141 @@ function renderGmBracketNotes(editable) {
   setHtmlIfChanged(setupEl('sg-bn-list'), editable ? rows.join('') : '');
 }
 
-// ── a day's own sheet (⋯): its note, and taking it off the games days ──
+// ── a day's own sheet (⋯): its name, its weekday, its note, and deleting it ──
+// Keyed by the day's id (the weekday can change under the open sheet, and a day with no weekday has only its id).
+function gmSheetDay() {
+  if (gmUi.dayId) return dayById(gmUi.dayId) || null;
+  return gmDayRecs(gmUi.dayDk)[0] || null;
+}
+function gmDayWeekday(rec) { return rec && Number.isInteger(rec.dow) && rec.dow >= 0 && rec.dow <= 6 ? SETUP_DK[rec.dow] : ''; }
 function gmOpenDaySheet(opener) {
   const dk = gmDayKey();
   if (!canEdit() || !gmIsGamesDay(dk)) return;
   gmUi.dayDk = dk;
+  gmUi.dayId = gmDayRecs(dk)[0].id;
+  setupSheet('sg-day', opener);
+}
+// A day with no weekday (an older build's "Add day") opens from its row on the Games screen.
+function gmOpenDayById(dayId, opener) {
+  if (!canEdit() || !dayById(dayId)) return;
+  gmUi.dayId = dayId;
+  gmUi.dayDk = gmDayWeekday(dayById(dayId));
   setupSheet('sg-day', opener);
 }
 
 function renderGmDaySheet() {
-  const dk = gmUi.dayDk;
-  const rec = gmDayRecs(dk)[0];
+  const rec = gmSheetDay();
   if (!rec) { shellSheetClose('sg-day'); return; }
-  const word = SETUP_DAY_WORDS[dk];
-  const n = gmGamesOnDay(dk).length;
+  const dk = gmDayWeekday(rec);
+  const word = dk ? SETUP_DAY_WORDS[dk] : String(rec.name || 'This day');
+  const n = allGames().filter((g) => g && g.dayId === rec.id).length;
   setTextIfChanged(setupEl('sheet-sg-day-title'), word);
-  setTextIfChanged(setupEl('sg-day-note-label'), 'Note on ' + word + '’s games');
+  const name = setupEl('sg-day-name');
+  if (name) {
+    if (document.activeElement !== name && name.value !== String(rec.name || '')) name.value = String(rec.name || '');
+    if (name.placeholder !== (dk ? word : 'Name this day')) name.placeholder = dk ? word : 'Name this day';
+  }
+  setTextIfChanged(setupEl('sg-day-name-hint'), dk ? 'The Games tab shows it. Clear it to go back to “' + word + '”.' : 'The Games tab shows it. Pick a day of the week below too.');
+  const strip = setupEl('sg-day-dows');
+  if (strip) {
+    strip.querySelectorAll('[data-dk]').forEach((b) => {
+      const k = b.dataset.dk;
+      const mine = k === dk;
+      const taken = !mine && competitionDays().some((d) => d && d.id !== rec.id && d.dow === gmDow(k));
+      setAttrIfChanged(b, 'aria-checked', mine ? 'true' : 'false');
+      setAttrIfChanged(b, 'aria-disabled', taken ? 'true' : null);
+      setAttrIfChanged(b, 'data-taken', taken ? 'true' : null);
+      setAttrIfChanged(b, 'aria-label', SETUP_DAY_WORDS[k] + (taken ? ', already a games day' : ''));
+    });
+    paintStripOverflow(strip);
+    if (typeof stripRevealChip === 'function') { const cur = strip.querySelector('[aria-checked="true"]'); if (cur && gmUi.dowShown !== rec.id + ':' + dk) { stripRevealChip(strip, cur); gmUi.dowShown = rec.id + ':' + dk; } }
+  }
   const box = setupEl('sg-day-note');
   if (box && document.activeElement !== box && box.value !== String(rec.note || '')) box.value = String(rec.note || '');
-  setTextIfChanged(setupEl('sg-day-off-title'), 'Make ' + word + ' a day with no games');
-  setTextIfChanged(setupEl('sg-day-off-sub'), n ? 'First asks where its ' + hubPlural(n, 'game', 'games') + ' go' : 'It has no games');
+  setTextIfChanged(setupEl('sg-day-note-label'), 'Note on ' + word + '’s games');
+  setTextIfChanged(setupEl('sg-day-off-title'), 'Delete this games day');
+  setTextIfChanged(setupEl('sg-day-off-sub'), n ? 'First asks where its ' + hubPlural(n, 'game', 'games') + ' go' : word + ' becomes a day with no games');
+}
+
+// The name saves when focus leaves it, only if it changed while focused.
+function gmDayNameBlur() {
+  const box = setupEl('sg-day-name');
+  const rec = gmSheetDay();
+  if (!box || !rec) return;
+  if (gmFocusUntouched(box)) return;
+  const r = gmSetDayName(rec.id, box.value);
+  if (r.ok && r.changed) { box.value = r.name; renderAll(); }
+  else if (r.ok) box.value = String(rec.name || '');
+  else if (r.reason === 'empty') showToast('Give this day a name.');
+}
+
+// A tap on a weekday of the strip: a free one moves the day (asking first when it has games), a taken one says why.
+async function gmDayDowTap(dk) {
+  const rec = gmSheetDay();
+  const why = setupEl('sg-day-dow-why');
+  if (!canEdit() || !rec || SETUP_DK.indexOf(dk) === -1) return { ok: false, reason: 'day' };
+  if (gmDayWeekday(rec) === dk) return { ok: true, changed: false };
+  const taken = competitionDays().some((d) => d && d.id !== rec.id && d.dow === gmDow(dk));
+  if (taken) {
+    setTextIfChanged(why, SETUP_DAY_WORDS[dk] + ' is already a games day. Move or delete that one first.');
+    setHiddenIfChanged(why, false);
+    return { ok: false, reason: 'taken' };
+  }
+  setHiddenIfChanged(why, true);
+  const plan = gmMovePlan(rec.id, dk);
+  if (plan.games) {
+    const body = ['Its ' + hubPlural(plan.games, 'game', 'games') + ' and their results go with it.'];
+    if (plan.off) body.push((plan.off === plan.games ? 'None of them have' : plan.off + ' of them ' + (plan.off === 1 ? 'has' : 'have') + ' no') + ' a Games item on ' + SETUP_DAY_WORDS[dk] + (plan.off === plan.games ? '' : '') + ': they go under Not on the schedule.');
+    const go = await askDialog({
+      title: 'Move this games day to ' + SETUP_DAY_WORDS[dk] + '?', body,
+      actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Move it to ' + SETUP_DAY_WORDS[dk], value: 'go', kind: 'gold' }],
+    });
+    if (go !== 'go') return { ok: false, reason: 'cancelled' };
+  }
+  const r = gmMoveDay(rec.id, dk);
+  if (r.ok && r.changed) renderAll();
+  else if (!r.ok && r.reason === 'taken') { setTextIfChanged(why, SETUP_DAY_WORDS[dk] + ' is already a games day. Move or delete that one first.'); setHiddenIfChanged(why, false); }
+  else if (!r.ok && r.reason === 'gone') shellSheetClose('sg-day');
+  return r;
 }
 
 // The note saves when focus leaves the box (nothing else to press).
 function gmDayNoteBlur() {
   const box = setupEl('sg-day-note');
-  if (!box || !gmUi.dayDk) return;
+  const rec = gmSheetDay();
+  if (!box || !rec) return;
   if (gmFocusUntouched(box)) return; // only a changed note is written (a colleague's newer one is not put back)
-  const r = gmSetDayNote(gmUi.dayDk, box.value);
+  const dk = gmDayWeekday(rec);
+  const r = dk ? gmSetDayNote(dk, box.value) : gmSetDayNoteById(rec.id, box.value);
   if (r.ok && r.changed) renderAll();
 }
 
-// Take the day off: a day with games asks where they go (every other games day is a choice); the games never just vanish.
+// Delete the day: a day with games asks where they go (every other games day is a choice); the games never just vanish.
 async function gmTakeDayOffFlow() {
-  const dk = gmUi.dayDk;
-  if (!canEdit() || !gmIsGamesDay(dk)) return { ok: false, reason: 'day' };
-  const word = SETUP_DAY_WORDS[dk];
-  const n = gmGamesOnDay(dk).length;
+  const rec = gmSheetDay();
+  if (!canEdit() || !rec) return { ok: false, reason: 'day' };
+  const dk = gmDayWeekday(rec);
+  const word = dk ? SETUP_DAY_WORDS[dk] : String(rec.name || 'This day');
+  const n = allGames().filter((g) => g && g.dayId === rec.id).length;
   let moveTo = '';
   if (n) {
     const others = SETUP_DK.filter((d) => d !== dk && gmIsGamesDay(d));
     if (!others.length) { setupSay('Make another day a games day first — ' + word + '’s games need somewhere to go.'); return { ok: false, reason: 'where' }; }
     const pick = await askDialog({
-      title: 'Where do ' + word + '’s ' + hubPlural(n, 'game', 'games') + ' go?', body: ['They move to the day you pick, and keep their results.'], stack: true,
+      title: word + ' still has ' + hubPlural(n, 'game', 'games'), body: ['Move them to another games day first. Their results go with them.'], stack: true,
       actions: others.slice(0, 6).map((d) => ({ label: 'Move them to ' + SETUP_DAY_WORDS[d], value: d })).concat([{ label: 'Not now', value: 'no', kind: 'quiet', cancel: true }]),
     });
     if (!pick || pick === 'no') return { ok: false, reason: 'cancelled' };
     moveTo = pick;
   } else {
     const go = await askDialog({
-      title: 'Take ' + word + ' off the games days?', body: ['It has no games. “Make ' + word + ' a games day” puts it back.'],
-      actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Take it off', value: 'go', kind: 'danger' }],
+      title: 'Delete ' + word + '’s games day?', body: ['It has no games. Undo brings it back.'],
+      actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Delete it', value: 'go', kind: 'danger' }],
     });
     if (go !== 'go') return { ok: false, reason: 'cancelled' };
   }
-  const r = gmTakeDayOff(dk, moveTo);
+  if (!gmSheetDay()) return { ok: true, gone: true };
+  const r = gmTakeDayOff(rec.id, moveTo);
   if (r.ok) { shellSheetClose('sg-day'); renderAll(); }
   return r;
 }
@@ -8097,12 +8282,22 @@ function wireGamesScreen() {
     else if (q('#sg-add') || q('#sg-add-first')) { if (typeof gmOpenNew === 'function') gmOpenNew({ dk: gmDayKey(), opener: q('#sg-add') || q('#sg-add-first') }); }
     else if (q('#sg-day-on')) gmMakeDayGo(gmDayKey());
     else if ((b = q('#sg-day-btn'))) gmOpenDaySheet(b);
+    else if ((b = q('[data-sg-dayid]'))) gmOpenDayById(b.dataset.sgDayid, b);
   });
   const day = setupEl('sheet-sg-day');
   if (day) {
-    day.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-sg-day-act="off"]')) gmTakeDayOffFlow(); });
-    day.addEventListener('focusin', (e) => { if (e.target && e.target.id === 'sg-day-note') gmFieldIn(e.target); });
-    day.addEventListener('focusout', (e) => { if (e.target && e.target.id === 'sg-day-note') gmDayNoteBlur(); });
+    day.addEventListener('click', (e) => {
+      const c = (sel) => (e.target.closest ? e.target.closest(sel) : null);
+      let b;
+      if (c('[data-sg-day-act="off"]')) gmTakeDayOffFlow();
+      else if ((b = c('#sg-day-dows [data-dk]'))) gmDayDowTap(b.dataset.dk);
+    });
+    day.addEventListener('focusin', (e) => { if (e.target && (e.target.id === 'sg-day-note' || e.target.id === 'sg-day-name')) gmFieldIn(e.target); });
+    day.addEventListener('focusout', (e) => {
+      if (e.target && e.target.id === 'sg-day-note') gmDayNoteBlur();
+      else if (e.target && e.target.id === 'sg-day-name') gmDayNameBlur();
+    });
+    day.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target && e.target.id === 'sg-day-name') { e.preventDefault(); e.target.blur(); } });
   }
   if (typeof wireGameSheet === 'function') wireGameSheet();
 }

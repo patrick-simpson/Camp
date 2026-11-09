@@ -9053,10 +9053,13 @@ function gamesModel(opts) {
   m.days = days.map((d) => {
     const s = gamesDayStatus(d, ctx, week, today);
     const name = String(d.name || '');
+    // A renamed day ("Messtival") keeps the weekday's short word on its chip, so the picker stays Sun to Sat at a glance; the
+    // spoken label has both.
+    const wk = Number.isInteger(d.dow) ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.dow] || '' : '';
     const words = s.st === 'done' ? 'every game done' : s.st === 'today' ? 'today' : s.st === 'left' ? s.left + ' game' + (s.left === 1 ? '' : 's') + ' left' : '';
     return {
-      id: d.id, dow: d.dow, name, short: name.slice(0, 3), st: s.st, left: s.left, total: s.total, today: !!today && today.id === d.id,
-      selected: !!chosen && chosen.id === d.id, label: name + (words ? ', ' + words : ''),
+      id: d.id, dow: d.dow, name, short: (wk || name).slice(0, 3), st: s.st, left: s.left, total: s.total, today: !!today && today.id === d.id,
+      selected: !!chosen && chosen.id === d.id, label: name + (wk && wk !== name ? ' (' + wk + ')' : '') + (words ? ', ' + words : ''),
     };
   });
   if (!chosen) {
