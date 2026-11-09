@@ -450,6 +450,35 @@ test('the tick on Remove…: offered only while alerts are live, in camp week, f
   } finally { pushSchedAlertsOff = false; pushConfigured = real.cfg; campWeek = real.week; serverNow = real.now; pushScheduleTell = real.tell; askDialog = real.ask; askWithTick = real.tickAsk; ssSheetClose(); ssEnd(); }
 });
 
+test('the tick on Remove… narrows with the scope: ticked, then "Skip just Monday" on a day the sender would not tell, the sender is told nothing to alert (a quiet baseline only); "Remove from every day like Monday" still tells', async () => {
+  const real = { cfg: pushConfigured, week: campWeek, tell: pushScheduleTell, now: serverNow, ask: askDialog, tickAsk: askWithTick };
+  const told = [];
+  ssStart({ day: 'mon' });
+  try {
+    // A fixed clock: Wednesday 1 AM of the camp week, so the sender tells Wednesday and Thursday and nothing else.
+    pushConfigured = () => true;
+    campWeek = () => ({ start: '2027-07-18', phase: 'during' });
+    serverNow = () => etWallToEpoch('2027-07-21', 60);
+    pushScheduleTell = async (before, alert) => { told.push(alert); return { ok: true, sent: 3, queued: 0 }; };
+    const target = planForDow(1).find((b) => !b.noTime && b.type !== 'games' && !b.meal && b.start >= 120 && b.start <= 1000 && b.origin === 'typical');
+    assert.ok(target, 'a plain item from the typical day, seen on Monday');
+    let offered = null;
+    let pick = 'day';
+    askWithTick = async (o) => { offered = o; return { value: pick, tick: true }; };
+    schedOpenItem({ bid: target.id });
+    await schedRemoveItem();
+    assert.ok(offered && offered.tick, 'the tick is offered (Wednesday and Thursday follow the typical day)');
+    assert.equal(told.length, 1, 'the sender is named the change');
+    assert.equal(told[0], false, 'Skip just Monday: Monday is not a day the sender would tell, so the ticked box alerts nobody');
+    schedBringBack(target.id);
+    pick = 'typical';
+    schedOpenItem({ bid: target.id });
+    await schedRemoveItem();
+    assert.equal(told.length, 2);
+    assert.equal(told[1], true, 'removing it from every day it follows reaches Wednesday: the tick holds');
+  } finally { pushConfigured = real.cfg; campWeek = real.week; serverNow = real.now; pushScheduleTell = real.tell; askDialog = real.ask; askWithTick = real.tickAsk; ssSheetClose(); ssEnd(); }
+});
+
 test('askWithTick: unticked every time it opens, a cancel is never a yes, the native confirm has no tick', async () => {
   // the dialog's own markup is stubbed by the harness; what matters is the answer shape
   const r = await askWithTick({ title: 'Remove it?', body: ['x'], actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Remove it', value: 'go' }], tick: { label: 'Tell people who follow it', note: 'n' } });

@@ -211,10 +211,13 @@ function makeFakeRtdb(opts) {
       refusals.some((r) => parts.length < r.length && parts.every((seg, i) => r[i] === seg)); // a write ABOVE a refused path
   }
 
-  function resolveSv(v) {
+  // Every ServerValue.TIMESTAMP of ONE write is the same moment, like the real server (one update stamping two epochs must
+  // write equal values: `ts` is that write's single, lazily taken reading of the clock).
+  function resolveSv(v, ts) {
+    ts = ts || {};
     if (isObj(v)) {
-      if (v['.sv'] === 'timestamp') return db.now();
-      Object.keys(v).forEach((k) => { v[k] = resolveSv(v[k]); });
+      if (v['.sv'] === 'timestamp') { if (ts.n === undefined) ts.n = db.now(); return ts.n; }
+      Object.keys(v).forEach((k) => { v[k] = resolveSv(v[k], ts); });
     }
     return v;
   }
@@ -329,7 +332,8 @@ function makeFakeRtdb(opts) {
       },
       // Multi-path update: keys are paths relative to this ref; null deletes.
       update(values) {
-        const entries = Object.keys(values || {}).map((k) => [parts.concat(split(k)), toStored(resolveSv(clone(values[k])))]);
+        const svTs = {};
+        const entries = Object.keys(values || {}).map((k) => [parts.concat(split(k)), toStored(resolveSv(clone(values[k]), svTs))]);
         return enqueueWrite('update', entries.map((e) => e[0]), (t) => entries.forEach(([p, v]) => setAt(t, p, v)));
       },
 

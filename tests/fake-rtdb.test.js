@@ -186,3 +186,17 @@ test('queries: orderByChild + limitToLast / limitToFirst / equalTo, read by a va
   assert.equal(eq.numChildren(), 2);
   assert.equal(db.ref('q').orderByChild('at').limitToLast(1).once !== undefined, true);
 });
+
+test('every ServerValue.TIMESTAMP of one write is the same moment, like the real server (a clock that ticks per reading must not split one update)', async () => {
+  const db = makeFakeRtdb();
+  let tick = 1000;
+  db.now = () => tick++; // a clock that moves on every reading
+  const TS = { '.sv': 'timestamp' };
+  await db.ref().update({ 'a/epochAt': TS, 'b/epochAt': TS, 'c': { deep: { at: TS } } });
+  const t = db.serverTree();
+  assert.equal(t.a.epochAt, t.b.epochAt, 'two paths of one update');
+  assert.equal(t.c.deep.at, t.a.epochAt, 'and a nested one');
+  await db.ref('d').set({ x: TS, y: TS });
+  assert.equal(db.serverGet('d').x, db.serverGet('d').y, 'one set');
+  assert.ok(db.serverGet('d').x !== t.a.epochAt, 'a later write is a later moment');
+});
