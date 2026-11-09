@@ -28,6 +28,16 @@ const REVEAL_CACHE_MAX_CHARS = 20000;                     // a real node is abou
 const REVEAL_RETIRE_EVERY_MS = 60 * 1000;                 // retireExpiredReveal sends at most this often
 const REVEAL_RESCAN_MS = 5 * 60 * 1000;                   // and a director re-reads revealPublic this often while the page is visible
 const REVEAL_CHAMPION_KEEP_MS = 14 * 24 * 3600 * 1000;    // the champion line never outlives this, whatever the week says
+// R2 (big-screen branding, owner's decisions item 7). Ships OFF: the commands write a team's own look into a shown
+// place's public entry only while this is true, and it is flipped by ONE line in a deploy AFTER the owner has published
+// the R2 rules and read them back (docs/build-notes/rules-r2-runbook.md). A variable (not a const) so a test can turn it on.
+let REVEAL_BRANDING_LIVE = false;
+let revealBrandRefused = false;       // a branded command was refused by rules that predate R2: this page load sends plain places
+const REVEAL_THUMB_SIZES = [[240, 333], [200, 278], [173, 240]]; // the shield's 480:667 shape, smaller each step
+const REVEAL_THUMB_QUALITY = [0.72, 0.62, 0.52];
+const REVEAL_THUMB_PAPER = '#f5efe2';                              // the TV's paper: a see-through photo is flattened onto it
+const REVEAL_THUMB_RETRY_MS = 3000;
+const REVEAL_THUMB_RETRIES = 8;
 const REVEAL_GRID_ROOTS = ['now-reveal-grid', 'games-reveal-grid']; // the frozen grid's roots (index.html); each has a '-list' child
 
 // ── the confirmed store ─────────────────────────────────────────────
@@ -107,10 +117,29 @@ function revealStoreCache() {
     const c = node && normalizeRevealCtl(node.ctl);
     // nothing to keep: no reveal, or one whose 8 AM has passed (its numbers must not linger on the phone)
     if (!node || (c && serverNow() >= c.until)) { localStorage.removeItem(lsKey(REVEAL_CACHE_KEY)); return; }
-    const text = JSON.stringify(node);
+    const text = JSON.stringify(revealWithoutPhotos(node)); // a photo thumbnail is never kept on the phone
     if (text.length > REVEAL_CACHE_MAX_CHARS) { localStorage.removeItem(lsKey(REVEAL_CACHE_KEY)); return; }
     localStorage.setItem(lsKey(REVEAL_CACHE_KEY), text);
   } catch (e) { /* storage blocked or full: the live listener still works */ }
+}
+
+// A copy of the node with every entry's `ph` (a team photo thumbnail, R2) removed: the cache is for an instant paint of
+// names and numbers, and six thumbnails would pass its size cap and cost the whole cache.
+function revealWithoutPhotos(node) {
+  const pub = node && node.pub;
+  if (!pub || typeof pub !== 'object') return node;
+  const out = {};
+  Object.keys(pub).forEach((gk) => {
+    const g = pub[gk];
+    if (!g || typeof g !== 'object' || !g.e || typeof g.e !== 'object') { out[gk] = g; return; }
+    const e = {};
+    Object.keys(g.e).forEach((tid) => {
+      const en = g.e[tid];
+      if (en && typeof en === 'object' && 'ph' in en) { const c = Object.assign({}, en); delete c.ph; e[tid] = c; } else e[tid] = en;
+    });
+    out[gk] = Object.assign({}, g, { e });
+  });
+  return Object.assign({}, node, { pub: out });
 }
 
 function revealDropCache() {
@@ -612,11 +641,15 @@ function revealFreeze(nowMs) {
 
 // One place as the database holds it: { place, e: { <teamId>: { nm, p, g, s, b, v, m, c } } }. `nameOf(id)`
 // lets a place that is being SHOWN carry a team's name as it is now, while the numbers stay the frozen ones.
-function revealGroupWire(group, nameOf) {
+// `brandOf(id)` (R2, only for a PUBLISHED place when the switch is on) returns the team's own look as the keys it has
+// ({ k, em, pl, ph }) or null; only those keys are added. A Start and revealFull never pass it.
+function revealGroupWire(group, nameOf, brandOf) {
   const e = {};
   group.entries.forEach((en) => {
     const now = nameOf ? revealCleanName(nameOf(en.id)) : '';
     e[en.id] = { nm: now || en.nm, p: en.p, g: en.g, s: en.s, b: en.b, v: en.v, m: en.m, c: en.c };
+    const look = brandOf ? brandOf(en.id) : null;
+    if (look) Object.keys(look).forEach((f) => { e[en.id][f] = look[f]; });
   });
   return { place: group.place, e };
 }
@@ -624,6 +657,86 @@ function revealGroupWire(group, nameOf) {
 function revealCurrentName(id) {
   const t = state && state.teams ? state.teams.find((x) => x.id === id) : null;
   return t ? t.name : '';
+}
+
+// ── a team's own look for the big screen (R2) ─────────────────────────
+// Read through the SEAM accessors and laundered the way the rules will check it: the palette id, the record's OWN
+// emoji (never the camp's printed mascot), the cleared marker, and a small thumbnail of the current photo made in
+// memory (revealThumbsPrepare). Only keys the team has are present. Never read at a Start and never put in revealFull.
+function revealBrandOf(id) {
+  const look = {};
+  const k = teamColorId(id);
+  if (k) look.k = k;
+  const em = teamEmojiRecord(id);
+  if (em) look.em = em;
+  if (teamPlain(id)) look.pl = true;
+  const v = teamPhotoVersion(id);
+  const th = revealThumbs.get(id);
+  if (v !== null && th && th.v === v && typeof th.data === 'string' && th.data.length <= REVEAL_PHOTO_MAX && CAMP_CREST_DATA_RE.test(th.data)) look.ph = th.data;
+  return Object.keys(look).length ? look : null;
+}
+
+const revealThumbs = new Map();       // team id → { v, data }: the thumbnail of photo version v. Memory only, never stored or cached.
+const revealThumbBusy = new Set();    // '<id>:<v>' being made
+let revealThumbTimer = null;
+let revealThumbTries = 0;
+
+// A JPEG thumbnail of a team photo, flattened on the TV's paper: the first size / quality that fits the public cap
+// (the source is already the shield's 346x480 crop, so it is drawn whole). null when none fits or nothing can draw.
+async function revealThumbMake(src) {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  for (let si = 0; si < REVEAL_THUMB_SIZES.length; si++) {
+    const w = REVEAL_THUMB_SIZES[si][0], h = REVEAL_THUMB_SIZES[si][1];
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = REVEAL_THUMB_PAPER;
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    for (let qi = 0; qi < REVEAL_THUMB_QUALITY.length; qi++) {
+      const data = canvas.toDataURL('image/jpeg', REVEAL_THUMB_QUALITY[qi]);
+      if (data.length <= REVEAL_PHOTO_MAX && CAMP_CREST_DATA_RE.test(data)) return data;
+    }
+  }
+  return null;
+}
+
+// Makes the thumbnails ahead of time, while the remote is open: never awaited by a command (a place whose photo is
+// not ready goes out without one and is never rewritten). Asks the photo to be fetched, retries a few times while
+// it arrives. A no-op with the switch off or with no canvas to draw on (the test harness).
+function revealThumbsPrepare() {
+  if (!REVEAL_BRANDING_LIVE || !revealRemoteOpenFlag || memberRole !== 'editor') return;
+  if (typeof Image === 'undefined' || typeof document === 'undefined' || !document.createElement) return;
+  let waiting = false;
+  teamIds().forEach((id) => {
+    const v = teamPhotoVersion(id);
+    if (v === null) { revealThumbs.delete(id); return; }
+    const have = revealThumbs.get(id);
+    if (have && have.v === v) return;
+    const key = id + ':' + v;
+    if (revealThumbBusy.has(key)) return;
+    teamPhotoNeed(id);
+    const src = TEAM_PHOTO_MEM.get(key);
+    if (!src) { waiting = true; return; }
+    revealThumbBusy.add(key);
+    revealThumbMake(src).then((data) => {
+      if (data && teamPhotoVersion(id) === v && revealRemoteOpenFlag) revealThumbs.set(id, { v, data });
+    }).catch(() => { /* no thumbnail: the place goes out without a photo */ }).then(() => { revealThumbBusy.delete(key); });
+  });
+  clearTimeout(revealThumbTimer);
+  revealThumbTimer = null;
+  if (waiting && revealThumbTries < REVEAL_THUMB_RETRIES) {
+    revealThumbTries += 1;
+    revealThumbTimer = setTimeout(revealThumbsPrepare, REVEAL_THUMB_RETRY_MS);
+  }
+}
+function revealThumbsForget() {
+  revealThumbs.clear();
+  clearTimeout(revealThumbTimer);
+  revealThumbTimer = null;
+  revealThumbTries = 0;
 }
 
 function revealFullWire(freeze, o) {
@@ -702,7 +815,7 @@ function revealBuildCommand(action, node, full, o) {
   if (plan.publish !== undefined) {
     const grp = held && held.groups.find((g) => g.idx === plan.publish);
     if (!grp) return { ok: false, code: 'no-full' };
-    updates['revealPublic/' + o.mode + '/pub/g' + plan.publish] = revealGroupWire(grp, o.nameOf);
+    updates['revealPublic/' + o.mode + '/pub/g' + plan.publish] = revealGroupWire(grp, o.nameOf, o.brandOf);
   }
   return { ok: true, updates, ctl, plan };
 }
@@ -889,6 +1002,7 @@ function revealFetchFull(mode) {
 // the server holds (another director's new Start brings a new one).
 function revealAfterEvaluate() {
   revealSyncWake();
+  revealThumbsPrepare();
   if (!revealRemoteOpenFlag || memberRole !== 'editor') return;
   ['real', 'practice'].forEach((m) => {
     const node = confirmedReveal[m];
@@ -906,7 +1020,10 @@ function revealSetRemoteOpen(open) {
     revealFetchFull('real');
     revealFetchFull('practice');
     revealRescan();
+    revealThumbTries = 0;
+    revealThumbsPrepare();
   } else {
+    revealThumbsForget();
     revealForgetFull('real');
     revealForgetFull('practice');
   }
@@ -940,7 +1057,7 @@ function revealSyncWake() {
 }
 function revealWakeHeld() { return !!(typeof wakeLockSentinel !== 'undefined' && wakeLockSentinel); }
 function revealOnWakeChange() { if (typeof revealPaint === 'function') revealPaint('wake', null); }
-function revealOnRoleChanged() { if (memberRole !== 'editor') revealRemoteOpenFlag = false; revealSyncWake(); }
+function revealOnRoleChanged() { if (memberRole !== 'editor') { revealRemoteOpenFlag = false; revealThumbsForget(); } revealSyncWake(); }
 
 // The auto-update must not reload a director's phone mid-reveal: true for any director while a
 // non-practice reveal is live (not only with the remote open), and while any command is unacknowledged.
@@ -1068,9 +1185,22 @@ async function revealRun(action, opts) {
     full = revealFullFor(mode);
     if (!full) return revealRefuse('no-full', 'Couldn’t load the places for this reveal. Check your connection and try again.', quiet);
   }
-  const built = revealBuildCommand(action, node, full, { mode, ts: revealTs(), nameOf: revealCurrentName });
+  const branded = REVEAL_BRANDING_LIVE && !revealBrandRefused;
+  let built = revealBuildCommand(action, node, full, { mode, ts: revealTs(), nameOf: revealCurrentName, brandOf: branded ? revealBrandOf : null });
   if (!built.ok) return revealRefuse(built.code, '', quiet);
-  const res = await revealSend(mode, built.updates);
+  let res = await revealSend(mode, built.updates);
+  // A command that carried a team's look and was refused by rules that predate R2 (or any refusal that is not a race)
+  // is sent ONCE more as a plain place, and this page load sends plain places from then on. A race (another director
+  // moved the reveal: the confirmed ctl is no longer c's) is never retried.
+  if (!res.ok && branded && revealIsDenied(res.err) && !res.denied && revealCarriesBrand(built.updates)) {
+    const again = confirmedReveal[mode];
+    const ac = again ? normalizeRevealCtl(again.ctl) : null;
+    if (ac && ac.id === c.id && ac.seq === c.seq) {
+      revealBrandRefused = true;
+      const plain = revealBuildCommand(action, again, revealFullFor(mode) || full, { mode, ts: revealTs(), nameOf: revealCurrentName });
+      if (plain.ok) { built = plain; res = await revealSend(mode, plain.updates); }
+    }
+  }
   if (res.ok) {
     revealFetchFull(mode);                                       // fetched again after each acknowledged command
     return { ok: true, ctl: built.ctl };
@@ -1080,6 +1210,14 @@ async function revealRun(action, opts) {
     return { ok: false, code: why.code };
   }
   return revealRefuse('failed', 'Couldn’t reach the big screen. Try again.', quiet);
+}
+
+// True when a command's published place carries any of the R2 look fields.
+function revealCarriesBrand(updates) {
+  return Object.keys(updates).some((path) => {
+    const g = updates[path];
+    return /\/pub\/g[0-5]$/.test(path) && g && g.e && Object.keys(g.e).some((t) => ['k', 'em', 'pl', 'ph'].some((f) => f in g.e[t]));
+  });
 }
 
 function revealNext(opts) { return revealRun('next', opts); }

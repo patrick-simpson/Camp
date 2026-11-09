@@ -33,7 +33,9 @@ function mkPub(shown) {
 }
 
 // A clean engine, a signed-in phone of the given role, and a fake database with the camp's public node on it.
+let rulesEra = 'r2';                                      // which published rules the model judges by: 'r1' (live before R2) or 'r2'
 function resetReveal() {
+  REVEAL_BRANDING_LIVE = false; revealBrandRefused = false; revealThumbs.clear(); rulesEra = 'r2';
   if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
   if (revealRealRef && revealRealCb) { try { revealRealRef.off('value', revealRealCb); } catch (e) { /* ignore */ } }
   if (revealPracticeRef && revealPracticeCb) { try { revealPracticeRef.off('value', revealPracticeCb); } catch (e) { /* ignore */ } }
@@ -697,7 +699,7 @@ function rulesModel(root, values, now, me) {
     }
     return null;
   }
-  function groupRule(key, grp, wasGroup, newCtl, oldCtl) {
+  function groupRule(key, grp, wasGroup, newCtl, oldCtl, modeOf) {
     if (!/^g[0-5]$/.test(key) || !grp || typeof grp !== 'object' || grp.place === undefined || grp.e === undefined) return 'group shape';
     if (Object.keys(grp).some((k) => k !== 'place' && k !== 'e')) return 'group has an unknown field';
     if (wasGroup !== undefined && newCtl.id === (oldCtl && oldCtl.id)) return 'a published place cannot be rewritten inside the same reveal';
@@ -707,7 +709,16 @@ function rulesModel(root, values, now, me) {
       const e = grp.e[tid];
       if (!/^t[0-5]$/.test(tid) || !e || typeof e !== 'object') return 'team key ' + tid;
       if (['nm', 'p', 'g', 's', 'b'].some((k) => e[k] === undefined)) return 'entry misses a field';
-      if (Object.keys(e).some((k) => !['nm', 'k', 'p', 'g', 's', 'b', 'v', 'm', 'c'].includes(k))) return 'entry has an unknown field: ' + Object.keys(e).find((k) => !['nm', 'k', 'p', 'g', 's', 'b', 'v', 'm', 'c'].includes(k));
+      // R1 (the rules live before R2) knows no look beyond k; R2 adds em / pl / ph to a PUBLIC entry (rulesEra)
+      const known = ['nm', 'k', 'p', 'g', 's', 'b', 'v', 'm', 'c'].concat(rulesEra === 'r2' ? ['em', 'pl', 'ph'] : []);
+      if (Object.keys(e).some((k) => !known.includes(k))) return 'entry has an unknown field: ' + Object.keys(e).find((k) => !known.includes(k));
+      if (e.em !== undefined && !(typeof e.em === 'string' && e.em.length >= 1 && e.em.length <= 16 && !/[<>&"']/.test(e.em))) return 'em';
+      if (e.pl !== undefined && e.pl !== true) return 'pl';
+      if (e.ph !== undefined) {
+        if (!(typeof e.ph === 'string' && e.ph.length <= REVEAL_PHOTO_MAX && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/.test(e.ph))) return 'ph';
+        const sib = (next.revealPublic && next.revealPublic[modeOf] && next.revealPublic[modeOf].pub) || {};
+        if (Object.keys(sib).some((gk) => gk !== key && sib[gk] && sib[gk].e && sib[gk].e[tid])) return 'ph: this team already has a photo in another place';
+      }
       if (typeof e.nm !== 'string' || e.nm.length < 1 || e.nm.length > 30) return 'nm';
       if (!inRange(e.p, -9999, 99999) || !inRange(e.g, 0, 99) || !inRange(e.s, 0, 99) || !inRange(e.b, 0, 99)) return 'p / g / s / b';
       for (const k of ['v', 'm', 'c']) if (e[k] !== undefined && !inRange(e[k], -9999, 99999)) return k;
@@ -726,13 +737,13 @@ function rulesModel(root, values, now, me) {
         if (v === null) { if (mode === 'real' && wasCtl && !(wasCtl.until <= now)) return no('a real reveal cannot be deleted before its until'); continue; }
         if (!v || typeof v !== 'object' || !v.ctl || Object.keys(v).some((k) => k !== 'ctl' && k !== 'pub')) return no('a child is { ctl, pub } and nothing else');
         const why = ctlRule(v.ctl, wasCtl, mode, !!v.pub); if (why) return no(why);
-        for (const gk of Object.keys(v.pub || {})) { const w = groupRule(gk, v.pub[gk], (wasCtl && wasCtl.id === v.ctl.id && was.pub) ? was.pub[gk] : undefined, v.ctl, wasCtl); if (w) return no(w); }
+        for (const gk of Object.keys(v.pub || {})) { const w = groupRule(gk, v.pub[gk], (wasCtl && wasCtl.id === v.ctl.id && was.pub) ? was.pub[gk] : undefined, v.ctl, wasCtl, mode); if (w) return no(w); }
       } else if (a === 'ctl' && b === undefined) {
         const why = ctlRule(v, wasCtl, mode, !!(next.revealPublic && next.revealPublic[mode] && next.revealPublic[mode].pub)); if (why) return no(why);
       } else if (a === 'pub' && b !== undefined && !key.split('/')[4]) {
         const nc = next.revealPublic && next.revealPublic[mode] && next.revealPublic[mode].ctl;
         if (!nc) return no('no ctl to publish under');
-        const w = groupRule(b, v, was && was.pub ? was.pub[b] : undefined, nc, wasCtl); if (w) return no(w);
+        const w = groupRule(b, v, was && was.pub ? was.pub[b] : undefined, nc, wasCtl, mode); if (w) return no(w);
       } else return no('a path this model does not allow: ' + key);
     } else if (section === 'revealFull') {
       if (key.split('/').length !== 2) return no('revealFull is written whole');
@@ -1501,7 +1512,7 @@ test('reveal.js writes only to revealPublic/<mode>(/ctl | /pub/g<k>) and revealF
   const src = readFixture('../reveal.js').replace(/\/\/[^\n]*/g, '');
   const keys = [...src.matchAll(/['"`]((?:revealPublic|revealFull)\/[^'"`]*)['"`]/g)].map((m) => m[1].replace(/\$\{[^}]*\}/g, '<x>'));
   keys.forEach((k) => assert.ok(/^reveal(Public|Full)\/(<x>|practice|real)?(\/ctl|\/pub\/g<x>)?$|^revealPublic\/<x>$|^revealPublic\/<x>\/ctl$|^revealPublic\/<x>\/pub\/g<x>$/.test(k) || /^reveal(Public|Full)\/$/.test(k) || /^reveal(Public|Full)\/(real|practice)$/.test(k), 'an unexpected path: ' + k));
-  assert.ok(!/\.set\(|\.remove\(|\.transaction\(/.test(src), 'no set, remove or transaction');
+  assert.ok(!/\.set\(|\.remove\(|\.transaction\(/.test(src.replace(/revealThumbs\.set\(/g, '')), 'no set, remove or transaction (revealThumbs is an in-memory Map)');
   assert.equal((src.match(/\.update\(/g) || []).length, 2, 'exactly two writers: a command and the retirement, each one multi-path update()');
 });
 
@@ -1576,4 +1587,203 @@ test('the hooks into app.js are the ones this file relies on: the connection hoo
   assert.ok(/function wakeLockNeeded\(\)/.test(app) && !/!anyTimerRunning\(\)\) releaseWakeLock/.test(app), 'every release site asks wakeLockNeeded');
   const src = readFixture('../reveal.js');
   assert.ok(!/state\.reveal|SYNC_KEYS/.test(src), 'a reveal never lives in synced state');
+});
+
+// ── R2: a team's own look in a shown place (owner's decisions item 7) ───────────────────────────────
+// The switch ships OFF; with it ON the published group of the place being shown carries the look of ITS teams
+// only; against the rules that predate R2 a refused branded place is sent once more plain.
+
+const KEYCAP = (i) => (i + 1) + '️⃣';
+const BIG_A = 'data:image/jpeg;base64,' + 'A'.repeat(1000);     // an all-'A' thumbnail: no id, name or number can match it by chance
+const BIG_B = 'data:image/jpeg;base64,' + 'B'.repeat(1000);
+function giveLooks() {
+  state.teams.forEach((t, i) => {
+    if (i === N - 1) t.emoji = '🦉';                                  // the first place shown carries a look R1 knows nothing about
+    if (i === 0) { t.color = 'teal'; t.emoji = '🦊'; t.photoV = 3; TEAM_PHOTO_MEM.set(t.id + ':3', BIG_A); revealThumbs.set(t.id, { v: 3, data: BIG_A }); }
+    else if (i === 1) { t.plain = true; t.emoji = KEYCAP(1); t.short = 'Team 2'; }
+    else if (i === 2) { t.color = 'purple'; }
+  });
+}
+// the serialized writes of a whole reveal, with the rules model in front
+async function walkReveal() {
+  const db = await bootDirector();
+  giveLooks();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  for (let k = 0; k < N; k++) { nowT += 5000; assert.equal((await revealNext({ quiet: true })).ok, true, 'place ' + k); }
+  nowT += 5000; await revealNext({ quiet: true });
+  nowT += 5000; await revealEnd({ quiet: true });
+  return db;
+}
+// (the reveal id is random per Start: it is the one thing two runs may differ in)
+const serializedWrites = (db) => JSON.stringify(db.log2.filter((w) => w.verdict.ok).map((w) => w.values)).replace(/r[a-z0-9]{6,12}-[a-z0-9]{4}/g, 'RID');
+
+test('R2 switch OFF: a reveal writes exactly what it wrote before R2, whatever looks the teams have', async () => {
+  assert.equal(REVEAL_BRANDING_LIVE, false, 'ships off');
+  const withLooks = serializedWrites(await walkReveal());
+  afterDirector();
+  const db2 = await bootDirector();                                  // the same reveal, teams with no look at all
+  state.teams.forEach((t) => { delete t.color; delete t.emoji; delete t.photoV; delete t.plain; });
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  for (let k = 0; k < N; k++) { nowT += 5000; await revealNext({ quiet: true }); }
+  nowT += 5000; await revealNext({ quiet: true });
+  nowT += 5000; await revealEnd({ quiet: true });
+  assert.equal(withLooks, serializedWrites(db2), 'byte for byte');
+  assert.ok(!/"(em|pl|ph)":/.test(withLooks));
+  afterDirector();
+});
+
+test('R2 switch ON: the look rides only in a SHOWN place\'s public entry; never at Start, never in revealFull, never for a team not yet shown', async () => {
+  const db = await bootDirector();
+  REVEAL_BRANDING_LIVE = true;
+  giveLooks();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  const startText = JSON.stringify(db.log2.filter((w) => w.verdict.ok).map((w) => w.values));
+  assert.ok(!/"(k|em|pl|ph)":/.test(startText), 'a Start carries no look at all (the freeze names every team, the public node none)');
+  const publicWrites = () => writesTo(db.log2, 'revealPublic/').filter((w) => /\/pub\/g\d$/.test(w.key));
+  const seen = [];
+  for (let k = 0; k < N; k++) {
+    nowT += 5000;
+    assert.equal((await revealNext({ quiet: true })).ok, true);
+    const text = JSON.stringify(publicWrites().map((w) => w.value));
+    // a team's look appears in the node only from the place it is shown in
+    const full = revealFullFor('real');
+    full.groups.forEach((g) => g.entries.forEach((e) => {
+      const gone = g.idx > k;
+      const tn = Number(e.id.slice(1));
+      if (tn === 0 && gone) assert.ok(!text.includes(BIG_A), 'the photo of a team whose place is still hidden is not public (after place ' + k + ')');
+      if (tn === 0 && !gone) assert.ok(text.includes(BIG_A), 'and it is public once its place is shown');
+    }));
+    seen.push(k);
+  }
+  const entries = {};
+  publicWrites().forEach((w) => Object.keys(w.value.e).forEach((t) => { entries[t] = w.value.e[t]; }));
+  assert.deepEqual({ k: entries.t0.k, em: entries.t0.em, ph: entries.t0.ph, pl: entries.t0.pl }, { k: 'teal', em: '🦊', ph: BIG_A, pl: undefined });
+  assert.deepEqual({ k: entries.t1.k, em: entries.t1.em, pl: entries.t1.pl, ph: entries.t1.ph }, { k: undefined, em: KEYCAP(1), pl: true, ph: undefined });
+  assert.equal(entries.t2.k, 'purple'); assert.ok(!('em' in entries.t2), 'the camp\'s printed mascot is never published as a team\'s own emoji');
+  if (N > 4) assert.deepEqual(Object.keys(entries.t3).sort(), ['b', 'c', 'g', 'm', 'nm', 'p', 's', 'v'], 'a team with no look of its own carries none');
+  const fullText = JSON.stringify(db.serverGet(dbPath('revealFull/real')));
+  assert.ok(!/"(em|pl|ph)":/.test(fullText) && !fullText.includes(BIG_A), 'revealFull never carries a look');
+  assert.ok(db.log2.every((w) => w.verdict.ok), 'every write passed the R2 model');
+  afterDirector();
+});
+
+test('R2: the thumbnail is the current photo version\'s only, and nothing is sent for a photo that has not been made', async () => {
+  await bootDirector();
+  REVEAL_BRANDING_LIVE = true;
+  giveLooks();
+  assert.equal(revealBrandOf('t0').ph, BIG_A);
+  state.teams[0].photoV = 4;                                          // a newer photo was uploaded: the old thumbnail is not it
+  assert.ok(!('ph' in revealBrandOf('t0')), 'a thumbnail of another version is never sent');
+  state.teams[0].photoV = 3;
+  revealThumbs.set('t0', { v: 3, data: 'https://evil.example/x.png' });
+  assert.ok(!('ph' in revealBrandOf('t0')), 'a thumbnail that is not an inline image is never sent');
+  revealThumbs.set('t0', { v: 3, data: 'data:image/jpeg;base64,' + 'A'.repeat(REVEAL_PHOTO_MAX) });
+  assert.ok(!('ph' in revealBrandOf('t0')), 'over the cap');
+  delete state.teams[0].photoV;
+  revealThumbs.set('t0', { v: 3, data: BIG_A });
+  assert.ok(!('ph' in revealBrandOf('t0')), 'no photo on the record: no thumbnail');
+  assert.ok(!/photoV/.test(JSON.stringify(revealBrandOf('t1'))), 'the version number itself is never published');
+  afterDirector();
+});
+
+test('R2: closing the remote and a demotion drop every thumbnail; with no canvas preparing is a no-op', async () => {
+  await bootDirector();
+  REVEAL_BRANDING_LIVE = true;
+  giveLooks();
+  revealSetRemoteOpen(true);
+  assert.ok(revealThumbs.size > 0, 'prepare is a no-op here (no canvas) and kept what the test seeded');
+  revealSetRemoteOpen(false);
+  assert.equal(revealThumbs.size, 0, 'closing the remote drops them');
+  giveLooks();
+  setMemberRole('viewer'); revealOnRoleChanged();
+  assert.equal(revealThumbs.size, 0, 'a demotion drops them');
+  afterDirector();
+});
+
+test('R2: the reveal cache holds no photo, so six thumbnails never cost it its instant paint', async () => {
+  const db = await bootDirector();
+  REVEAL_BRANDING_LIVE = true;
+  giveLooks();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  for (let k = 0; k < N; k++) { nowT += 5000; await revealNext({ quiet: true }); }   // Alpha (the photo) is the last place shown
+  assert.ok(JSON.stringify(confirmedReveal.real).includes(BIG_A), 'the confirmed node holds the thumbnail');
+  revealStoreCache();
+  const cached = localStorage.getItem(lsKey(REVEAL_CACHE_KEY));
+  assert.ok(cached, 'the cache is written');
+  assert.ok(!cached.includes('"ph"') && !cached.includes(BIG_A), 'without ph');
+  assert.ok(cached.includes('"nm"'), 'but with names and numbers');
+  assert.ok(JSON.stringify(confirmedReveal.real).includes(BIG_A), 'the in-memory node still has it for this session');
+  void db;
+  afterDirector();
+});
+
+test('R2 against the rules live before it: a branded place is refused, the same place is sent plain once, and every later place goes plain with no second refusal', async () => {
+  const db = await bootDirector();
+  REVEAL_BRANDING_LIVE = true; rulesEra = 'r1';
+  giveLooks();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  nowT += 5000;
+  const r = await revealNext({ quiet: true });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const refused = db.log2.filter((w) => !w.verdict.ok);
+  assert.equal(refused.length, 1, 'exactly one refusal: the branded first place');
+  assert.ok(/unknown field/.test(refused[0].verdict.why), refused[0].verdict.why);
+  assert.equal(revealBrandRefused, true);
+  assert.equal(confirmedReveal.real.ctl.shown, 1, 'the place went out');
+  for (let k = 1; k < N; k++) { nowT += 5000; assert.equal((await revealNext({ quiet: true })).ok, true); }
+  assert.equal(db.log2.filter((w) => !w.verdict.ok).length, 1, 'still one refusal in the whole reveal');
+  nowT += 5000; assert.equal((await revealNext({ quiet: true })).ok, true);
+  nowT += 5000; assert.equal((await revealEnd({ quiet: true })).ok, true);
+  assert.ok(!/"(em|pl|ph)":/.test(serializedWrites(db)), 'no look in any accepted write');
+  assert.ok(!toasts.some((t) => /rules|isn.t switched on/i.test(t)), 'the director is never told anything: ' + toasts.join(' | '));
+  afterDirector();
+});
+
+test('R2: a refusal that is a RACE (another director moved the reveal) is never retried plain, and does not turn branding off', async () => {
+  const db = await bootDirector();
+  REVEAL_BRANDING_LIVE = true;
+  giveLooks();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  nowT += 5000;
+  db.beforeUpdate = () => {
+    db.beforeUpdate = null;
+    const cur = db.serverGet(REAL).ctl;
+    db.serverSet(REAL + '/ctl', Object.assign({}, cur, { seq: cur.seq + 1, phase: 'live', cur: 0, shown: 1, at: nowT, sa: nowT }));
+    db.serverSet(REAL + '/pub/g0', { place: N, e: { ['t' + (N - 1)]: { nm: 'Winner', p: 1, g: 0, s: 0, b: 0, v: 0, m: 0, c: 0 } } });
+  };
+  const sendsBefore = db.log2.length;
+  const r = await revealNext({ quiet: true });
+  assert.equal(r.ok, false); assert.equal(r.code, 'refused');
+  assert.equal(db.log2.length - sendsBefore, 1, 'one send, no retry');
+  assert.equal(revealBrandRefused, false, 'a race says nothing about the rules');
+  afterDirector();
+});
+
+test('R2: a refusal when the re-read is refused too (the rules are not published at all) is not retried, and branding stays on for when they are', async () => {
+  const db = await bootDirector();
+  REVEAL_BRANDING_LIVE = true; rulesEra = 'r1';
+  giveLooks();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  nowT += 5000;
+  const ref = db.ref;
+  db.ref = (p) => {
+    const r = ref(p);
+    if (String(p).endsWith('/revealPublic/real')) r.once = () => { const e = new Error('PERMISSION_DENIED'); e.code = 'PERMISSION_DENIED'; return Promise.reject(e); };
+    return r;
+  };
+  const before = db.log2.length;
+  const r = await revealNext({ quiet: true });
+  assert.equal(r.ok, false);
+  assert.equal(db.log2.length - before, 1, 'one send only');
+  assert.equal(revealBrandRefused, false);
+  afterDirector();
+});
+
+test('R2: only the builders know where a look goes: reveal.js adds em / pl / ph nowhere but revealGroupWire, and the Start and revealFull builders never pass a brand', () => {
+  const src = readFixture('../reveal.js').replace(/\/\/[^\n]*/g, '');
+  assert.ok(/revealGroupWire\(group, nameOf, brandOf\)/.test(src));
+  assert.equal((src.match(/revealGroupWire\(/g) || []).length, 3, 'the definition, revealFullWire\'s call and the published group\'s call');
+  assert.ok(/revealGroupWire\(grp\)/.test(src), 'revealFull\'s group is built with no brand');
+  assert.ok(/revealGroupWire\(grp, o\.nameOf, o\.brandOf\)/.test(src), 'only the published group takes one');
+  assert.ok(/let REVEAL_BRANDING_LIVE = false;/.test(src), 'ships off');
 });

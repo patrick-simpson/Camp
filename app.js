@@ -1107,6 +1107,12 @@ function teamEmojiOwn(id) {
   // A PLAIN team (the new-year setup's Clear) falls back to its slot's number keycap, never the camp's printed mascot.
   return safeEmoji(rec ? rec.emoji : undefined, teamPlain(id) ? teamSlotKeycap(id) : safeEmoji(TEAM_EMOJI[id], ''));
 }
+// The team record's OWN emoji (never the camp's printed mascot), only when it passes the rules' team-emoji check; ''
+// otherwise. The big screen's branding (reveal.js) reads it so a printed mascot is never published as a team's look.
+function teamEmojiRecord(id) {
+  const rec = teamRecord(id);
+  return rec && teamEmojiValid(rec.emoji) ? rec.emoji : '';
+}
 function teamShort(id) {
   const rec = teamRecord(id);
   return safeShort(rec ? rec.short : undefined, teamPlain(id) ? teamSlotWord(id) : safeShort(TEAM_ABBREV[id], ''));
