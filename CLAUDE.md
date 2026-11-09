@@ -3021,8 +3021,8 @@ reuses) an accessor in the block.
   `doubleWindow`, `finaleDow` (the weekday the standings reveal crowns the champions, Friday by default); teams — `teamIds`, `teamEmoji`, `teamShort`, `teamAccent`,
   `teamCrestSrc` (was `teamShield`), `teamRoster(tid)`, `staffNames`, `seedTeams`,
   `legacyRosterFor(i)`, and (step 25) `teamRecord(id)`, `teamColorId(id)`,
-  `teamAccentVars(id)`, `teamEmojiOwn(id)` (`teamEmoji` without the white-flag placeholder) and
-  `teamPhotoVersion(id)`.
+  `teamAccentVars(id)`, `teamEmojiOwn(id)` (`teamEmoji` without the white-flag placeholder), `teamPhotoVersion(id)` and, for the cleared look,
+  `teamPlain(id)`, `teamSlotNumber(id)` and `teamMascot(id)`.
 - **Not accessors on purpose:** `hubStatus` (setup-ui.js) and `campersFor` (camper
   names are minors' data, held in memory by setup-sync.js's CAMPERS section for a director with a camper-showing screen open, and nothing
   else may read them — see "Campers".)
@@ -4606,7 +4606,19 @@ field, to the camp's own constant while the record doesn't carry it.
   hostile branding cleaned by `teamsFromBackup` before it is pushed, and a counselor's phone (nothing opens, nothing is
   written; raw writes refused). Mutation-checked (`teamColorValid` weakened: the backup case goes red). No rules change
   belongs to this step. It joined `npm run test:r1`.
-- **Known limit, recorded: the big screen keeps the camp's original look.** The TV page (`current-standings.js`) is public and reads only
+- **The cleared team's look: `plain: true`** (owner's decisions item 8; app.js SEAM `teamPlain`). The new-year Clear marks a team record
+  `plain` (leaf `teams/<i>/plain`, synced per field like the rest, carried by `teamsFromBackup` / restore points only as the boolean `true`). A
+  plain team NEVER falls back to the camp's printed look: `teamShort` is its own short else "Team N", `teamEmojiOwn` its own else the keycap of N,
+  `teamAccentVars` has no legacy colour, `teamCrestSrc` is the uploaded photo only (no shipped shield) and `teamMarkSpec` is a shield only for a
+  photo, else the number TILE (never the senior flag). A later pick shows as usual (a colour is the tile's 2px edge, an emoji its glyph, a photo beats
+  everything) and never clears the marker; emptying a field on the team sheet falls back to the slot's number, not the printed look. Any tile whose
+  emoji is a keycap is drawn as its digit in type (`data-num`, never the platform's boxed glyph); `bracketMarkHtml` does the same for a keycap, and
+  confetti / board cannons use `teamMascot` (the party emoji for a keycap). styles.css keys the neutral ink edge on the ABSENCE of an inline
+  `--tm-accent` / `--team-accent`, so those are written inline only for a team that has a colour (`frame.test.js`, `team-branding.test.js` pin it).
+  The Teams row leaves out a short name equal to the name and the emoji beside its own tile; the hub row gets a gentle uncounted note ("Team 2 has
+  no colour yet" / "6 teams have no colour yet") while a plain team has neither colour nor photo, and Pick colours (`teamsModel().flag`: weak
+  colours and these) serves them. Not built, an owner question: a way back to the camp's own printed look for a cleared team.
+- **Known limit, recorded: the big screen keeps the camp's original look (a cleared team still shows its printed shield or flag there until Part 2's R2).** The TV page (`current-standings.js`) is public and reads only
   `revealPublic`, which has no colour, emoji or photo field (and the rules must not change for this), so a director's new colour, emoji or
   photo shows on every phone but the big screen still draws the camp's built-in crest, flag colour and mascot emoji (`teamEmojiOf`). A
   public, laundered branding field in `revealPublic` is a future rules decision for the owner.
@@ -4914,13 +4926,12 @@ owner acts: with no claim and no epoch every other engine is untouched.
   counselor: refused, the clear and the undo as a whole. It also runs Advanced's Start a section again (`setupRestartSection`, every section, on
   an edited one) and checks that the clear takes `setup/meta/finaleDow` (last year's finale day; Undo brings it back). The archive's label is
   "2026 camp week · Junior Camp", its year the same `campWeek().start` year the screens say (`wizardOutgoingYear`). Team names' Clear (step 2)
-  renames each team plain "Team 1" … "Team N" (N = `CAMP.teamCount`; owner's answer of Nov 9) and drops its short name, emoji and colour; the done record carries `teams` so step 5 says
-  "Teams renamed Team 1 to Team N". **Known gap, for an engine session:** with the short name dropped, `teamShort` falls back to the
-  slot's printed one, so a cleared team reads "Team 2" with the short name "Turkey" (the header's "Sam · Turkey", chat mentions,
-  the notice and the rota, the Teams screen's weak-colour sentence); writing `short: 'Team ' + (i + 1)` in `wizardClearUpdate`
-  (7 characters, valid under the published rules) fixes it with a `wizard.test.js` pin. Until then step 2's Clear line says what
-  stays: "with the camp’s original short name, emoji and colour until you change them on the Teams screen". The 2026 roster migration stays legacy-week only, so it never swaps "Team N" back once the epoch is stamped (`wizard.test.js` pins it).
-  **Recorded, an owner question:** a cleared team's shield (junior), built-in emoji and flag colour still come back from its slot, because "no mark at all" needs a rules change. No rules change belongs to this step.
+  makes each team the CLEARED LOOK (owner's answers of Nov 9, items 6 and 8; see "The cleared team's look" under Team colours): per slot i,
+  name and short "Team i+1", emoji the keycap of i+1, `color` removed and the marker `plain: true`. The done record carries `teams`, so step 5
+  says "Teams renamed Team 1 to Team N". Undo restores `state/teams` whole from the archive through `teamsFromBackup`, which takes the marker
+  away with it (`wizard.test.js` and `wizard-client.mjs` pin both). The 2026 roster migration stays legacy-week only, so it never swaps "Team N" back once the epoch is stamped (`wizard.test.js` pins it).
+  **No rules change:** `state/teams/$i` validates only emoji / short / color / photoV and leaves other children free, so `plain` is accepted as it is
+  (`tests/emulator/wizard-client.mjs` runs the real clear against the published rules; an old build ignores the marker and shows the printed look until it reloads).
 
 ## The new-year wizard: the screens (setup-ui.js §17 — Step 28, session 2)
 

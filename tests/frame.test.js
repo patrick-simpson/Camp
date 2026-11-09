@@ -47,6 +47,23 @@ test('paintTeamMark writes only when the mark would change, so the <img> is neve
   assert.equal(paintTeamMark(el, 't1', { size: 52 }), true, 'and so is a different team');
 });
 
+test('a cleared team\'s mark is the number tile: the digit in type, no inline colour, and an idle repaint writes nothing', () => {
+  freshState();
+  state.teams[0] = Object.assign({}, state.teams[0], { name: 'Team 1', short: 'Team 1', emoji: '1\uFE0F\u20E3', plain: true });
+  const el = { innerHTML: '' };
+  assert.equal(paintTeamMark(el, 't0', { size: 34 }), true);
+  assert.ok(/data-num="1"/.test(el.innerHTML) && />1<\/span>/.test(el.innerHTML));
+  assert.notOk(/--tm-accent|<img|<svg/.test(el.innerHTML), 'no colour of its own, no shield, no flag');
+  const first = el.innerHTML;
+  assert.equal(paintTeamMark(el, 't0', { size: 34 }), false, 'an idle repaint of a cleared team writes nothing');
+  assert.equal(el.innerHTML, first);
+  // the header's own mark for a counselor on that team
+  setMemberRole('viewer');
+  state.followTeam = 't0';
+  assert.equal(headerModel().teamId, 't0');
+  freshState();
+});
+
 // ── the header ──────────────────────────────────────────────────────
 
 test('the header says who you are: the team and your name for a counselor, the camp and your role for a director with no team', () => {

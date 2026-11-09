@@ -1113,12 +1113,26 @@ function teamEmoji(id) { return teamEmojiOwn(id) || '🏳️'; }
 // Teams screen shows in its field and what the hub judges ("Foxes has no emoji").
 function teamEmojiOwn(id) {
   const rec = teamRecord(id);
-  return safeEmoji(rec ? rec.emoji : undefined, safeEmoji(TEAM_EMOJI[id], ''));
+  // A PLAIN team (the new-year setup's Clear) falls back to its slot's number keycap, never the camp's printed mascot.
+  return safeEmoji(rec ? rec.emoji : undefined, teamPlain(id) ? teamSlotKeycap(id) : safeEmoji(TEAM_EMOJI[id], ''));
 }
 function teamShort(id) {
   const rec = teamRecord(id);
-  return safeShort(rec ? rec.short : undefined, safeShort(TEAM_ABBREV[id], ''));
+  return safeShort(rec ? rec.short : undefined, teamPlain(id) ? teamSlotWord(id) : safeShort(TEAM_ABBREV[id], ''));
 }
+// PLAIN TEAM (the cleared look, owner's decisions item 8): the new-year setup's team-names Clear marks each record
+// `plain: true` (leaf teams/<i>/plain; the published rules leave other children of state/teams/$i free, so it needs no
+// rules change). A plain team NEVER falls back to the camp's printed look (shield, mascot emoji, flag, colour, short
+// name): it is "Team N" with its number tile until a director picks a colour, emoji or photo, which then shows as usual
+// (a photo beats everything). Only the boolean true counts; any other stored value reads as absent.
+function teamPlain(id) { const rec = teamRecord(id); return !!rec && rec.plain === true; }
+// The slot's number (t0 = 1), the same i + 1 the wizard's Clear names the team with; 0 for an id off the roster.
+function teamSlotNumber(id) { return teamIds().indexOf(id) + 1; }
+function teamSlotWord(id) { const n = teamSlotNumber(id); return n > 0 ? 'Team ' + n : ''; }
+// The keycap emoji of the slot's number ("1" U+FE0F U+20E3): digits 1-9 only; '' beyond.
+function teamSlotKeycap(id) { const n = teamSlotNumber(id); return n >= 1 && n <= 9 ? n + '\uFE0F\u20E3' : ''; }
+// A stand-in mascot for the places that fly an emoji (confetti, cannons): a plain team's keycap is a box, not a mascot.
+function teamMascot(id) { return /^[0-9]\uFE0F?\u20E3$/.test(teamEmoji(id)) ? '' : teamEmoji(id); }
 // The palette swatch a team record names: its id ('pumpkin'), or '' when the team has none yet or the
 // stored string is not one of the twelve (a database string only ever SELECTS a swatch, never becomes CSS).
 function teamColorId(id) {
@@ -1132,7 +1146,7 @@ function teamColorId(id) {
 // fixed variable names can come out, so the result is safe in a style attribute without esc().
 function teamAccentVars(id) {
   const rec = teamRecord(id);
-  return safeColorVars(rec ? rec.color : undefined, TEAM_ACCENT[id], CAMP_TEAM_PALETTE);
+  return safeColorVars(rec ? rec.color : undefined, teamPlain(id) ? undefined : TEAM_ACCENT[id], CAMP_TEAM_PALETTE);
 }
 // The light value as one plain '#rrggbb', or null: for the places that cannot take the pair (a tile's edge).
 function teamAccent(id) {
@@ -1154,7 +1168,7 @@ function teamPhotoVersion(id) {
 function teamCrestSrc(id) {
   const v = teamPhotoVersion(id);
   const photo = v === null ? null : safeCrestSrc(TEAM_PHOTO_MEM.get(id + ':' + v));
-  return photo || safeCrestSrc(TEAM_SHIELD[id]);
+  return photo || (teamPlain(id) ? null : safeCrestSrc(TEAM_SHIELD[id]));
 }
 // The printed counselor names for one team (the names the electives data is
 // keyed to), and every team's, flat.
@@ -4775,7 +4789,8 @@ function teamsFromBackup(list) {
   return list.map((t) => {
     if (!t || typeof t !== 'object') return t;
     const out = Object.assign({}, t);
-    ['short', 'emoji', 'color', 'photoV'].forEach((f) => delete out[f]);
+    ['short', 'emoji', 'color', 'photoV', 'plain'].forEach((f) => delete out[f]);
+    if (t.plain === true) out.plain = true; // the cleared look's marker: only the boolean true is carried
     if (teamShortValid(t.short)) out.short = t.short;
     if (teamEmojiValid(t.emoji)) out.emoji = t.emoji;
     if (teamColorValid(t.color)) out.color = t.color;
@@ -6998,7 +7013,7 @@ function celebrate(goldTeamId) {
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
-  const emoji = goldTeamId != null ? teamEmoji(goldTeamId) : '🎉';
+  const emoji = (goldTeamId != null && teamMascot(goldTeamId)) || '🎉';
   const colors = ['#3355ff', '#96690a', '#d63b3b', '#6b7280', '#a15c2a', '#e8c15a'];
   const parts = [];
   for (let i = 0; i < 80; i++) {
@@ -7875,7 +7890,8 @@ function matchupText(g, stage, aId, bId) {
 // team whose mark is an IMAGE (junior's shields) keeps its emoji here: the six-team wizard rebuilds these views on every render,
 // and an <img> re-created twice a minute blinks. Its emoji is a mascot with a shape of its own, never a bare colour.
 function bracketMarkHtml(id, size) {
-  return teamMarkSpec(id).kind === 'shield' ? `<span class="bk-emoji" aria-hidden="true">${teamEmoji(id)}</span>` : teamMarkHtml(id, { size });
+  const spec = teamMarkSpec(id);
+  return spec.kind === 'shield' && !/^[0-9]\uFE0F?\u20E3$/.test(teamEmoji(id)) ? `<span class="bk-emoji" aria-hidden="true">${teamEmoji(id)}</span>` : teamMarkHtml(id, { size });
 }
 
 function matchupCalloutHTML(aId, bId) {
@@ -11321,14 +11337,14 @@ function boardCelebrate(boardEl, teamId) {
     val.classList.add('score-pop');
   }
   if (calmMotion()) return;
-  const mascot = teamEmoji(teamId);
+  const mascot = teamMascot(teamId); // '' for a cleared team's number keycap: only the party emoji fly
   const extras = ['🎉', '🎊', '✨', '⭐'];
   const H = boardEl.getBoundingClientRect().height || 300;
   for (let i = 0; i < 24; i++) {
     const fromLeft = i % 2 === 0;
     const p = document.createElement('span');
     p.className = 'board-cannon';
-    p.textContent = i % 3 === 0 ? extras[(i / 3 | 0) % extras.length] : mascot;
+    p.textContent = i % 3 === 0 || !mascot ? extras[(i / 3 | 0) % extras.length] : mascot;
     // Launch angle 50°–85° from the corner, aimed inward; distance scales
     // with the board so the spray fills tall spectator boards too.
     const angle = (50 + Math.random() * 35) * Math.PI / 180;
@@ -14375,7 +14391,7 @@ function teamMarkSpec(id) {
   const src = teamCrestSrc(id);
   if (src) return { kind: 'shield', src };
   const color = CAMP.teamFlag && CAMP.teamFlag[id];
-  if (TEAM_FLAG_COLORS.includes(color)) {
+  if (TEAM_FLAG_COLORS.includes(color) && !teamPlain(id)) {
     const i = Math.max(0, teamIds().indexOf(id));
     // A colour picked on the Teams screen IS the team's colour (§8.1 rule 5: one team, one colour): the flag's fill comes
     // from the palette swatch the record names (the half for the theme in force), and only the camp's built-in flag colour
@@ -14404,8 +14420,11 @@ function teamMarkHtml(id, opts) {
     const fill = spec.accent ? ';' + spec.accent + ';--flag-fill:var(--team)' : '';
     return `<svg class="tm flag" data-team="${esc(id)}" data-flag="${spec.color}" style="${tm}${fill}" viewBox="0 0 32 32" ${a11y}><use href="#flag-${spec.shape}"/></svg>`;
   }
-  // The tile's edge is the team's colour for the theme in force: [data-team] turns the -l/-d pair into --team.
-  return `<span class="tm tm-tile" data-team="${esc(id)}" style="${tm}${spec.accent ? ';' + spec.accent + ';--tm-accent:var(--team)' : ''}" ${a11y}>${spec.emoji}</span>`;
+  // The tile's edge is the team's colour for the theme in force: [data-team] turns the -l/-d pair into --team. A keycap
+  // emoji (a cleared team's number) is drawn as its digit in type (data-num), never the platform's blue-grey box.
+  // styles.css keys the neutral ink edge on the ABSENCE of an inline --tm-accent: write it only for a team with a colour.
+  const num = /^([0-9])\uFE0F?\u20E3$/.exec(spec.emoji || '');
+  return `<span class="tm tm-tile" data-team="${esc(id)}"${num ? ` data-num="${num[1]}"` : ''} style="${tm}${spec.accent ? ';' + spec.accent + ';--tm-accent:var(--team)' : ''}" ${a11y}>${num ? num[1] : spec.emoji}</span>`;
 }
 
 function paintTeamMark(el, id, opts) {

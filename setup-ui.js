@@ -244,6 +244,11 @@ function hubStatus(section, view) {
         const who = nameOf(weak[0], teams.indexOf(weak[0]));
         row.note = weak.length === 1 ? who + (/s$/i.test(who) ? '’' : '’s') + ' colour is hard to read in ' + modes + ' mode'
           : hubPlural(weak.length, 'team’s', 'teams’') + ' colours are hard to read in ' + modes.replace(' and ', ' or ') + ' mode';
+      } else {
+        // A cleared team (the new-year setup's Clear) wears its number until a director gives it a colour or a photo: a gentle,
+        // uncounted note, like the weak colours (the hub can still reach "all ready").
+        const bare = teams.filter((t) => { const x = t && info[t.id]; return x && x.plainNoColor; });
+        if (bare.length) row.note = bare.length === 1 ? nameOf(bare[0], teams.indexOf(bare[0])) + ' has no colour yet' : bare.length + ' teams have no colour yet';
       }
       return row;
     }
@@ -5614,7 +5619,7 @@ function teamsInfoView() {
   (state.teams || []).forEach((t) => {
     if (!t || typeof t.id !== 'string') return;
     const c = teamColorInfo(t.id);
-    out[t.id] = { short: teamShort(t.id), emoji: teamEmojiOwn(t.id), colorId: c.id, colorName: c.name, weak: c.weak };
+    out[t.id] = { short: teamShort(t.id), emoji: teamEmojiOwn(t.id), colorId: c.id, colorName: c.name, weak: c.weak, plainNoColor: teamPlain(t.id) && !c.id && teamPhotoVersion(t.id) === null };
   });
   return out;
 }
@@ -5633,9 +5638,11 @@ function teamsModel() {
       id: t.id, name: String(t.name || '').trim(), short: info[t.id].short, emoji: info[t.id].emoji, color: c, shares,
       photo: teamPhotoVersion(t.id) !== null, staff, campers: campersStatus() === 'ok' ? campersCount(t.id) : null,
       warn: shares.length > 0 || !info[t.id].short || !info[t.id].emoji || !String(t.name || '').trim(),
+      bare: info[t.id].plainNoColor,
     };
   });
-  return { rows, info, status, weak: rows.filter((r) => r.color.weak.length).map((r) => r.id) };
+  // `flag` = every team the colours sheet is for: an older colour hard to read on a theme, or a cleared team still without any colour.
+  return { rows, info, status, weak: rows.filter((r) => r.color.weak.length).map((r) => r.id), flag: rows.filter((r) => r.color.weak.length || r.bare).map((r) => r.id) };
 }
 
 // ── the screen ──
@@ -5659,7 +5666,8 @@ function teamRowHtml(r) {
   const colorName = r.color.legacy ? 'Original colour' : r.color.name;
   const weakWords = r.color.weak.length ? ' · hard to read in ' + hubJoin(r.color.weak) + ' mode' : '';
   const colorWords = colorName ? dot + esc(colorName) + esc(weakWords) + (r.shares.length ? ' · same as ' + esc(r.shares.map((x) => teamShort(x) || teamName(x)).join(', ')) : '') : 'No colour yet';
-  const sub = [r.short ? esc(r.short) : '', r.emoji ? esc(r.emoji) : '', colorWords].filter(Boolean).join(' · ');
+  // The short name is left out when it is the name itself, and the emoji when the mark already shows it (a cleared team's number tile).
+  const sub = [r.short && r.short !== r.name ? esc(r.short) : '', r.emoji && teamMarkSpec(r.id).kind !== 'tile' ? esc(r.emoji) : '', colorWords].filter(Boolean).join(' · ');
   return '<button type="button" class="cb-row sec-row tms-row" data-key="t-' + esc(r.id) + '" data-team-open="' + esc(r.id) + '"' + (r.warn ? ' data-warn' : '') + '>' +
     '<span class="cb-time tms-mark">' + teamMarkHtml(r.id, { size: 40 }) + '</span>' +
     '<span class="cb-main"><span class="cb-title">' + esc(r.name || 'Unnamed team') + '</span>' +
@@ -5680,11 +5688,16 @@ function renderTeamsScreen() {
   setTextIfChanged(setupEl('teams-repair-text'), repair);
   setHiddenIfChanged(setupEl('teams-repair'), !repair);
   // Original colours that are hard to see on a theme: a gentle note that NAMES them, and the one place to fix them all, named too.
-  const weakShort = m.weak.map((id) => teamShort(id) || teamName(id) || id);
-  setTextIfChanged(setupEl('teams-weak-text'), weakShort.length ? teamsWeakSentence(m.weak) : '');
-  setTextIfChanged(setupEl('teams-weak-btn-text'), weakShort.length ? 'Pick new colours for ' + hubJoin(weakShort) : '');
+  const weakShort = m.flag.map((id) => teamShort(id) || teamName(id) || id);
+  const bareIds = m.rows.filter((r) => r.bare).map((r) => r.id);
+  const bareShort = bareIds.map((id) => teamShort(id) || teamName(id) || id);
+  const weakOnly = m.weak.filter((id) => bareIds.indexOf(id) === -1);
+  const weakWords = weakOnly.length ? teamsWeakSentence(weakOnly) : '';
+  const bareWords = bareIds.length ? (bareIds.length === 1 ? bareShort[0] + ' has no colour yet.' : bareIds.length === m.rows.length ? 'No team has a colour yet.' : hubJoin(bareShort) + ' have no colour yet.') : '';
+  setTextIfChanged(setupEl('teams-weak-text'), [weakWords, bareWords].filter(Boolean).join(' '));
+  setTextIfChanged(setupEl('teams-weak-btn-text'), !weakShort.length ? '' : weakShort.length === m.rows.length && m.rows.length > 2 ? 'Pick colours for all ' + m.rows.length + ' teams' : 'Pick ' + (bareIds.length ? '' : 'new ') + 'colours for ' + hubJoin(weakShort));
   setHiddenIfChanged(setupEl('teams-weak'), !weakShort.length);
-  if (teamUi.colors && !m.weak.length) { teamUi.colors = false; if (shell.sheets.includes('team-colors')) shellSheetClose('team-colors'); }
+  if (teamUi.colors && !m.flag.length) { teamUi.colors = false; if (shell.sheets.includes('team-colors')) shellSheetClose('team-colors'); }
 }
 
 // ── the team sheet ──
@@ -6177,17 +6190,17 @@ function teamPhotoRemove() {
 // ── "Pick colours for the flagged teams": every team whose older colour is hard to see, one tap each ──
 
 function teamColorsOpen(opener) {
-  if (!canEdit() || !teamsModel().weak.length) return;
+  if (!canEdit() || !teamsModel().flag.length) return;
   teamUi.colors = true;
   // The teams this sheet is FOR, fixed when it opens: a team keeps its block after its pick (now marked, "Now Teal"), so nothing moves up
   // under the thumb between two taps (a solved block vanishing slid the next team's dots under the finger, and the second tap landed on it).
-  teamUi.colorsFor = teamsModel().weak.slice();
+  teamUi.colorsFor = teamsModel().flag.slice();
   setupSheet('team-colors', opener);
 }
 
 function renderTeamColorsSheet() {
   const m = teamsModel();
-  const weakNow = m.rows.filter((r) => r.color.weak.length).map((r) => r.id);
+  const weakNow = m.flag;
   const ids = (teamUi.colorsFor && teamUi.colorsFor.length ? teamUi.colorsFor : weakNow).filter((id) => m.rows.some((r) => r.id === id));
   const rows = ids.map((id) => m.rows.find((r) => r.id === id));
   const list = setupEl('team-colors-list');
@@ -6195,8 +6208,8 @@ function renderTeamColorsSheet() {
   const had = act && act.closest && act.closest('#team-colors-list [data-team-pick]') === act ? act : null;
   setHtmlIfChanged(list, rows.map((r) => {
     // What the block says under the name: still weak → why; picked → the colour it has now, in words (the dot alone has no name).
-    const sub = r.color.weak.length ? 'Hard to read in ' + hubJoin(r.color.weak) + ' mode' : r.color.id ? 'Now ' + r.color.name : '';
-    return '<div class="tms-flag" data-team-flag="' + esc(r.id) + '"' + (r.color.weak.length ? '' : ' data-done') + '><div class="tms-flag-head">' + teamMarkHtml(r.id, { size: 30 }) +
+    const sub = r.color.weak.length ? 'Hard to read in ' + hubJoin(r.color.weak) + ' mode' : r.color.id ? 'Now ' + r.color.name : r.bare ? 'No colour yet' : '';
+    return '<div class="tms-flag" data-team-flag="' + esc(r.id) + '"' + (r.color.weak.length || r.bare ? '' : ' data-done') + '><div class="tms-flag-head">' + teamMarkHtml(r.id, { size: 30 }) +
     '<span class="tms-flag-name"><span class="cb-title">' + esc(r.name) + '</span><span class="cb-sub">' + esc(sub) + '</span></span></div>' +
     '<div class="tms-picks" role="radiogroup" aria-label="Colour for ' + esc(r.name) + '">' + Object.keys(CAMP_TEAM_PALETTE).map((cid) => {
       const sw = CAMP_TEAM_PALETTE[cid];
@@ -6207,14 +6220,14 @@ function renderTeamColorsSheet() {
   }).join(''));
   // A keyboard / switch user stays on the dot they just picked (the block was rewritten, in place).
   if (had && list && list.querySelector) focusBack(true, list.querySelector('[data-team-pick="' + had.dataset.teamPick + '"][data-color="' + had.dataset.color + '"]'));
-  setTextIfChanged(setupEl('team-colors-lede'), weakNow.length ? 'Pick a colour for each team. Two teams can share one; Set up the week will point it out.' : 'Every colour is easy to read now.');
+  setTextIfChanged(setupEl('team-colors-lede'), weakNow.length ? 'Pick a colour for each team. Two teams can share one; Set up the week will point it out.' : 'Every team has a colour now.');
 }
 
 function teamColorSet(tid, cid) {
   if (!canEdit() || !teamColorValid(cid) || !teamRecord(tid)) return;
   stateEdit('Colour for ' + (teamName(tid) || tid), () => { const t = teamRecord(tid); if (!t) return false; t.color = cid; return true; });
   renderAll();
-  if (!teamsModel().weak.length) { teamUi.colors = false; teamUi.colorsFor = null; shellSheetClose('team-colors'); setupSay('Every team’s colour is easy to read now.'); }
+  if (!teamsModel().flag.length) { teamUi.colors = false; teamUi.colorsFor = null; shellSheetClose('team-colors'); setupSay('Every team has a colour now.'); }
 }
 
 // ── wiring ──

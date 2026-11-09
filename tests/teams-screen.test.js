@@ -420,6 +420,74 @@ test('Pick colours for the flagged teams: one tap per team commits, the team lea
   tsClose();
 });
 
+// ── cleared teams (the new-year setup's Clear): "Team N", the number tile, no colour yet ──
+
+function tsClear(n) {
+  state.teams.forEach((t, i) => {
+    if (n !== undefined && i >= n) return;
+    Object.assign(t, { name: 'Team ' + (i + 1), short: 'Team ' + (i + 1), emoji: (i + 1) + '\uFE0F\u20E3', plain: true });
+    delete t.color; delete t.photoV;
+  });
+}
+
+test('a cleared team reads "Team 1" over "No colour yet": no short name equal to the name, no emoji beside its own number tile', () => {
+  tsOpen();
+  tsClear();
+  renderTeamsScreen();
+  const row = tsEl('teams-list').innerHTML.split('data-team-open="t0"')[1].split('</button>')[0];
+  assert.ok(row.includes('Team 1'), row);
+  assert.ok(row.includes('No colour yet'));
+  assert.ok(row.includes('data-num="1"'), 'its number tile');
+  assert.equal(/Team 1 · /.test(row.replace(/<[^>]*>/g, '')), false, 'the short name is left out when it is the name');
+  assert.equal(row.replace(/<[^>]*>/g, '').includes('1\uFE0F\u20E3'), false, 'the keycap is not listed beside its own tile');
+  // a picked emoji is a real choice and shows in the sub again
+  state.teams[0].emoji = '🦅';
+  renderTeamsScreen();
+  assert.ok(tsEl('teams-list').innerHTML.split('data-team-open="t0"')[1].split('</button>')[0].includes('🦅'));
+  tsClose();
+});
+
+test('the hub row: cleared teams with no colour are a gentle, uncounted note; a colour or a photo takes the team out of it', () => {
+  tsOpen();
+  tsClear();
+  let m = teamsModel();
+  assert.equal(m.status.mark, 'ok', 'still ready: the note is never a counted problem');
+  assert.equal(m.status.note, CAMP.teamCount + ' teams have no colour yet');
+  assert.equal(m.status.problems.length, 0, 'a cleared team is not "short name / emoji missing"');
+  state.teams[0].color = 'teal';
+  m = teamsModel();
+  assert.equal(m.status.note, (CAMP.teamCount - 1) + ' teams have no colour yet');
+  state.teams[1].photoV = 2;
+  assert.equal(teamsModel().status.note, (CAMP.teamCount - 2 === 1 ? 'Team ' + CAMP.teamCount + ' has no colour yet' : (CAMP.teamCount - 2) + ' teams have no colour yet'));
+  state.teams.forEach((t, i) => { if (i > 1) t.color = 'teal'; });
+  assert.equal(teamsModel().status.note, undefined);
+  tsClose();
+});
+
+test('the colours sheet also serves cleared teams: it lists them, a pick commits, and it says "Every team has a colour now" at the end', () => {
+  tsOpen();
+  tsClear(2);
+  const bare = teamsModel().flag.slice();
+  ['t0', 't1'].forEach((id) => assert.ok(bare.includes(id), id + ' is on the list (junior\'s older weak colours may join it)'));
+  renderTeamsScreen();
+  assert.equal(tsEl('teams-weak').hidden, false);
+  assert.ok(/Pick (new )?colours for/.test(tsEl('teams-weak-btn-text').textContent), tsEl('teams-weak-btn-text').textContent);
+  assert.ok(tsEl('teams-weak-text').textContent.includes('Team 1'));
+  teamColorsOpen();
+  assert.equal(teamUi.colors, true);
+  renderTeamColorsSheet();
+  assert.ok(tsEl('team-colors-list').innerHTML.includes('No colour yet'));
+  assert.ok(tsEl('team-colors-list').innerHTML.includes('data-team-flag="t0"'));
+  teamColorSet('t0', 'indigo');
+  assert.equal(state.teams[0].color, 'indigo');
+  assert.equal(state.teams[0].plain, true, 'a pick never clears the marker');
+  assert.equal(teamMarkSpec('t0').kind, 'tile', 'a camp with flags does not get its flag back');
+  teamColorSet('t1', 'teal');
+  const weakLeft = teamsModel().flag.length;
+  if (!weakLeft) assert.equal(teamUi.colors, false, 'nothing left to pick');
+  tsClose();
+});
+
 // ── the photo ──
 
 test('teamCropRect: the picture always covers the frame, the offset is clamped, zoom is 1 to 3', () => {

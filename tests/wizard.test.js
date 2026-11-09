@@ -289,8 +289,20 @@ test('the carry-over answers decide the setup paths: Keep writes nothing, Clear 
   state.teams.forEach((tm, i) => {
     const plain = 'Team ' + (i + 1);
     if (tm.name !== plain) assert.equal(t.updates['state/teams/' + i + '/name'], plain, 'a cleared team is plain Team N, not the camp\u2019s themed name');
-    assert.equal(t.updates['state/teams/' + i + '/short'], tm.short !== undefined ? null : undefined, 'short name goes');
+    // The cleared look (owner's decisions item 8): short "Team N", the keycap emoji, no colour, and the `plain` marker.
+    const u = (f) => t.updates['state/teams/' + i + '/' + f];
+    assert.equal(u('short'), tm.short !== plain ? plain : undefined, 'short name is Team N');
+    assert.equal(u('emoji'), (i + 1) + '\uFE0F\u20E3', 'the emoji is the keycap of the number');
+    assert.ok(/^[1-6]\uFE0F\u20E3$/.test(u('emoji')) && u('emoji').length === 3 && teamEmojiValid(u('emoji')), 'valid under the published emoji rule');
+    assert.equal(u('plain'), true, 'the marker that stops every fallback to the printed look');
+    if (tm.color !== undefined) wzIsNull(u('color'), 'the colour goes');
   });
+  // a repeat of the clear writes nothing new: each field only when it differs
+  const once = state.teams;
+  state.teams = once.map((tm, i) => Object.assign({}, tm, { name: 'Team ' + (i + 1), short: 'Team ' + (i + 1), emoji: (i + 1) + '\uFE0F\u20E3', plain: true }));
+  const again = wzPlan({ answers: { carry: { teams: 'clear' } } });
+  assert.equal(Object.keys(again.updates).filter((k) => /^state\/teams\/\d+\/(name|short|emoji|color|plain)$/.test(k)).length, 0, 'an already cleared roster is no change');
+  state.teams = once;
   assert.equal(Object.keys(t.updates).filter((k) => /^state\/teams\/\d+\/name$/.test(k)).every((k) => /^Team \d$/.test(t.updates[k])), true);
   // once the wizard stamped an epoch, the 2026 roster migration never swaps "Team N" back
   freshState();
@@ -298,6 +310,31 @@ test('the carry-over answers decide the setup paths: Keep writes nothing, Clear 
   state.meta.epoch = 'w20270718';
   normalizeSyncedState();
   assert.deepEqual(state.teams.map((tm) => tm.name), state.teams.map((tm, i) => 'Team ' + (i + 1)));
+});
+
+test('the clear marks teams plain end to end, and Undo takes the marker away again (the archive restores the roster whole)', async () => {
+  const db = await wzSetup();
+  try {
+    const arch = await wzToStep4(db);
+    wizardAnswer({ carry: { teams: 'clear' } });
+    const cleared = await wizardClear(WZ_QUIET);
+    assert.equal(cleared.ok, true, JSON.stringify(cleared));
+    await wzSettle();
+    const t = wzServer(db, 'state/teams');
+    assert.equal(t.length, state.teams.length);
+    t.forEach((tm, i) => { assert.equal(tm.plain, true); assert.equal(tm.name, 'Team ' + (i + 1)); assert.equal(tm.short, 'Team ' + (i + 1)); assert.equal(tm.color, undefined); });
+    // on this phone the look is the number, whatever the camp prints
+    assert.equal(teamCrestSrc('t0'), null);
+    assert.equal(teamShort('t0'), 'Team 1');
+    assert.equal(teamEmoji('t0'), '1\uFE0F\u20E3');
+    const u = await wizardUndo(arch.rid);
+    assert.equal(u.ok, true, JSON.stringify(u));
+    const back = wzServer(db, 'state/teams');
+    back.forEach((tm) => assert.equal(tm.plain, undefined, 'the marker is gone with Undo'));
+    await wzSettle();
+    assert.equal(teamPlain('t0'), false);
+    assert.equal(teamShort('t0'), TEAM_ABBREV.t0, 'the printed look is back');
+  } finally { wzTeardown(); }
 });
 
 test('a clear that cannot be built is refused whole: no Sunday picked, or a roster that is not whole', () => {

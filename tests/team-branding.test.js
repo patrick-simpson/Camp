@@ -351,3 +351,110 @@ test('a team\'s new short name and emoji reach the schedule\'s labels at once, w
     freshState();
   }
 });
+
+// ── the cleared look: `plain: true` (the new-year setup's team-names Clear; owner's decisions item 8) ──
+
+const KEYCAP = (n) => n + '️⃣';
+function wzPlainTeam(i) { state.teams[i] = Object.assign({}, state.teams[i], { name: 'Team ' + (i + 1), short: 'Team ' + (i + 1), emoji: KEYCAP(i + 1), plain: true }); delete state.teams[i].color; }
+
+test('a plain team never falls back to the camp\'s printed look: no shield, mascot, flag, colour or short name', () => {
+  freshState();
+  // without the marker the printed look stands
+  assert.equal(teamPlain('t0'), false);
+  assert.equal(teamShort('t0'), TEAM_ABBREV.t0);
+  state.teams[0].plain = true;                     // the marker alone, no fields (an old record, or a field cleared on the sheet)
+  assert.equal(teamPlain('t0'), true);
+  assert.equal(teamShort('t0'), 'Team 1', 'never the printed short name');
+  assert.equal(teamEmoji('t0'), KEYCAP(1));
+  assert.equal(teamEmojiOwn('t0'), KEYCAP(1), 'the hub never says "no emoji"');
+  assert.equal(teamCrestSrc('t0'), null, 'never the shipped shield');
+  assert.equal(teamAccentVars('t0'), '', 'never the camp\'s older colour');
+  assert.equal(teamAccent('t0'), null);
+  const spec = teamMarkSpec('t0');
+  assert.equal(spec.kind, 'tile', 'never a shield, never the senior flag');
+  assert.equal(spec.emoji, KEYCAP(1));
+  const html = teamMarkHtml('t0', { size: 40, label: 'Team 1' });
+  assert.ok(html.indexOf('data-num="1"') !== -1 && html.indexOf('>1</span>') !== -1, 'the digit is drawn in type: ' + html);
+  assert.equal(/--tm-accent|--team-accent/.test(html), false, 'no inline colour: styles.css keys the neutral ink edge on its absence');
+  assert.equal(html.indexOf('<img'), -1);
+  // the slot's number follows its place, t1 is Team 2
+  state.teams[1].plain = true;
+  assert.equal(teamShort('t1'), 'Team 2');
+  assert.equal(teamEmoji('t1'), KEYCAP(2));
+  // other teams are untouched
+  assert.equal(teamShort('t2'), TEAM_ABBREV.t2);
+  freshState();
+});
+
+test('plain: only the boolean true counts; any other stored value reads as absent', () => {
+  freshState();
+  ['true', 1, 'yes', {}, [], null, false, '<b>'].forEach((bad) => {
+    state.teams[0].plain = bad;
+    assert.equal(teamPlain('t0'), false, JSON.stringify(bad));
+    assert.equal(teamShort('t0'), TEAM_ABBREV.t0);
+  });
+  assert.equal(teamPlain('nope'), false, 'an id off the roster');
+  freshState();
+});
+
+test('after a plain team, a later pick shows as usual: a colour is the tile\'s edge, an emoji its glyph, a photo beats everything, and the flag never comes back', () => {
+  freshState();
+  wzPlainTeam(0);
+  state.teams[0].color = 'teal';
+  assert.equal(teamColorId('t0'), 'teal');
+  assert.ok(/--team-accent-l:#[0-9a-f]{6}/i.test(teamAccentVars('t0')));
+  const spec = teamMarkSpec('t0');
+  assert.equal(spec.kind, 'tile', 'a picked colour fills the tile\'s edge; the senior flag does not return');
+  const html = teamMarkHtml('t0', { size: 40 });
+  assert.ok(html.indexOf('--tm-accent:var(--team)') !== -1, 'the colour is inline only for a team that has one');
+  state.teams[0].emoji = '🦅';
+  assert.equal(teamEmoji('t0'), '🦅');
+  assert.equal(teamMarkHtml('t0', { size: 40 }).indexOf('data-num'), -1, 'a real emoji is not a numeral');
+  state.teams[0].short = 'Hawks';
+  assert.equal(teamShort('t0'), 'Hawks');
+  delete state.teams[0].short;
+  assert.equal(teamShort('t0'), 'Team 1', 'emptying a field falls back to the slot, never the printed name');
+  state.teams[0].photoV = 4;
+  TEAM_PHOTO_MEM.set('t0:4', PNG);
+  assert.equal(teamCrestSrc('t0'), PNG);
+  assert.equal(teamMarkSpec('t0').kind, 'shield', 'a photo beats everything');
+  TEAM_PHOTO_MEM.clear();
+  freshState();
+});
+
+test('a keycap tile draws its digit in a bracket mark too, and no mascot flies for it', () => {
+  freshState();
+  wzPlainTeam(0);
+  assert.ok(bracketMarkHtml('t0', 28).indexOf('data-num="1"') !== -1, 'the numeral tile, never the platform\'s keycap box');
+  assert.equal(teamMascot('t0'), '', 'confetti and cannons use the party emoji instead');
+  assert.equal(teamMascot('t1'), teamEmoji('t1'));
+  freshState();
+});
+
+test('teamsFromBackup carries plain only as the boolean true, and a backup without it takes it off', () => {
+  freshState();
+  const out = teamsFromBackup([{ id: 't0', name: 'Team 1', plain: true, short: 'Team 1', emoji: KEYCAP(1) }, { id: 't1', name: 'Team 2', plain: 'true' }, { id: 't2', name: 'Foxes' }]);
+  assert.equal(out[0].plain, true);
+  assert.equal(out[0].emoji, KEYCAP(1), 'the keycap passes the emoji check');
+  assert.equal(out[1].plain, undefined);
+  assert.equal(out[2].plain, undefined);
+  freshState();
+});
+
+test('plain syncs per field like the rest of the roster: teams/<i>/plain', () => {
+  freshState();
+  const before = syncCanon({ teams: state.teams });
+  wzPlainTeam(1);
+  const ops = treeDiff(teamsCanon([{ id: 't1', name: 'x' }]), teamsCanon([{ id: 't1', name: 'x', plain: true }]), TEAMS_DEPTHS);
+  assert.ok(Object.keys(ops).some((p) => /plain$/.test(p)), JSON.stringify(ops));
+  void before;
+  freshState();
+});
+
+test('a plain team\'s schedule labels say Team N, with the keycap, once the roster signature moves', () => {
+  freshState();
+  const sig = typeof setupTeamSig === 'function' ? setupTeamSig() : null;
+  wzPlainTeam(0);
+  if (sig !== null) assert.ok(setupTeamSig() !== sig, 'a plain team changes the labels signature');
+  freshState();
+});

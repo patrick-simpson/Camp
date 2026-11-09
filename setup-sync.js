@@ -4762,10 +4762,19 @@ function wizardClearUpdate(inp) {
     if (carry.counselors === 'clear' && t.counselor !== undefined && t.counselor !== '') u[p + 'counselor'] = null;
     if (carry.photos === 'clear' && t.photoV !== undefined) u[p + 'photoV'] = null;
     if (carry.teams === 'clear') {
-      // Owner's answer of Nov 9, 2026: a cleared team is plain "Team 1" … "Team N", not the camp's themed default.
-      const plain = 'Team ' + (i + 1);
-      if (t.name !== plain) u[p + 'name'] = plain;
-      ['short', 'emoji', 'color'].forEach((f) => { if (t[f] !== undefined) u[p + f] = null; });
+      // Owner's answers of Nov 9, 2026 (items 6 and 8): a cleared team is "Team 1" … "Team N" and wears its NUMBER, never
+      // the camp's printed look. name and short "Team N", the emoji the keycap of N, the colour removed, and the marker
+      // `plain: true` (app.js teamPlain) so no accessor falls back to the shield, mascot, flag, colour or short name of
+      // the slot. The published rules leave `plain` free (they validate only emoji / short / color / photoV), so no rules
+      // change. The keycap is digit + U+FE0F + U+20E3: 3 characters, valid under the emoji rule. Each field only if it
+      // differs, so a repeat writes nothing.
+      const word = 'Team ' + (i + 1);
+      const cap = (i + 1) + '\uFE0F\u20E3';
+      if (t.name !== word) u[p + 'name'] = word;
+      if (t.short !== word) u[p + 'short'] = word;
+      if (t.emoji !== cap) u[p + 'emoji'] = cap;
+      if (t.color !== undefined) u[p + 'color'] = null;
+      if (t.plain !== true) u[p + 'plain'] = true;
     }
   });
   // The week's own settings.

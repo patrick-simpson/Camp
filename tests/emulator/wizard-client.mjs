@@ -163,6 +163,8 @@ for (const R of ROOTS) {
     const teamsNow = await val(owner(), `${R}/state/teams`);
     const tl = Array.isArray(teamsNow) ? teamsNow : Object.values(teamsNow || {});
     if (!tl.length || tl.some((t, i) => t.name !== 'Team ' + (i + 1))) fail('team names are not plain Team N: ' + jstr(tl.map((t) => t.name)));
+    // the cleared look: marker `plain`, short "Team N", the keycap emoji, accepted by the published rules with no rules change
+    if (tl.some((t, i) => t.plain !== true || t.short !== 'Team ' + (i + 1) || t.emoji !== (i + 1) + '\uFE0F\u20E3' || t.color !== undefined)) fail('a cleared team is not marked plain with its number: ' + jstr(tl));
     const members = await val(owner(), `${R}/members`);
     if (!members[OWNER.key] || same(members[OWNER.key], null)) fail('the owner row is gone');
     if (members[ED2.key].teamId !== undefined || members[VW.key].teamId !== undefined) fail('a counselor kept a team: ' + jstr(members[VW.key]));
@@ -187,6 +189,10 @@ for (const R of ROOTS) {
     if ((await val(owner(), `${R}/setup/meta/finaleDow`)) !== 3) fail('the finale day did not come back');
     if ((await val(owner(), `${R}/state/notice/status`)) !== 'posted') fail('the notice did not come back');
     if ((await val(owner(), `${R}/state/teams/0/counselor`)) !== 'Last Year Lee') fail('the typed counselor did not come back');
+    {
+      const back = await val(owner(), `${R}/state/teams`);
+      if (Object.values(back || {}).some((t) => t && t.plain !== undefined)) fail('Undo left the plain marker on a team');
+    }
     const undoUpdates = p.writes.filter((w) => w.op === 'update' && w.path === R && w.values && 'state/meta/epoch' in w.values && w.values['state/meta/epoch'] === null);
     if (undoUpdates.length !== 1) fail('expected ONE atomic undo update, saw ' + undoUpdates.length);
     captured = {
