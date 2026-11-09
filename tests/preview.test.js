@@ -624,6 +624,13 @@ test('every door a counselor has no key to stays shut in a preview: the director
   assert.equal(openReveal({ from: 'more' }), false);
   openBuilder('games');
   notEqual(state.ui.view, 'settings', 'the builder does not open');
+  openBuilder('notice');
+  notEqual(state.ui.view, 'settings', 'the Notice screen does not open in a preview');
+  if (typeof nbsSetField === 'function') {
+    const before = JSON.stringify(state.notice);
+    nbsSetField('title', 'Leak check');
+    assert.equal(JSON.stringify(state.notice), before, 'the notice screen writes nothing in a preview');
+  }
   ['members', 'history', 'counselors'].forEach((id) => { shellSheetOpen(id); assert.notOk(shell.sheets.includes(id), id + ' is a director\'s sheet'); });
   SETUP_SHEETS.forEach((id) => { shellSheetOpen(id); assert.notOk(shell.sheets.includes(id), id + ' belongs to the builder'); });
   // The game sheet (Step 21) also opens over the Games tab with the builder closed — its Add games, Quick game and a game's row — and is a

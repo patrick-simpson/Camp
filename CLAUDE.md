@@ -714,7 +714,7 @@ never rebuilds a segmented control under a finger.
   "How to play" and the lone text links (`.quick-game-btn`, `#clear-result-btn`,
   Now's announcement links) get a 44px hit box. A takeover whose back label is long ("Wednesday games") lets its
   title wrap onto its own row (`.tk-head` wraps, `.tk-titles { flex: 1 1 13rem }`).
-  Not audited: the week builder (settings.js, its own screens) and a game
+  Not audited: the Set up the week screens and sheets and a game
   mid-play (a live bracket, score entry); the audit opens each game's takeover in
   its saved state.
 - **Sparkles only where a press means something** (§9.7): the tap burst fires on
@@ -1923,7 +1923,7 @@ into it from app.js / settings.js is typeof-guarded.
   `#rp-manage`. A backup FILE picked on the screen: a v3 file of this camp opens the same sheet
   (you pick what to put back); another camp's asks once to copy its schedule, games and teams
   (`tryImport(text, { copyFromOtherCamp, confirmed, say })`); an older flat file asks once, then
-  `tryImport`. `tryImport`'s new `opts.say` takes its complaints (default: the Data tab's) and
+  `tryImport`. `tryImport`'s new `opts.say` takes its complaints (default: a plain toast) and
   `opts.confirmed` skips its native confirm.
 
 ## Camp week, Schedule, the rain plan (Step 15 — markup and visual system)
@@ -2761,7 +2761,7 @@ What's covered, and why each file exists:
   and `settings.js` for direct reads of the week constants, `CAMP.<week field>`,
   `setupTree` and `state.config.days|games` (including a computed key, an alias
   or destructure, and a read split over lines), and fails with `file:line`. The
-  builder's WRITES to the catalog (`.push`/`.splice`/`[i] =`/`moveItem`) are
+  builder's WRITES to the catalog (`.push`/`.splice`/`[i] =`) are
   recognised by shape and allowed. It also tests its own scan, so it can't go
   quietly vacuous.
 
@@ -2963,8 +2963,7 @@ reuses) an accessor in the block.
   (`teamShort`, `teamEmoji`, `teamAccentVars`, `teamCrestSrc`) reads the optional fields of its own
   `state.teams` record, per field, with no switch (step 25: "Team colours and the Teams screen").
 - **The builder is the authority, not a reader.** `settings.js` still WRITES the
-  catalog straight into `state.config` (`push`, `splice`, the reorder swap and
-  `moveItem`) — `competitionDays()`/`allGames()` front that same array. Reads
+  catalog straight into `state.config` (`push`, `splice` and the reorder swap; the Games screen's `gmOrderGame` renumbers) — `competitionDays()`/`allGames()` front that same array. Reads
   there go through the accessors.
 - **`staffNames()` is the printed roster only**; the member directory
   (`memberDirectory`, which carries each person's key) stays chat's own source,
@@ -4298,7 +4297,7 @@ P2 §11.14 in the Step 14 / 15 / 19 frame. Markup in index.html (templates in th
 styles in styles.css's last block, "SET UP THE WEEK: Games"; behaviour in setup-ui.js section 16 (engine first, then the screen, then
 the sheet), pinned by `tests/games-screen.test.js` (+ senior). Hooks are prefixed `sg-` (the screen) and `gm-` (the sheet): `gs-` /
 `gw-` / `games-` belong to the Games tab. **The catalog is written ONLY through `configEdit` (field ops, one undo entry per change);
-there is no draft and no Save.** The classic editor (its Games tab, `saveGameDraft`, the v183 parity fixture) is gone.
+there is no draft and no Save.** The classic editor (its Games tab, `saveGameDraft`) is gone.
 
 - **Routing**: the hub's Games row (`HUB_OPENS.games`) and the schedule item sheet's "Add a game here" (`#si-add-game`, a Games item of a
   day that exists: `schedItemAddGame`) lead to the screen; the Games tab's **Add games** (an empty day) is `gmAddGames(dayId)`: the game
