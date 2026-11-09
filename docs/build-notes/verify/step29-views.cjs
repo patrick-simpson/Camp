@@ -98,6 +98,18 @@ const VIEWS = [
   { n: 'now-note-dir', who: 'director', now: '3-1030', go: 'S.note()' },
   { n: 'now-note-owner', who: 'owner', now: '3-1030', go: 'S.note()' },
   { n: 'now-note-dir-banner', who: 'director', now: '3-1030', go: 'S.note(true)' },
+  // Build session 2 (Nov 9), the one-hour rule: two live notes of one update, joined; and a team the new-year setup cleared (Team N, the number tile, no colour).
+  { n: 'now-notes-two-cou', who: 'counselor', now: '3-1030', go: 'S.notes(2)' },
+  { n: 'now-notes-two-dir-banner', who: 'director', now: '3-1030', go: 'S.notes(3, true)' },
+  { n: 'cleared-now-cou', who: 'counselor', now: '3-1030', go: 'S.cleared()' },
+  { n: 'cleared-now-dir', who: 'director', now: '3-1030', go: 'S.cleared()' },
+  { n: 'cleared-games-dir', who: 'director', now: '3-1030', go: "S.cleared(); showTab('games')" },
+  { n: 'cleared-games-cou', who: 'counselor', now: '3-1030', go: "S.cleared(); showTab('games')" },
+  { n: 'cleared-more-cou', who: 'counselor', now: '3-1030', go: "S.cleared(); showTab('more')" },
+  { n: 'cleared-teams', who: 'owner', now: '3-1030', go: "S.cleared(); S.builder('teams')", root: '#setup' },
+  { n: 'cleared-team-sheet', who: 'owner', now: '3-1030', go: "S.cleared(); S.builder('teams'); teamOpen(state.teams[1].id)", root: '#sheet-team-edit' },
+  { n: 'cleared-team-colors', who: 'owner', now: '3-1030', go: "S.cleared(); S.builder('teams'); teamColorsOpen()", root: '#sheet-team-colors' },
+  { n: 'cleared-hub', who: 'owner', now: '3-1030', go: "S.cleared(); S.builder('hub')", root: '#setup' },
 ];
 
 const INSTALL = (camp) => {
@@ -139,10 +151,24 @@ const INSTALL = (camp) => {
       setupReady = true; configReady = true; window.restoreOnline = () => true;
       openBuilder(); if (screen !== 'hub') setupGo(screen); renderAll();
     },
-    // A note due on this phone: its memory is emptied (so the first one releases at once); `banner` also posts a director's banner above it.
-    note(banner) {
+    // `n` live notes (their hour started a minute ago by the server clock); `banner` also posts a director's banner above them.
+    notes(n, banner) {
       try { localStorage.removeItem('campScoreboardWhatsNew'); } catch (e) {}
+      serverOffsetKnown = true; whatsNewGone = null; CHANGES.length = 0;
+      const at = new Date(serverNow() - 60000).toISOString();
+      const all = [
+        { id: 'zz-games', at, for: 'everyone', needs: ['games'], text: 'Every game and its winners are on the Games tab.', show: { to: 'games', where: 'the Games tab' } },
+        { id: 'zz-chat', at, for: 'everyone', text: 'Tap the bell in Chat to hear about every message.' },
+        { id: 'zz-more', at, for: 'everyone', text: 'The schedule is under More, in Full schedule.' },
+      ];
+      all.slice(0, n).forEach((x) => CHANGES.push(x));
       if (banner && typeof postBanner === 'function') { postBanner('The Tabernacle is open for the next hour.', 3600000); }
+      renderAll();
+    },
+    note(banner) { S.notes(1, banner); },
+    // What the new-year setup's team-names Clear leaves: Team N, the number for the emoji, no colour, the plain marker.
+    cleared() {
+      state.teams.forEach((t, i) => { t.name = 'Team ' + (i + 1); t.short = 'Team ' + (i + 1); t.emoji = String(i + 1) + '\uFE0F\u20E3'; delete t.color; delete t.photoV; t.plain = true; });
       renderAll();
     },
     removeTick(offline) {
