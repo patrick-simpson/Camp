@@ -171,6 +171,29 @@ test('day picker: Done / Today / "N left" across the camp week, and the note whe
   done();
 });
 
+test('a renamed day: its own day says the name, another day says "<name> · not today", and a day named as its weekday says nothing', () => {
+  boot('editor');
+  const wed = dayOf(WED);
+  const thu = dayOf(4);
+  const realWed = wed.name; const realThu = thu.name;
+  const wk = (d) => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d];
+  try {
+    wed.name = 'Messtival'; thu.name = 'Splash Day';
+    state.ui.day = wed.id;
+    let m = at(WED, 630);
+    assert.equal(m.day.today, true);
+    assert.equal(m.dayNote, 'Messtival', 'on its own day the line says the name (the chip says the weekday)');
+    assert.equal(m.days.find((d) => d.id === wed.id).short, wk(WED).slice(0, 3), 'the chip keeps the weekday word');
+    state.ui.day = thu.id;
+    m = at(WED, 630);
+    assert.equal(m.dayNote, 'Splash Day · not today');
+    wed.name = wk(WED);
+    state.ui.day = wed.id;
+    assert.equal(at(WED, 630).dayNote, '', 'a day named for its weekday needs no line');
+  } finally { wed.name = realWed; thu.name = realThu; state.ui.day = ''; }
+  done();
+});
+
 // ════════════════════════════════════════════════════════════════════
 // The blocks a day lists its games under
 // ════════════════════════════════════════════════════════════════════

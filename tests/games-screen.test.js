@@ -1881,6 +1881,31 @@ test('the move question names what happens to the games; a refused weekday is ex
   } finally { gmUi.dayDk = ''; gmUi.dayId = ''; gsEnd(); }
 });
 
+test('the move question’s second sentence, written whole for each case: none, one, or several games have no Games item on the new weekday', async () => {
+  gsStart();
+  const realPlan = gmMovePlan;
+  try {
+    const dk = gsFirstDay();
+    const to = gsFreeDay();
+    gmUi.dayDk = dk; gmUi.dayId = gmDayRecs(dk)[0].id;
+    const on = SETUP_DAY_WORDS[to];
+    const cases = [
+      [{ games: 3, off: 0 }, null],
+      [{ games: 3, off: 3 }, 'None of them has a Games item on ' + on + ', so they go under Not on the schedule.'],
+      [{ games: 3, off: 1 }, '1 of them has no Games item on ' + on + ', so it goes under Not on the schedule.'],
+      [{ games: 3, off: 2 }, '2 of them have no Games item on ' + on + ', so they go under Not on the schedule.'],
+    ];
+    for (const [plan, sentence] of cases) {
+      gmMovePlan = () => plan;
+      await gsAsking(['no'], async (asked) => {
+        await gmDayDowTap(to);
+        assert.equal(asked[0].body[0], 'Its 3 games and their results go with it.');
+        assert.equal(asked[0].body[1], sentence === null ? undefined : sentence, JSON.stringify(plan));
+      });
+    }
+  } finally { gmMovePlan = realPlan; gmUi.dayDk = ''; gmUi.dayId = ''; gsEnd(); }
+});
+
 test('deleting a games day: refused while it has games until they are given somewhere to go; one without games asks once; every write is a director’s', async () => {
   gsStart();
   try {
