@@ -2887,8 +2887,9 @@ does, so an app device always chooses by its own key.
   every Firebase path and localStorage key is exactly what it always was —
   `tests/camps.test.js` pins this, plus a deep-equal of the whole junior
   week data against `tests/fixtures-junior-week.json` (dumped before the
-  move; regenerated TWICE on purpose and never edited otherwise: once for the spelling merge — its diff is only those three
-  spellings — and once for the starter notice's copy, the owner's answer of Nov 9, whose diff is only the `defaultNotice` text). Senior lives under the SIBLING root `seniorScoreboard/*` with
+  move; regenerated THREE times on purpose and never edited otherwise: once for the spelling merge — its diff is only those three
+  spellings — and twice for the starter notice's copy, the owner's answer of Nov 9 and then the line its intro and its first step
+  both said ("Nobody goes up to the cabins yet."), each diff only the `defaultNotice` text). Senior lives under the SIBLING root `seniorScoreboard/*` with
   `':senior'`-suffixed storage keys and its own members list.
 - **Every Firebase path goes through `dbPath(sub)`** and every per-camp
   storage key through `lsKey(base)` (both in camps.js). Never write a

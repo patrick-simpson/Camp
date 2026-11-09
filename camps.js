@@ -428,8 +428,7 @@ function defaultNotice() {
     status: 'draft',
     eyebrow: 'Campground cleanup · 8:30–9:30 AM',
     title: 'Where your team cleans',
-    sub: 'Go straight from breakfast to your team’s area. Nobody goes up to the cabins yet. '
-       + 'Finish by 9:30, then meet in the Tabernacle for send-off.',
+    sub: 'Go straight from breakfast to your team’s area. Finish by 9:30, then meet in the Tabernacle for send-off.',
     zones: [
       { teamId: 't3', place: 'Chapel Lawn', note: '' },
       { teamId: 't1', place: 'Waterfront', note: '' },
@@ -440,7 +439,7 @@ function defaultNotice() {
     ],
     steps: [
       { emoji: '🚶', when: 'Straight after breakfast', items: [
-        'Campers go straight to their team’s area, listed above. Nobody goes up to the cabins yet.',
+        'Nobody goes up to the cabins yet. Packing comes later.',
       ] },
       { emoji: '🗑️', when: 'In your area', items: [
         'Empty every trash can and put in a fresh bag.',
