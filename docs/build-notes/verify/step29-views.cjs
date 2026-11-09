@@ -42,6 +42,9 @@ const VIEWS = [
   { n: 'verse-sheet-dir', who: 'director', now: '3-1030', go: "showTab('more'); shellSheetOpen('verse')", root: '#sheet-verse' },
   { n: 'cleanup-sheet', who: 'counselor', now: '3-1030', go: "showTab('more'); shellSheetOpen('cleanup')", root: '#sheet-cleanup' },
   { n: 'cleanup-sheet-dir', who: 'director', now: '3-1030', go: "showTab('more'); shellSheetOpen('cleanup')", root: '#sheet-cleanup' },
+  // senior ships with an empty rota and a placeholder verse: fill one verse day and one cleanup meal so those sheets are really audited
+  { n: 'verse-sheet-filled', who: 'counselor', now: '3-1030', camps: ['senior'], go: "setupTree.verses.days.wed = { text: 'Be strong and courageous. Do not be afraid; do not be discouraged, for the Lord your God will be with you wherever you go.', ref: 'Joshua 1:9' }; setupTree.cleanup.wed = { lunch: { t0: true, t1: true }, supper: { t2: true } }; setupRev++; showTab('more'); shellSheetOpen('verse')", root: '#sheet-verse' },
+  { n: 'cleanup-sheet-filled', who: 'counselor', now: '3-1030', camps: ['senior'], go: "setupTree.verses.days.wed = { text: 'Be strong and courageous. Do not be afraid; do not be discouraged, for the Lord your God will be with you wherever you go.', ref: 'Joshua 1:9' }; setupTree.cleanup.wed = { lunch: { t0: true, t1: true }, supper: { t2: true } }; setupRev++; showTab('more'); shellSheetOpen('cleanup')", root: '#sheet-cleanup' },
   { n: 'counselors-sheet', who: 'director', now: '3-1030', go: "showTab('more'); shellSheetOpen('counselors')", root: '#sheet-counselors' },
   { n: 'remote', who: 'director', now: '3-1930', go: 'openReveal()', root: '#takeover-reveal' },
   { n: 'tell', who: 'director', now: '3-1030', go: "openTool('tell')", root: '#takeover-tell' },
