@@ -724,7 +724,7 @@ test('a hand-edited backup cannot skip the camp check or smuggle a junk catalog:
     let said = '';
     const say = (m) => { said = m; };
     tryImport(JSON.stringify(noCamp), { say });
-    assert.ok(/doesn't say which camp/.test(said), said);
+    assert.ok(/doesn’t say which camp/.test(said), said);
     assert.equal(state.config.games.length, gamesBefore);
     assert.equal(restoreParseBody(JSON.stringify(noCamp)).ok === false, true);
     // The other camp's file with the app flag edited away is still the other camp's.

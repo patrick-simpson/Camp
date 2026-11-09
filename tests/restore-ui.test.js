@@ -406,7 +406,7 @@ test('a backup file of THIS camp opens the restore sheet (you pick what to put b
     imported = null;
     askDialog = async () => 'no';
     await rpRestoreFile({ name: 'other.json', text: async () => JSON.stringify(other) });
-    assert.equal(imported, null, 'Cancel copies nothing');
+    assert.equal(imported, null, 'Not now copies nothing');
     // An older flat (v2) backup: the dialog asks, then tryImport takes it.
     askDialog = async (o) => { q = o; return 'go'; };
     await rpRestoreFile({ name: 'old.json', text: async () => JSON.stringify({ app: 'campScoreboardV2', config: state.config, teams: state.teams }) });
@@ -426,11 +426,171 @@ test('tryImport takes its complaints through opts.say and skips its own confirm 
   confirm = () => { confirms++; return true; };
   try {
     tryImport('not json', { say: (m) => said.push(m) });
-    assert.ok(/doesn't look like a Camp Scoreboard backup/.test(said[0]));
+    assert.ok(/isn’t a whole backup/.test(said[0]));
     const mine = JSON.stringify({ app: 'campScoreboardV2', config: state.config });
     tryImport(mine, { say: () => {}, confirmed: true });
     assert.equal(confirms, 0, 'the caller\'s dialog was the question');
     tryImport(mine, { say: () => {} });
     assert.equal(confirms, 1, 'a caller that did not ask gets the native confirm, as before');
   } finally { confirm = realConfirm; setMemberRole(null); }
+});
+
+// ── Copy the backup, and Paste a backup (one path with a picked file) ──
+const bpMine = () => JSON.stringify(backupObject());
+function bpOther() { const o = JSON.parse(bpMine()); o.camp = CAMP.id === 'junior' ? 'senior' : 'junior'; return JSON.stringify(o); }
+async function bpWith(fn) {
+  const realAsk = askDialog; const realToast = showToast; const realImport = tryImport;
+  const env = { asked: [], toasts: [], imported: null, answer: 'go' };
+  askDialog = async (o) => { env.asked.push(o); return env.answer; };
+  showToast = (m) => env.toasts.push(m);
+  tryImport = (text, opts) => { env.imported = { text, opts }; };
+  try { await fn(env); } finally { askDialog = realAsk; showToast = realToast; tryImport = realImport; backupPasteReset(); }
+}
+
+test('Copy the backup puts backupJSON() on the clipboard, says Copied in its own title, and never holds a camper name', () => {
+  ruOpen();
+  const realCopy = copyTextToClipboard;
+  try {
+    let copied = null; let btn = null;
+    copyTextToClipboard = (text, b) => { copied = text; btn = b; };
+    const el = { id: 'backup-copy-btn' };
+    rpCopyBackup(el);
+    const strip = (t) => { const o = JSON.parse(t); delete o.at; delete o.exportedAt; if (o.config) delete o.config.updatedAt; return JSON.stringify(o); };
+    assert.equal(strip(copied), strip(backupJSON()), 'the same text the file holds');
+    assert.equal(btn, el, 'the button is handed over so its .copy-t title can say Copied');
+    assert.equal(JSON.parse(copied).campers, undefined, 'no camper list in a backup');
+    copied = null;
+    setMemberRole('viewer');
+    rpCopyBackup(el);
+    assert.equal(copied, null, 'a counselor copies nothing');
+  } finally { copyTextToClipboard = realCopy; ruClose(); }
+  const src = readFixture('../setup-ui.js');
+  assert.ok(/on\('#backup-copy-btn', 'click'/.test(src) && /on\('#backup-paste-row', 'click'/.test(src), 'both rows are wired');
+});
+
+test('pasting a backup of THIS camp opens the restore sheet and closes the paste sheet; the text is dropped from memory', async () => {
+  ruOpen();
+  await bpWith(async (env) => {
+    openBackupPaste();
+    assert.equal(backupPasteUi.open, true);
+    assert.equal(setupEl('bp-check').hidden, true, 'nothing pasted: the dashed well, no gold key');
+    backupPasteTyped(bpMine());
+    assert.equal(setupEl('bp-check').hidden, false);
+    assert.equal(setupEl('bp-wait').hidden, true);
+    assert.equal(await backupPasteCheck(), true);
+    assert.ok(setupUi.rsheet && setupUi.rsheet.source === 'file', 'the same sheet a file opens');
+    assert.equal(env.imported, null, 'nothing is replaced from here');
+    assert.equal(backupPasteUi.text, '', 'the pasted text is gone');
+    assert.equal(shell.sheets.includes('backup-paste'), false);
+  });
+  ruClose();
+});
+
+test('pasting another camp\'s backup asks once; an older flat one asks once; Not now keeps the text so it can be fixed', async () => {
+  ruOpen();
+  await bpWith(async (env) => {
+    openBackupPaste();
+    const otherText = bpOther();
+    backupPasteTyped(otherText);
+    env.answer = 'no';
+    assert.equal(await backupPasteCheck(), false);
+    assert.equal(env.asked[0].actions[0].label, 'Not now');
+    assert.equal(env.imported, null);
+    assert.equal(backupPasteUi.text, otherText, 'Not now keeps what was pasted');
+    assert.equal(backupPasteUi.open, true);
+    env.answer = 'copy';
+    assert.equal(await backupPasteCheck(), true);
+    assert.equal(env.imported.opts.copyFromOtherCamp, true);
+    assert.equal(env.imported.opts.confirmed, true);
+    assert.equal(backupPasteUi.open, false, 'handed on: the sheet closes');
+    env.imported = null; env.asked.length = 0; env.answer = 'go';
+    openBackupPaste();
+    backupPasteTyped(JSON.stringify({ app: 'campScoreboardV2', config: state.config, teams: state.teams }));
+    assert.equal(await backupPasteCheck(), true);
+    assert.equal(env.asked.length, 1);
+    assert.equal(env.asked[0].title, 'Replace this camp’s setup?');
+    assert.equal(env.imported.opts.confirmed, true);
+  });
+  ruClose();
+});
+
+test('pasted junk is a sentence in the sheet (aria-invalid) and nothing changes; typing clears it; no toast, no database', async () => {
+  ruOpen();
+  await bpWith(async (env) => {
+    const attrs = []; const realAttr = setAttrIfChanged; setAttrIfChanged = (el, n, v) => { attrs.push([el === setupEl('bp-text') ? 'bp-text' : 'other', n, v]); };
+    try {
+    openBackupPaste();
+    backupPasteTyped('{"half": ');
+    assert.equal(await backupPasteCheck(), false);
+    assert.equal(setupEl('bp-why').textContent, 'That isn’t a whole backup. Copy it again and paste all of it.');
+    assert.deepEqual(attrs[attrs.length - 1], ['bp-text', 'aria-invalid', 'true']);
+    assert.equal(env.toasts.length, 0);
+    assert.equal(backupPasteUi.open, true, 'the sheet stays so it can be fixed');
+    backupPasteTyped('{"half": 1');
+    assert.equal(setupEl('bp-why').textContent, '', 'typing clears the sentence');
+    assert.deepEqual(attrs[attrs.length - 1], ['bp-text', 'aria-invalid', null]);
+    const noCamp = JSON.parse(bpMine()); delete noCamp.camp;
+    backupPasteTyped(JSON.stringify(noCamp));
+    await backupPasteCheck();
+    assert.equal(setupEl('bp-why').textContent, 'That backup doesn’t say which camp it’s from, so it can’t be put back.');
+    // wrong team count: tryImport's own refusal, in the sheet's words, through opts.say
+    const bad = { app: 'campScoreboardV2', config: state.config, teams: state.teams.slice(0, 2) };
+    backupPasteTyped(JSON.stringify(bad));
+    env.answer = 'go';
+    const said = [];
+    tryImport = (text, opts) => { opts.say('That backup has 2 teams, but ' + CAMP.label + ' has ' + CAMP.teamCount + '. Nothing was changed.'); };
+    await rpRestoreText(JSON.stringify(bad), { pasted: true, say: (m) => said.push(m) });
+    assert.ok(/has 2 teams/.test(said.join(' ')));
+    } finally { setAttrIfChanged = realAttr; }
+  });
+  ruClose();
+});
+
+test('tryImport says its refusals in plain words (no tick box that no longer exists) and writes a restore point first', () => {
+  freshState();
+  setMemberRole('editor');
+  const said = [];
+  const other = JSON.parse(bpOther());
+  tryImport(JSON.stringify(other), { say: (m) => said.push(m) });
+  assert.ok(/Nothing was changed\.$/.test(said[0]) && !/tick/.test(said[0]), said[0]);
+  const teams = JSON.stringify({ app: 'campScoreboardV2', config: state.config, teams: state.teams.slice(0, 2) });
+  tryImport(teams, { say: (m) => said.push(m) });
+  assert.ok(/ has \d+ teams, but .* has \d+\. Nothing was changed\.$/.test(said[1]), said[1]);
+  const src = readFixture('../settings.js');
+  assert.ok(/restoreAuto\('pre-import'/.test(src), 'a pre-import restore point is still written');
+  setMemberRole(null);
+});
+
+test('a pasted backup holds the deploy reload and closing asks first; a counselor opens nothing; the text never reaches storage', async () => {
+  ruOpen();
+  await bpWith(async (env) => {
+    assert.equal(reloadBlocked(), reloadBlocked());
+    openBackupPaste();
+    const before = reloadBlocked();
+    backupPasteTyped('abc');
+    assert.equal(backupPasteBusy(), true);
+    assert.equal(reloadBlocked(), true, 'text in the box holds the reload');
+    assert.equal(shellHasUnsentWork(), true, 'and the long-absence rule');
+    env.answer = 'keep';
+    assert.equal(setupSheetGuardClose('backup-paste'), true, 'closing is stopped while it asks');
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(env.asked[0].title, 'Throw away the pasted backup?');
+    assert.deepEqual(env.asked[0].actions.map((a) => a.label), ['Keep it', 'Throw it away']);
+    assert.equal(backupPasteUi.text, 'abc', 'Keep it keeps it');
+    backupPasteTyped('   ');
+    assert.equal(setupSheetGuardClose('backup-paste'), false, 'an empty box closes freely');
+    assert.equal(backupPasteBusy(), false);
+    backupPasteTyped('abc');
+    setupSheetClosed('backup-paste');
+    assert.equal(backupPasteUi.text, '', 'a closed sheet forgets the text at once');
+    assert.equal(before === false || before === true, true);
+    setMemberRole('viewer');
+    openBackupPaste();
+    assert.equal(backupPasteUi.open, false, 'a counselor opens nothing');
+    assert.equal(await rpRestoreText(bpMine(), {}), false, 'and restores nothing');
+  });
+  const src = readFixture('../setup-ui.js');
+  const block = src.slice(src.indexOf('const backupPasteUi'), src.indexOf('function rpDownloadBackup') > src.indexOf('const backupPasteUi') ? src.indexOf('function rpDownloadBackup') : src.indexOf('const backupPasteUi') + 3000);
+  assert.ok(!/localStorage|sessionStorage|indexedDB/.test(block), 'memory only');
+  ruClose();
 });

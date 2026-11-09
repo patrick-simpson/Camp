@@ -1660,7 +1660,7 @@ test('closing the sheet never makes a game: a quick game\'s half-typed name is d
     assert.ok(/'#gm-done'\)\) \{ gmFlush\(\); shellSheetClose\('game'\); \}/.test(src), 'Done flushes first');
     assert.ok(/function gmScoreNow\(\) \{\n  gmFlush\(\);/.test(src) && /function gmCopyGo\(\) \{\n  gmFlush\(\);/.test(src), 'so do Score it now and Make a copy');
     assert.ok(/sheet\.addEventListener\('pointerdown', \(e\) => \{ if \(q\(e, '\[data-sheet-close\]'\)\) \{ gmUi\.closing = true;/.test(src), 'a press on ✕ or the backdrop holds creation before the focus leaves the field');
-    assert.ok(/function setupSheetClosed\(id\) \{ if \(id === 'game'\) gmUi\.open = null; \}/.test(src) && /if \(typeof setupSheetClosed === 'function'\) setupSheetClosed\(id\);/.test(readFixture('../app.js')), 'shellSheetClose lets the game sheet go at once');
+    assert.ok(/function setupSheetClosed\(id\) \{ if \(id === 'game'\) gmUi\.open = null;/.test(src) && /if \(typeof setupSheetClosed === 'function'\) setupSheetClosed\(id\);/.test(readFixture('../app.js')), 'shellSheetClose lets the game sheet go at once');
   } finally { gsShut(); gsEnd(); }
 });
 

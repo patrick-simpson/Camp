@@ -13207,6 +13207,7 @@ function reloadBlocked() {
   if (typeof schedItemBusy === 'function' && schedItemBusy()) return true; // a Schedule item with edits not yet saved (setup-ui.js)
   if (typeof teamEditBusy === 'function' && teamEditBusy()) return true; // a team sheet with edits not yet saved, or a photo going up (setup-ui.js)
   if (typeof peopleBusy === 'function' && peopleBusy()) return true; // a People sheet with edits not yet saved, or a write still going (setup-ui.js)
+  if (typeof backupPasteBusy === 'function' && backupPasteBusy()) return true; // a backup pasted and not yet checked: in memory only (setup-ui.js)
   if (typeof campersBusy === 'function' && campersBusy()) return true; // camper names waiting for the signal, or a camper write going: held in memory only, a reload would lose them (setup-sync.js)
   if (typeof campersUiBusy === 'function' && campersUiBusy()) return true; // a camper sheet with a name typed and not yet saved (setup-ui.js)
   if (typeof wizardBusy === 'function' && wizardBusy()) return true; // the new-year setup: a commit going out, or the wizard open and touched in the last 2 minutes (setup-sync.js)
@@ -14671,6 +14672,7 @@ function shellHasUnsentWork() {
   // names have no stored copy at all: a director who stepped away mid-edit finds them where they left them, not discarded.
   if (typeof teamEditBusy === 'function' && teamEditBusy()) return true;
   if (typeof peopleBusy === 'function' && peopleBusy()) return true;
+  if (typeof backupPasteBusy === 'function' && backupPasteBusy()) return true;
   if (typeof campersBusy === 'function' && campersBusy()) return true;
   if (typeof campersUiBusy === 'function' && campersUiBusy()) return true;
   if (typeof gmBusy === 'function' && gmBusy()) return true; // a new game's name, typed and not yet a game

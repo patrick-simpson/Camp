@@ -659,12 +659,12 @@ function hubScheduleView() {
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
 const SETUP_SCREENS = ['hub', 'backups', 'notice', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers', 'games', 'wizard'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
-const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add', 'game', 'sg-day', 'setup-advanced', 'nyw-staff', 'nyw-undo'];
+const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add', 'game', 'sg-day', 'backup-paste', 'setup-advanced', 'nyw-staff', 'nyw-undo'];
 // The sheets that hold a half-made edit and ask before they let it go: the id → a function that takes the close over
 // (it asks, and returns true) or returns false when nothing is at stake. app.js's Escape handler and shellApply (the
 // phone's Back) call setupSheetGuardClose; ✕ and the backdrop reach the same question through the sheet's own
 // capturing click handler.
-const SETUP_SHEET_GUARDS = { 'sched-item': () => schedItemGuardClose(), 'team-edit': () => teamGuardClose(), 'people-person': () => peoplePersonGuardClose(), 'people-teams': () => peopleTeamsGuardClose(), 'people-add': () => peopleAddGuardClose(), 'camper-edit': () => campersEditGuardClose(), 'camper-add': () => campersAddGuardClose(), game: () => gmGuardClose() };
+const SETUP_SHEET_GUARDS = { 'sched-item': () => schedItemGuardClose(), 'team-edit': () => teamGuardClose(), 'people-person': () => peoplePersonGuardClose(), 'people-teams': () => peopleTeamsGuardClose(), 'people-add': () => peopleAddGuardClose(), 'camper-edit': () => campersEditGuardClose(), 'camper-add': () => campersAddGuardClose(), game: () => gmGuardClose(), 'backup-paste': () => backupPasteGuardClose() };
 function setupSheetGuardClose(id) {
   const g = SETUP_SHEET_GUARDS[id];
   return !!(g && g());
@@ -1389,6 +1389,7 @@ function renderSetupSheet(id) {
   else if (id === 'camper-add') renderCamperAddSheet();
   else if (id === 'game') { if (typeof renderGameSheet === 'function') renderGameSheet(); }
   else if (id === 'sg-day') renderGmDaySheet();
+  else if (id === 'backup-paste') renderBackupPasteSheet();
   else if (id === 'setup-advanced') renderAdvancedSheet();
   else if (id === 'nyw-staff') renderNywStaffSheet();
   else if (id === 'nyw-undo') renderNywUndoSheet();
@@ -1411,6 +1412,7 @@ function setupSheetReady(id) {
   if (id === 'camper-add') return !!campersUi.add;
   if (id === 'game') return typeof gmSheetReady === 'function' && gmSheetReady();
   if (id === 'sg-day') return !!gmSheetDay();
+  if (id === 'backup-paste') return backupPasteUi.open;
   if (id === 'setup-advanced') return isOwner();
   if (id === 'nyw-staff') return isOwner() && nywUi.staffOpen;
   if (id === 'nyw-undo') return isOwner() && !!nywUi.undo;
@@ -1832,44 +1834,107 @@ function wireHold(btn, onDone, onReveal) {
   btn.addEventListener('click', (e) => { if (e.detail === 0) onReveal(); }); // assistive tech activates with a click and no pointer
 }
 
-// A backup file picked on the Restore points screen. A v3 backup of THIS camp opens the same restore sheet
-// (you pick what to put back); another camp's, or an older flat one, goes through tryImport's own checks,
-// asked in the dialog instead of a native confirm.
+// A backup picked as a file, or pasted as text: ONE path for both (`rpRestoreText`). A v3 backup of THIS camp opens the same restore
+// sheet (you pick what to put back); another camp's, or an older flat one, asks once in a dialog and then goes through tryImport's own
+// checks (which write a pre-import restore point first). `opts.say(message)` takes a refusal where the caller shows it (a toast for a
+// file, the sheet's own line for pasted text); `opts.name` names the backup on the restore sheet. Answers true once the backup was
+// handed on (the paste sheet closes itself then), false when it was refused or the director said "Not now".
+async function rpRestoreText(text, opts) {
+  const say = (opts && opts.say) || ((m) => showToast(m));
+  const name = (opts && opts.name) || 'Backup file';
+  if (!canEdit()) return false;
+  let parsed = null;
+  try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { say(opts && opts.pasted ? 'That isn’t a whole backup. Copy it again and paste all of it.' : 'That doesn’t look like a Camp Scoreboard backup.'); return false; }
+  const v3 = parsed.app === 'campScoreboardV3';
+  if (v3 && typeof restoreParseBody === 'function') {
+    const res = restoreParseBody(text);
+    if (res.ok) { if (opts && opts.beforeOpen) opts.beforeOpen(); openRestoreSheetForFile(res.body, name); return true; }
+    if (res.reason === 'other-camp' && typeof res.camp === 'string') {
+      const them = CAMPS[res.camp] ? campWord(CAMPS[res.camp]) : 'another camp';
+      const choice = await askDialog({
+        title: 'That backup is from ' + them, body: 'Copy its schedule, games and teams into ' + campWord() + '? Its scores and everything else are left out.',
+        actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Copy them', value: 'copy', kind: 'gold' }],
+      });
+      // Asked once, here: tryImport must not ask again with a native confirm.
+      if (choice === 'copy' && typeof tryImport === 'function') { if (opts && opts.beforeOpen) opts.beforeOpen(); tryImport(text, { copyFromOtherCamp: true, confirmed: true, say }); return true; }
+      return false;
+    }
+    say(opts && opts.pasted ? 'That backup doesn’t say which camp it’s from, so it can’t be put back.' : 'That backup couldn’t be read.');
+    return false;
+  }
+  return rpImportLegacy(text, { say }, opts);
+}
+
 async function rpRestoreFile(file) {
   if (!file || !canEdit()) return;
   let text = '';
   try { text = await file.text(); } catch (e) { showToast('Couldn’t read that file.'); return; }
-  let parsed = null;
-  try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
-  if (!parsed || typeof parsed !== 'object') { showToast('That doesn’t look like a Camp Scoreboard backup.'); return; }
-  const v3 = parsed.app === 'campScoreboardV3';
-  if (v3 && typeof restoreParseBody === 'function') {
-    const res = restoreParseBody(text);
-    if (res.ok) { openRestoreSheetForFile(res.body, file.name); return; }
-    if (res.reason === 'other-camp') {
-      const them = CAMPS[res.camp] ? campWord(CAMPS[res.camp]) : 'another camp';
-      const choice = await askDialog({
-        title: 'That backup is from ' + them, body: 'Copy its schedule, games and teams into ' + campWord() + '? Its scores and everything else are left out.',
-        actions: [{ label: 'Cancel', value: 'no', cancel: true }, { label: 'Copy them', value: 'copy', kind: 'gold' }],
-      });
-      // Asked once, here: tryImport must not ask again with a native confirm.
-      if (choice === 'copy' && typeof tryImport === 'function') tryImport(text, { copyFromOtherCamp: true, confirmed: true, say: (msg) => { if (msg) showToast(msg); } });
-      return;
-    }
-    showToast('That backup couldn’t be read.');
-    return;
-  }
-  await rpImportLegacy(text, {});
+  await rpRestoreText(text, { name: file.name });
 }
 
-async function rpImportLegacy(text, opts) {
-  if (typeof tryImport !== 'function') return;
+async function rpImportLegacy(text, opts, outer) {
+  if (typeof tryImport !== 'function') return false;
   const choice = await askDialog({
-    title: 'Replace this camp’s setup?', body: 'The teams, days, games and saved scores on every phone become what the file holds. A restore point of the week as it is now is saved first.',
-    actions: [{ label: 'Cancel', value: 'no', cancel: true }, { label: 'Put it back', value: 'go', kind: 'danger' }],
+    title: 'Replace this camp’s setup?', body: 'The teams, days, games and saved scores on every phone become what the backup holds. A restore point of the week as it is now is saved first.',
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Put it back', value: 'go', kind: 'danger' }],
   });
-  if (choice !== 'go') return;
+  if (choice !== 'go') return false;
+  if (outer && outer.beforeOpen) outer.beforeOpen();
   tryImport(text, Object.assign({ confirmed: true, say: (msg) => { if (msg) showToast(msg); } }, opts));
+  return true;
+}
+
+// ── Copy the backup, and Paste a backup ──
+// Copy is backupJSON() on the clipboard (it never holds camper names: backupObject leaves them out). The paste sheet holds the text in
+// memory only (never storage), holds the deploy's auto-reload while it has text, and asks before it closes with text in it.
+const backupPasteUi = { open: false, text: '' };
+function backupPasteBusy() { return !!(backupPasteUi.open && backupPasteUi.text.trim()); }
+function backupPasteReset() { backupPasteUi.open = false; backupPasteUi.text = ''; }
+function rpCopyBackup(btn) {
+  if (!canEdit() || typeof backupJSON !== 'function') return;
+  copyTextToClipboard(backupJSON(), btn);
+}
+function openBackupPaste(opener) {
+  if (!canEdit()) return;
+  backupPasteUi.open = true;
+  backupPasteUi.text = '';
+  setupSheet('backup-paste', opener);
+  const box = setupEl('bp-text');
+  if (box) { box.value = ''; setAttrIfChanged(box, 'aria-invalid', null); }
+  setTextIfChanged(setupEl('bp-why'), '');
+}
+function renderBackupPasteSheet() {
+  const has = !!backupPasteUi.text.trim();
+  setHiddenIfChanged(setupEl('bp-wait'), has);
+  setHiddenIfChanged(setupEl('bp-check'), !has);
+}
+function backupPasteWhy(msg) {
+  const why = setupEl('bp-why');
+  const box = setupEl('bp-text');
+  setTextIfChanged(why, msg || '');
+  setAttrIfChanged(box, 'aria-invalid', msg ? 'true' : null);
+  if (msg && why && why.scrollIntoView) why.scrollIntoView({ block: 'nearest' });
+}
+function backupPasteTyped(value) {
+  backupPasteUi.text = String(value == null ? '' : value);
+  backupPasteWhy('');
+  renderBackupPasteSheet();
+}
+async function backupPasteCheck() {
+  if (!backupPasteBusy() || backupPasteUi.checking) return false;
+  backupPasteUi.checking = true;
+  try {
+    const sheetUp = () => { backupPasteUi.text = ''; backupPasteUi.open = false; if (shell.sheets.includes('backup-paste')) shellSheetClose('backup-paste'); };
+    return await rpRestoreText(backupPasteUi.text, { pasted: true, name: 'Pasted backup', say: (m) => { if (m) backupPasteWhy(m); }, beforeOpen: sheetUp });
+  } finally { backupPasteUi.checking = false; }
+}
+function backupPasteGuardClose() {
+  if (!backupPasteBusy()) return false;
+  if (askIsOpen()) return true;
+  askDialog({ title: 'Throw away the pasted backup?', body: 'Nothing has been put back yet.', actions: [{ label: 'Keep it', value: 'keep', cancel: true }, { label: 'Throw it away', value: 'throw', kind: 'danger' }] })
+    .then((v) => { if (v === 'throw') { backupPasteReset(); shellSheetClose('backup-paste'); } });
+  return true;
 }
 
 function rpDownloadBackup() {
@@ -4239,6 +4304,11 @@ function wireSetupUi() {
   on('#rp-save-btn', 'click', () => { rpSaveManual(); });
   on('#setup-backups', 'click', (e) => { const r = e.target.closest && e.target.closest('[data-rp-open]'); if (r) openRestoreSheet(r.dataset.rpOpen, r); });
   on('#backup-download-btn', 'click', rpDownloadBackup);
+  on('#backup-copy-btn', 'click', (e) => rpCopyBackup(e.currentTarget));
+  on('#backup-paste-row', 'click', (e) => openBackupPaste(e.currentTarget));
+  on('#bp-text', 'input', (e) => backupPasteTyped(e.target.value));
+  on('#bp-wait', 'click', () => { const b = setupEl('bp-text'); if (b && b.focus) b.focus(); });
+  on('#bp-check', 'click', () => { backupPasteCheck(); });
   on('#backup-file-input', 'change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) rpRestoreFile(f); });
   document.querySelectorAll('[data-rp-pick]').forEach((cb) => cb.addEventListener('change', () => {
     const rs = setupUi.rsheet;
@@ -8474,7 +8544,7 @@ function gmCleanSheets() { if (gmUi.open && !shell.sheets.includes('game')) gmUi
 // shellSheetClose's hook (app.js): the state goes the moment the sheet closes, not at the next paint, which closing does not trigger —
 // a Forward in between would reopen the sheet on a half-typed name. (After the opener took the focus back: a field blurred by that
 // still saves.)
-function setupSheetClosed(id) { if (id === 'game') gmUi.open = null; }
+function setupSheetClosed(id) { if (id === 'game') gmUi.open = null; if (id === 'backup-paste') backupPasteReset(); }
 // Each text field's value when focus arrived. A field only writes when it was CHANGED while focused: the box shows what it showed on
 // arrival, which a colleague's edit since may have made stale, so a bare tap in and out must never put the old words back over
 // theirs (setupFocusIn / Out, §6.4.9, for this sheet's own fields). A field with no baseline (focus never reached it through the

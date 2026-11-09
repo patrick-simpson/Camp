@@ -139,6 +139,7 @@ test('a director sees the setup sheets only while the builder is up', () => {
     teamUi.colors = true;
     peopleUi.person = { key: 'x' }; peopleUi.request = { key: 'x' }; peopleUi.teams = { built: false }; peopleUi.add = { pane: 'list' }; peopleUi.blocked = true;
     campersUi.edit = { tid: 't0', cid: 'c-x', origin: {} }; campersUi.add = { tid: 't0' };
+    assert.equal(shellSheetAllowed('backup-paste'), false, 'the paste sheet needs the Paste row’s tap'); backupPasteUi.open = true;
     assert.equal(shellSheetAllowed('game'), false, 'the game sheet needs a game a tap named');
     assert.equal(shellSheetAllowed('sg-day'), false, 'a day\'s sheet needs a games day');
     gmUi.open = { mode: 'new', pane: 'form', gid: null }; gmUi.dayDk = SETUP_DK[competitionDays()[0].dow];
@@ -155,7 +156,7 @@ test('a director sees the setup sheets only while the builder is up', () => {
     setMemberRole('viewer');
     assert.equal(shellSheetAllowed('game'), false, 'a counselor never');
     setMemberRole('editor');
-  } finally { nywUi.undo = null; nywUi.staffOpen = false; authUser = null; gmUi.open = null; gmUi.dayDk = ''; setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; peopleUi.person = null; peopleUi.request = null; peopleUi.teams = null; peopleUi.add = null; peopleUi.blocked = false; campersUi.edit = null; campersUi.add = null; suClose(); }
+  } finally { nywUi.undo = null; nywUi.staffOpen = false; authUser = null; gmUi.open = null; gmUi.dayDk = ''; backupPasteUi.open = false; setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; peopleUi.person = null; peopleUi.request = null; peopleUi.teams = null; peopleUi.add = null; peopleUi.blocked = false; campersUi.edit = null; campersUi.add = null; suClose(); }
 });
 
 // ── askDialog ──

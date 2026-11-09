@@ -98,14 +98,14 @@ function tryImport(text, opts) {
   // screen: a toast); `opts.confirmed` says the caller already asked (its own dialog).
   const say = (opts && opts.say) || ((msg) => { if (msg) showToast(msg); });
   if (!configEditable()) {
-    say('The games list is still loading — try again in a moment.');
+    say('The games list is still loading. Try again in a moment.');
     return;
   }
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    say("That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.");
+    say('That isn’t a whole backup. Copy it again and paste all of it.');
     return;
   }
 
@@ -117,14 +117,13 @@ function tryImport(text, opts) {
   // readable camp is refused outright — restoreParseBody does the same for restore points.
   const campOf = parsed && typeof parsed === 'object' ? parsed.camp : undefined;
   if ((campOf !== undefined || (parsed && parsed.app === 'campScoreboardV3')) && typeof campOf !== 'string') {
-    say("That backup doesn't say which camp it is from, so nothing was changed.");
+    say('That backup doesn’t say which camp it’s from, so it can’t be put back.');
     return;
   }
   const otherCamp = typeof campOf === 'string' && campOf !== CAMP.id;
   const copyMode = !!(otherCamp && opts && opts.copyFromOtherCamp);
   if (otherCamp && !copyMode) {
-    say('That backup is from ' + (CAMPS[parsed.camp] ? CAMPS[parsed.camp].label : 'another camp') + ', not ' + CAMP.label +
-      '. Nothing was changed. (To copy its schedule, games and teams, tick “copy from the other camp”.)');
+    say('That backup is from ' + (CAMPS[parsed.camp] ? CAMPS[parsed.camp].label : 'another camp') + ', not ' + CAMP.label + '. Nothing was changed.');
     return;
   }
   const src = v3 ? Object.assign({}, parsed.state, { config: parsed.config }) : parsed;
@@ -137,7 +136,7 @@ function tryImport(text, opts) {
   }
 
   if (!config) {
-    say("That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.");
+    say('That isn’t a whole backup. Copy it again and paste all of it.');
     return;
   }
   // The Teams tab can no longer add or delete a team (S0j), so a restore must not
@@ -151,8 +150,7 @@ function tryImport(text, opts) {
     const wellFormed = ids.length === CAMP.teamCount && ids.every(isTeamId) && new Set(ids).size === ids.length;
     if (!wellFormed) {
       if (!copyMode) {
-        say('That backup has ' + src.teams.length + ' teams, but ' + CAMP.label + ' runs ' + CAMP.teamCount +
-          '. It may be from the other camp, so nothing was changed.');
+        say('That backup has ' + src.teams.length + ' teams, but ' + CAMP.label + ' has ' + CAMP.teamCount + '. Nothing was changed.');
         return;
       }
       teamsOk = false; // copying from the other camp: a roster that doesn't fit is simply left out
