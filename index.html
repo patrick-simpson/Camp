@@ -73,13 +73,13 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=215"></script>
-  <link rel="stylesheet" href="styles.css?v=215">
+  <script type="module" src="vendor/jelly.js?v=216"></script>
+  <link rel="stylesheet" href="styles.css?v=216">
 
   <!-- Pre-paint lock guard. External, not inline, so script-src can refuse
        inline scripts entirely — see boot-guard.js. Classic script in <head>:
        it must run before first paint. -->
-  <script src="boot-guard.js?v=215"></script>
+  <script src="boot-guard.js?v=216"></script>
 </head>
 <body>
 
@@ -5447,68 +5447,68 @@
           integrity="sha384-EkqK+ezBWJuvO3hfrSx2iVqr3YQbhmnzn8kPhOpBZ+0GMVU5oGSgptwIu8D84HjE" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"
           integrity="sha384-1/m+A1jVWbD3yiK3/vtFvm1+LjK1WLpSoDY+Kaxppwn/yP9BVSgdHTNQVOjrzUO5" crossorigin="anonymous"></script>
-  <script src="firebase-config.js?v=215"></script>
-  <script src="defaults.js?v=215"></script>
+  <script src="firebase-config.js?v=216"></script>
+  <script src="defaults.js?v=216"></script>
   <!-- Pure helpers the TV page shares (Eastern-time maths, the double-points
        window, the sanitizers every database string passes through). No
        dependencies and nothing runs at load; it must come before app.js. -->
-  <script src="camp-core.js?v=215"></script>
+  <script src="camp-core.js?v=216"></script>
   <!-- The standings reveal's pure rules (how a reveal is read, timed and hidden).
        Needs camp-core.js; secrecy depends on it failing closed. -->
-  <script src="reveal-core.js?v=215"></script>
+  <script src="reveal-core.js?v=216"></script>
   <!-- Camp profiles: which camp this device runs (junior default), its
        Firebase root, storage namespace, schedule, and seed data. Must load
        between defaults.js (junior's game catalog) and app.js (the consumer). -->
-  <script src="camps.js?v=215"></script>
+  <script src="camps.js?v=216"></script>
   <!-- The spring system and the one calm-motion switch (calmMotion()). A classic
        script with no dependency on vendor/jelly.js; app.js reads calmMotion()
        and JellyMotion, so it must come first. -->
-  <script src="jelly-motion.js?v=215"></script>
-  <script src="app.js?v=215"></script>
+  <script src="jelly-motion.js?v=216"></script>
+  <script src="app.js?v=216"></script>
   <!-- The standings reveal's engine (what a phone knows about a reveal, the 8 AM rule, the champion
        line, the director's commands). Same optional-layer contract as chat.js: it needs app.js's
        globals and reveal-core.js, every hook in app.js is typeof-guarded, and without this tag the app
        simply shows no reveal. -->
-  <script src="reveal.js?v=215"></script>
+  <script src="reveal.js?v=216"></script>
   <!-- The standings reveal's SCREENS (the director's remote, Now's mirror, the frozen grid, the header strip,
        More's row). The static markup is above (index.html's comments name every hook); this file paints it.
        Same optional-layer contract: every hook in app.js is typeof-guarded, and without this tag the engine
        above still runs and paints nothing. Needs reveal.js, so it loads right after it. -->
-  <script src="reveal-ui.js?v=215"></script>
+  <script src="reveal-ui.js?v=216"></script>
   <!-- The setup engine (the week's schedule, menus, verses, rota and electives as
        data under <root>/setup; restore points; "also here"). Same optional-layer
        contract as chat.js: it needs app.js's globals, so it loads right after it, and
        every hook in app.js is typeof-guarded — delete this tag and the app runs as
        before. Dark until a director acts. -->
-  <script src="setup-sync.js?v=215"></script>
-  <script src="settings.js?v=215"></script>
+  <script src="setup-sync.js?v=216"></script>
+  <script src="settings.js?v=216"></script>
   <!-- Set up the week's screens (the hub, the frame's head, the undo pill, askDialog, the sheets, restore
        points). Every hook into it is typeof-guarded, and without this tag the app runs with no Set up the week.
        After settings.js, whose helpers it uses. -->
-  <script src="setup-ui.js?v=215"></script>
+  <script src="setup-ui.js?v=216"></script>
   <!-- Camp Chat (channels, mentions, photos) — self-contained layer; delete
        this tag and the app runs exactly as before (all hooks typeof-guard). -->
-  <script src="chat.js?v=215"></script>
+  <script src="chat.js?v=216"></script>
   <!-- Phone alerts (Web Push: the drawer, subscribing, the hooks chat and
        sign-out call) — same optional-layer contract as chat.js: delete this
        tag and the app runs exactly as before. -->
-  <script src="push.js?v=215"></script>
+  <script src="push.js?v=216"></script>
   <!-- Tell everyone (the director's one composer: banner, buzz, the big notice; Showing now, quick alerts, Undo).
        Same optional-layer contract: every hook is typeof-guarded, and without this tag More has no Tell everyone
        row. After push.js (its Buzz is pushSendAlert). -->
-  <script src="tell.js?v=215"></script>
+  <script src="tell.js?v=216"></script>
   <!-- Award points (verse, cleanup and quick points on one screen, for corrections and minus points). Same
        optional-layer contract: without this tag More has no Award points row. Every tap goes through app.js's own
        writers (setVersePoints, setCleanupPoints, bonusAddFromDraft), so nothing here is a second write path. -->
-  <script src="award.js?v=215"></script>
+  <script src="award.js?v=216"></script>
   <!-- Now's renderers (nowModel's picture painted onto the markup in #tab-now; the Now tab is empty without it but the app runs). -->
-  <script src="now-ui.js?v=215"></script>
+  <script src="now-ui.js?v=216"></script>
   <!-- The Games tab's renderers (gamesModel's picture painted onto #tab-games, the quick-points and standings sheets, the takeover's Next game dock; the Games tab is empty without it but the app runs). After now-ui.js: its game rows are Now's. -->
-  <script src="games-ui.js?v=215"></script>
+  <script src="games-ui.js?v=216"></script>
   <!-- Optional alternative sign-in methods. Delete a tag to remove that
        method (app.js only touches them through window.CampPhone /
        window.CampEmailLink); the Google button always remains. -->
-  <script src="auth-phone.js?v=215"></script>
-  <script src="auth-email-link.js?v=215"></script>
+  <script src="auth-phone.js?v=216"></script>
+  <script src="auth-email-link.js?v=216"></script>
 </body>
 </html>

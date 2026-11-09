@@ -30,9 +30,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-11-09T15:50:28Z';
+const CODE_UPDATED_AT = '2026-11-09T20:05:13Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 215;
+const APP_VERSION = 216;
 
 // "What's new" notes (owner's answer of Nov 9, 2026, item 9; engine under "What's new notes" below, design in CLAUDE.md). Each
 // entry is a short, plain-English note about a change people would notice. A note is LIVE for ONE HOUR from its `at`, by the
@@ -46,7 +46,7 @@ const APP_VERSION = 215;
 // THE DEPLOY sets `WHATS_NEW_SHIPPED_AT` (the one `at` every note of this deploy carries) to the deploy's UTC time, the same
 // moment as CODE_UPDATED_AT, and MOVES every note whose hour is over out of CHANGES and into WHATS_NEW_RETIRED (ids only), so an
 // id is never reused (the lint in tests/whats-new.test.js checks both lists).
-const WHATS_NEW_SHIPPED_AT = '2026-11-09T15:50:28Z';
+const WHATS_NEW_SHIPPED_AT = '2026-11-09T20:05:13Z';
 const CHANGES = [];
 const WHATS_NEW_RETIRED = Object.freeze([
   'four-tabs', 'score-from-games', 'games-tab-results', 'reveal-remote', 'chat-tab', 'tell-everyone', 'phone-alerts',
