@@ -456,7 +456,8 @@ test('the podium picker\'s markup: rows of toggle keys, the checked and taken st
   assert.notOk(/role="radio"|aria-checked|role="radiogroup"/.test(html), 'toggle buttons, not radios: a tap on the picked one clears it');
   const goldKey = new RegExp('<button type="button" class="pp-team" data-team="' + t[1] + '"[^>]*aria-pressed="true"[^>]*>').exec(html);
   assert.ok(goldKey && !/aria-disabled/.test(goldKey[0]), 'the picked team is pressed in its own row: ' + (goldKey && goldKey[0]));
-  assert.ok(/data-taken="gold"[^>]*aria-label="[^"]*, has gold"/.test(html), 'a team held by gold is dashed, named, and says so aloud');
+  assert.ok(/data-taken="gold"[^>]*aria-label="[^"]*, has gold\. Tap to make them silver"/.test(html), 'a team held by gold is named, and says aloud that a tap moves it');
+  assert.ok(!/data-taken="gold"[^>]*aria-disabled/.test(html), 'a taken key is an ordinary key now (a tap moves the team), not a dashed dead one');
   assert.ok(/<span class="pp-taken" aria-hidden="true"><i class="pp-disc" data-place="1" aria-hidden="true">1<\/i>has gold<\/span>/.test(html), 'the tab names the MEDAL, never the bare word');
   assert.ok(/<i class="pp-ok" aria-hidden="true">/.test(html) && /<i class="pp-ok" aria-hidden="true" hidden>/.test(html), 'the check is a permanent slot, shown only on the picked key');
   // double points double the words
@@ -511,7 +512,7 @@ test('patching the built picker: only attributes and the two slots move, the sam
   assert.equal(k.ok.hidden, false);
   assert.ok(root.rows.gold.keys[1] === k, 'the node is the same one');
   assert.equal(root.rows.silver.attrs['data-wait'], undefined, 'silver opened');
-  assert.equal(root.rows.silver.keys[1].attrs['aria-disabled'], 'true', 'the gold team is disabled in silver…');
+  assert.equal(root.rows.silver.keys[1].attrs['aria-disabled'], undefined, 'the gold team can be moved to silver (a tap moves it)…');
   assert.equal(root.rows.silver.keys[1].attrs['data-taken'], 'gold', '…and named');
   assert.ok(root.rows.silver.keys[1].tab.innerHTML.includes('has gold') && root.rows.silver.keys[1].tab.hidden === false);
   assert.equal(root.rows.silver.keys[0].attrs['aria-disabled'], undefined, 'the others are free');
@@ -538,8 +539,11 @@ test('a tap on a key picks, the same key clears, a refusal says why in a toast; 
   assert.equal(guiToasts[0].m, 'Pick the gold team first.');
   gamesPodiumTap(key('gold', t[0]));
   guiToasts.length = 0;
-  assert.equal(gamesPodiumTap(key('silver', t[0])).problem, 'taken');
-  assert.equal(guiToasts[0].m, (teamShort(t[0]) || teamName(t[0])) + ' already has gold. Tap it in the gold row to take it off.');
+  const moved = gamesPodiumTap(key('silver', t[0]));
+  assert.deepEqual([moved.action, moved.from, moved.medal], ['move', 'gold', 'silver']);
+  assert.deepEqual([state.drafts[g.id].medals.gold, state.drafts[g.id].medals.silver], [undefined, t[0]], 'ONE draft: the old leaf is gone and the new one set');
+  assert.equal(guiToasts[0].m, nowTeamWord(t[0]) + ' moved from gold to silver.');
+  gamesPodiumTap(key('gold', t[0]));
   assert.equal(gamesPodiumTap({ dataset: {}, closest: () => null }), null, 'a tap outside a row does nothing');
   state.ui.gameId = null;
   assert.equal(gamesPodiumTap(key('gold', t[2])), null, 'no open game: nothing');

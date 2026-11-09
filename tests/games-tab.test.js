@@ -837,7 +837,7 @@ function podiumGame(extra) {
 function rowOf(m, medal) { return m.rows.find((r) => r.medal === medal); }
 function keyOf(m, medal, team) { return rowOf(m, medal).teams.find((k) => k.team === team); }
 
-test('podium: three rows, later rows wait for the medal above, a taken team is disabled and named, a picked one clears', () => {
+test('podium: three rows, later rows wait for the medal above, a taken team is named and a tap moves it, a picked one clears', () => {
   boot('editor');
   const g = podiumGame();
   const t = T();
@@ -854,8 +854,8 @@ test('podium: three rows, later rows wait for the medal above, a taken team is d
   m = gamesPodium(g);
   assert.deepEqual([keyOf(m, 'gold', t[3]).picked, keyOf(m, 'gold', t[3]).disabled], [true, false]);
   const inSilver = keyOf(m, 'silver', t[3]);
-  assert.deepEqual([inSilver.taken, inSilver.disabled, inSilver.picked], ['gold', true, false], 'the same team is "has gold" in the next row');
-  assert.ok(/, has gold$/.test(inSilver.label), 'and its spoken label says so: ' + inSilver.label);
+  assert.deepEqual([inSilver.taken, inSilver.disabled, inSilver.picked], ['gold', false, false], 'the same team is "has gold" in the next row, and a tap there moves it');
+  assert.ok(/, has gold\. Tap to make them silver$/.test(inSilver.label), 'and its spoken label says so: ' + inSilver.label);
   assert.deepEqual(m.rows.map((r) => r.wait), [false, false, true], 'silver is open now, bronze waits for silver');
   assert.equal(rowOf(m, 'bronze').waitFor, 'silver');
   assert.equal(m.save.label, 'Pick silver and bronze');
@@ -866,7 +866,7 @@ test('podium: three rows, later rows wait for the medal above, a taken team is d
   m = gamesPodium(g);
   assert.deepEqual([m.save.label, m.save.ready, m.save.target], ['Save result', true, null]);
   assert.deepEqual(m.rows.map((r) => r.pick), [t[3], t[0], t[1]]);
-  // a team that holds one medal is disabled in the other two rows (never the bare word: the tab names the medal)
+  // a team that holds one medal is named in the other two rows (never the bare word: the tab names the medal)
   assert.deepEqual(rowOf(m, 'bronze').teams.filter((k) => k.taken).map((k) => [k.team, k.taken]), [[t[0], 'silver'], [t[3], 'gold']], 'in roster order');
   // re-tap clears: the key is free again, the row below waits again only if it holds nothing
   assert.deepEqual(podiumPick(g.id, 'bronze', t[1]), { ok: true, action: 'clear', medal: 'bronze', team: t[1] });
@@ -884,7 +884,12 @@ test('podium: a pick can only go where it may — a taken team, a waiting row, a
   assert.deepEqual(podiumPick(g.id, 'silver', t[0]), { ok: false, problem: 'wait' }, 'silver waits for gold');
   assert.equal(state.drafts[g.id], undefined, 'and a refusal writes nothing');
   assert.equal(podiumPick(g.id, 'gold', t[0]).ok, true);
-  assert.deepEqual(podiumPick(g.id, 'silver', t[0]), { ok: false, problem: 'taken', by: 'gold' });
+  // a team holding another medal MOVES (design pass: a dead key that says "has gold" was the one control that refused): both leaves in one update
+  assert.equal(podiumPick(g.id, 'bronze', t[0]).problem, 'wait', 'a waiting row refuses even a team that holds a medal');
+  assert.deepEqual(podiumPick(g.id, 'silver', t[0]), { ok: true, action: 'move', medal: 'silver', team: t[0], from: 'gold' });
+  assert.deepEqual(podiumPicks(g), { gold: null, silver: t[0], bronze: null });
+  assert.deepEqual(state.drafts[g.id].medals, { silver: t[0] }, 'the gold leaf is gone, not blank');
+  assert.equal(podiumPick(g.id, 'gold', t[0]).from, 'silver', 'and back up again in one tap');
   assert.equal(podiumPick(g.id, 'bronze', t[1]).problem, 'wait', 'bronze waits for silver');
   assert.equal(podiumPick(g.id, 'gold', 'zz').problem, 'unknown');
   assert.equal(podiumPick(g.id, 'platinum', t[1]).problem, 'unknown');
@@ -940,8 +945,10 @@ test('podium: the draft is read defensively — a stale team id is no pick, a te
   assert.deepEqual(m.rows.map((r) => r.wait), [false, false, false]);
   assert.equal(m.save.label, 'Pick gold, then save');
   assert.equal(keyOf(m, 'gold', t[1]).taken, 'silver', 'and a team held by a LATER medal is named in the row above as well');
-  assert.equal(podiumPick(g.id, 'gold', t[1]).problem, 'taken');
-  assert.equal(podiumPick(g.id, 'silver', t[1]).action, 'clear');
+  assert.deepEqual(podiumPick(g.id, 'gold', t[1]), { ok: true, action: 'move', medal: 'gold', team: t[1], from: 'silver' });
+  assert.equal(state.drafts[g.id].medals.gold, t[1]);
+  assert.ok(!('silver' in state.drafts[g.id].medals) && state.drafts[g.id].medals.bronze === t[2]);
+  assert.equal(podiumPick(g.id, 'gold', t[1]).action, 'clear');
   done();
 });
 

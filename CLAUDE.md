@@ -949,8 +949,9 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
   `jelly-select`s of a PODIUM game (`gameIsPodium`: neither a bracket nor a tally; those keep their own forms, and `medalPickerHTML` stays for the tally). Three
   rows of team keys (Gold / Silver / Bronze, "7 points", doubled for a double-points game, a director's word), three taps and Save. **A later row waits until the
   medal above is picked** (`data-wait`, the dashed "not yet" well — except a row that already holds a pick, which is always clearable); **a team holding another
-  medal is dashed, disabled and named by a tab "② has silver"** (never the bare word: senior has a TEAM called Gold; the spoken label ends ", has gold"); **a tap on
-  the picked key clears it**. No ties: a result has one team per medal. The keys are **toggle buttons** (`aria-pressed`, a `role="group"` named by the row's
+  medal is named by a tab "② has silver"** (never the bare word: senior has a TEAM called Gold; the spoken label ends ", has silver. Tap to make them gold") **and a tap
+  on it MOVES the team in ONE draft update** (its old leaf cleared, the new one set, in either direction; a toast says "Foxes moved from silver to gold"; only a row still
+  waiting for the medal above keeps its keys dashed and dead); **a tap on the picked key clears it**. No ties: a result has one team per medal. The keys are **toggle buttons** (`aria-pressed`, a `role="group"` named by the row's
   heading), not radios, because a radio cannot be un-picked. The picks are the draft's OWN medal leaves (`drafts/<game>/medals/<medal>`), so `computeSyncUpdates`
   writes one path per pick (a clear is a `null` on that leaf), two directors picking at once both land, and the counselors' "Being scored" line behaves as
   before (a draft with a medal is Live, an emptied one is blank); `podiumPicks` reads the draft defensively (a stale team id is no pick; a team written to two

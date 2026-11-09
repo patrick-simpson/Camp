@@ -550,18 +550,19 @@ function renderPodiumPicker(container, g) {
   if (typeof JellyMotion !== 'undefined') popped.forEach((el) => JellyMotion.play(el, 'snap', (x) => ({ transform: 'scale(' + (0.3 + 0.7 * x) + ')' }), { calm: false }));
 }
 
-// A tap on a key: pick, or the same key again clears. A refusal says why in a few words (the key itself reads "has gold").
+// A tap on a key: pick, the same key again clears, a team holding another medal moves. A refusal says why in a few words.
 function gamesPodiumTap(btn) {
   const row = btn && btn.closest ? btn.closest('.pp-row') : null;
   const gid = state.ui && state.ui.gameId;
   if (!row || !gid) return null;
   const r = podiumPick(gid, row.dataset.medal, btn.dataset.team);
   if (!r.ok) {
-    if (r.problem === 'taken') showToast(nowTeamWord(btn.dataset.team) + ' already has ' + r.by + '. Tap it in the ' + r.by + ' row to take it off.');
-    else if (r.problem === 'wait') showToast('Pick the ' + PODIUM_MEDALS[PODIUM_MEDALS.indexOf(row.dataset.medal) - 1] + ' team first.');
+    if (r.problem === 'wait') showToast('Pick the ' + PODIUM_MEDALS[PODIUM_MEDALS.indexOf(row.dataset.medal) - 1] + ' team first.');
     return r;
   }
   renderAll();
+  // A move says what happened (the key's "has silver" tab was the warning; the screen then shows it).
+  if (r.action === 'move') showToast(nowTeamWord(btn.dataset.team) + ' moved from ' + r.from + ' to ' + r.medal + '.');
   return r;
 }
 

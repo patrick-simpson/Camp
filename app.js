@@ -9169,7 +9169,7 @@ function podiumPicks(g) {
 // The picker as plain data: a row per medal, a key per team, and the Save button's words.
 //   row: { medal, place, word, pts (number | null: only a phone that may read points), wait (the medal above it is still empty and
 //   this one holds nothing: its keys are the dashed "not yet" well), waitFor ('gold' | null), pick, teams: [key] }
-//   key: { team, name, short, picked, taken ('gold' | … | '': held by ANOTHER medal), disabled, label }
+//   key: { team, name, short, picked, taken ('gold' | … | '': held by ANOTHER medal; a tap moves it), disabled (only a waiting row), label }
 //   save: { ready, label, target (the first medal still to pick: a tap on the dashed well goes there) | null }
 // A row that already holds a pick never waits, so a pick left by an older build or another director can always be cleared.
 function gamesPodium(g) {
@@ -9187,8 +9187,10 @@ function gamesPodium(g) {
       const taken = !picked && holder[team] ? holder[team] : '';
       const name = teamName(team);
       const short = nowTeamWord(team);
-      const label = name + (taken ? ', has ' + taken : wait ? ', waiting for ' + above : '');
-      return { team, name, short, picked, taken, disabled: !picked && (!!taken || wait), label };
+      // A team holding another medal is MOVED by a tap (one draft update: its old leaf cleared, this one set); only a row that is
+      // still waiting for the medal above it keeps its keys dashed and dead.
+      const label = name + (!picked && wait ? ', waiting for ' + above : taken ? ', has ' + taken + '. Tap to make them ' + medal : '');
+      return { team, name, short, picked, taken, disabled: !picked && wait, label };
     });
     return { medal, place: i + 1, word: PODIUM_WORDS[medal], pts: pts ? MEDAL_POINTS[medal] * mult : null, wait, waitFor: wait ? above : null, pick: picks[medal], teams };
   });
@@ -9212,12 +9214,16 @@ function podiumPick(gid, medal, team) {
   const key = row.teams.find((t) => t.team === team);
   let action = 'pick';
   if (key.picked) action = 'clear';
-  else if (key.taken) return { ok: false, problem: 'taken', by: key.taken };
   else if (row.wait) return { ok: false, problem: 'wait' };
+  else if (key.taken) action = 'move';
   const d = normalizeDraft(state.drafts[g.id] || (state.drafts[g.id] = { medals: {} }));
-  if (action === 'clear') delete d.medals[medal]; else d.medals[medal] = team;
+  if (action === 'clear') delete d.medals[medal];
+  else {
+    if (action === 'move') delete d.medals[key.taken]; // one saveState: both leaves go up in the same update
+    d.medals[medal] = team;
+  }
   saveState();
-  return { ok: true, action, medal, team };
+  return action === 'move' ? { ok: true, action, medal, team, from: key.taken } : { ok: true, action, medal, team };
 }
 
 // Save: the same record the Save Result button wrote (medals + savedAt, the draft removed, the stamp, the confetti). Refused

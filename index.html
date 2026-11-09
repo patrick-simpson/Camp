@@ -2692,9 +2692,9 @@
                    `hidden`, so the key's nodes outlive a pick and the next row can cross-fade; games-ui.js builds the picker
                    once and PATCHES it.)
                    chosen:  aria-pressed="true", the cell takes ITS medal's colour and the check shows (tap it again: cleared)
-                   taken by another medal: aria-disabled="true" data-taken="gold"
+                   taken by another medal: data-taken="gold" (a tap MOVES the team here; aria-disabled only in a waiting row)
                             + the tab shows <i class="pp-disc" data-place="1" aria-hidden="true">1</i>has gold
-                            (dashed, the mark faded; its aria-label ends ", has gold").
+                            (its aria-label ends ", has gold. Tap to make them silver").
                             Never the bare word "Gold": senior has a TEAM called Gold.
                </div></div>
              A row waits (data-wait, every button aria-disabled) until the medal
