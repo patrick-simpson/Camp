@@ -41,7 +41,7 @@ async function wzSetup(o) {
   const db = makeFakeRtdb({ manualFirstSnapshot: true });
   window.firebase = makeFakeFirebase(db);
   fbConnKnown = true; fbConnected = true;
-  rpLastAt = 0; rpLastAutoAt = 0; rpWaitMs = 40; setupPushMs = 40;
+  rpLastAt = 0; rpLastAutoAt = 0; rpWaitMs = 4000; /* the app gives a restore point this long to be acknowledged: 40 ms was a bet on the clock (a stalled acknowledgement sent the point to the outbox and the archive failed); a real refusal still ends at once */  setupPushMs = 40;
   localStorage.removeItem(lsKey(RP_OUTBOX_KEY));
   localStorage.removeItem(lsKey(SETUP_KEY));
   localStorage.removeItem(lsKey(WIZARD_DRAFT_KEY));
