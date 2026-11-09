@@ -3347,13 +3347,9 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
 .mtv[data-frame="champion"] .mtv-f[data-for~="champion"] {
   display: flex;
 }
-.mtv-marks {
-  display: flex;
-  justify-content: center;
-  gap: calc(var(--u) * 10);
-}
-/* A team mark in the TV is sized by the picture, not by teamMarkHtml's px. */
-.mtv .mtv-marks .tm,
+/* A team mark in the TV is sized by the picture, not by teamMarkHtml's px. Marks are drawn only for a place a director
+   has shown (the hero, the board, the crowning): the waiting frame and the intro are words only, as the big screen's are
+   (owner's decisions item 11). */
 .mtv .mtv-hero-marks .tm,
 .mtv .mtv-champ-marks .tm,
 .mtv .mtv-rows .tm {
@@ -3394,9 +3390,6 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
 .mtv-champ-marks {
   align-items: center;
 }
-.mtv-marks {
-  --mk: calc(var(--u) * 40);
-}
 .mtv-wait,
 .mtv-intro,
 .mtv-champ {
@@ -3407,27 +3400,32 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
   padding: calc(var(--u) * 12);
   text-align: center;
 }
+/* The waiting frame and the intro are the big screen's words alone, at its proportions (the headline 6.6% of the
+   width, the title 11%, "Get ready…" 3.2% under it at 2.4%), lifted a little above the middle as the big screen
+   lifts them (3.5% of the height). */
+.mtv-wait,
+.mtv-intro {
+  padding-bottom: calc(var(--u) * 26);
+}
 .mtv-wait-title {
   font: 850 calc(var(--u) * 23)/1.05 var(--font-ui);
   letter-spacing: -0.025em;
-}
-html:not(.calm-motion) .mtv-wait .mtv-marks > :nth-child(odd) {
-  animation: mtv-bob 3s var(--jm-std) infinite;
-}
-html:not(.calm-motion) .mtv-wait .mtv-marks > :nth-child(even) {
-  animation: mtv-bob 3s var(--jm-std) -1.5s infinite;
-}
-@keyframes mtv-bob {
-  50% { transform: translateY(calc(var(--u) * -4)); }
+  text-wrap: balance;
 }
 /* Sentence case, never letter-spaced capitals (§8.2, §8.8): the big screen's
    own words, as the waiting frame already says them. */
+.mtv-intro {
+  gap: calc(var(--u) * 8);
+}
 .mtv-intro-title {
   font: 850 calc(var(--u) * 34)/0.95 var(--font-ui);
   letter-spacing: -0.025em;
 }
-.mtv-intro .mtv-marks {
-  --mk: calc(var(--u) * 36);
+/* The light theme's ink-2 as a literal (the TV is always light; see .mtv .tm-tile[data-num]). Still: the mini TV is
+   a picture, so it does not pulse as the big screen's line does. */
+.mtv-intro-go {
+  font: 800 calc(var(--u) * 11)/1.1 var(--font-ui);
+  color: #373d72;
 }
 /* A place's moment: name alone, then place and points, then the counts. */
 .mtv-hero {

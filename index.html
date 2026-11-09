@@ -2838,7 +2838,8 @@
              intro | hero | board | champion | table (tvFrame().mode); data-beat =
              name | score | breakdown (the hero's beat: the name alone, then place
              and points, then the counts). Slots are text (setTextIfChanged) or
-             teamMarkHtml through setHtmlIfChanged (the marks); #mtv-board is ONE
+             teamMarkHtml through setHtmlIfChanged (the marks, only for a SHOWN place:
+             the hero, the board, the crowning); #mtv-board is ONE
              sheet of hairline rows, as the big screen's board: first a
              <li class="mtv-row" data-key="still-<n>" data-state="still"><span
              class="mtv-still">Still to come</span></li> per TEAM not shown yet, then
@@ -2854,13 +2855,18 @@
              #reveal-tv-now says the same in words. -->
         <div class="mtv" id="reveal-tv" data-frame="waiting" aria-hidden="true">
           <div class="mtv-screen">
+            <!-- Waiting and the intro are words only, as on the big screen (owner's decisions item 11): no team's
+                 mark before its place is shown. #mtv-wait-marks and #mtv-intro-marks are RETIRED: the build session
+                 deletes both, with the two lines in reveal-ui.js revealUiPaintTv that fill them; until then they are
+                 hidden and have no style. -->
             <div class="mtv-f mtv-wait" data-for="waiting">
               <p class="mtv-wait-title">Waiting for the directors…</p>
-              <div class="mtv-marks" id="mtv-wait-marks"></div>
+              <div class="mtv-marks" id="mtv-wait-marks" hidden></div>
             </div>
             <div class="mtv-f mtv-intro" data-for="intro">
               <p class="mtv-intro-title">Current standings</p>
-              <div class="mtv-marks" id="mtv-intro-marks"></div>
+              <div class="mtv-marks" id="mtv-intro-marks" hidden></div>
+              <p class="mtv-intro-go">Get ready…</p>
             </div>
             <div class="mtv-f mtv-hero" data-for="hero">
               <p class="mtv-hero-place" id="mtv-hero-place"></p>
