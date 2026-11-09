@@ -508,8 +508,14 @@ function NOW_ID_MARKUP() {
   return Object.entries(__domEntries()).filter(([k]) => NOW_NODE.test(k)).map(([, v]) => v).join(' ');
 }
 
+// A What's new note is THIS PHONE's own reading list, not camp content, and a preview never draws one (see "What's new notes"). Both
+// phones of a fidelity comparison therefore start with every note read, so the comparison is about the camp's page alone.
+function pvRead(m) {
+  vm.runInContext("localStorage.setItem(WHATS_NEW_KEY, JSON.stringify({ v: 1, last: Date.now(), n: Object.fromEntries(CHANGES.map((c) => [c.id, { d: 1 }])) }))", m.ctx);
+  return m;
+}
 test('FIDELITY, Now at every kind of card: a director in a preview paints, node for node, what a real counselor\'s phone paints', () => {
-  const mk = () => makeContext({ camp: CAMP.id, seeded: PV_SEEDED });
+  const mk = () => pvRead(makeContext({ camp: CAMP.id, seeded: PV_SEEDED }));
   const a = mk(); const b = mk();
   scenario(a.ctx, 'viewer', false);
   scenario(b.ctx, 'editor', false);
@@ -876,7 +882,7 @@ function pageDiff(counselor, previewed, ctx) {
 test('FIDELITY: a director in a preview paints, tab for tab and node for node, what a counselor\'s phone paints', () => {
   // The same week on two phones: a real counselor's, and a director's that has painted ITS OWN page first (so every
   // node holds director markup) and then started the preview.
-  const mk = () => makeContext({ camp: CAMP.id, seeded: PV_SEEDED });
+  const mk = () => pvRead(makeContext({ camp: CAMP.id, seeded: PV_SEEDED }));
   let diff = [];
   for (let attempt = 0; attempt < 3; attempt++) { // a minute boundary between the two walks changes the banner's clock: retry; a real difference repeats
     const a = mk(); const b = mk();
@@ -893,7 +899,7 @@ test('FIDELITY: a director in a preview paints, tab for tab and node for node, w
 });
 
 test('FIDELITY, the other way: a director who has NOT started a preview paints something a counselor does not (the comparison can fail)', () => {
-  const mk = () => makeContext({ camp: CAMP.id, seeded: PV_SEEDED });
+  const mk = () => pvRead(makeContext({ camp: CAMP.id, seeded: PV_SEEDED }));
   const a = mk(); const b = mk();
   scenario(a.ctx, 'viewer', false);
   scenario(b.ctx, 'editor', false);

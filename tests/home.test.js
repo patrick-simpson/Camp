@@ -310,7 +310,7 @@ test('Now hosts the Now engine (card, runs, messages strip); Games hosts the day
   const panel = src.slice(src.indexOf('const SHELL_PANELS = {'), src.indexOf('const SHELL_ALWAYS'));
   const part = (from, to) => panel.slice(panel.indexOf(from), panel.indexOf(to));
   const now = part('now: {', 'games: {');
-  ['renderWhatsNew', 'nowRefresh', 'nowTick', 'renderAnnouncements'].forEach((fn) => assert.ok(now.includes(fn + '('), fn + ' renders with Now'));
+  ['nowRefresh', 'nowTick', 'renderAnnouncements'].forEach((fn) => assert.ok(now.includes(fn + '('), fn + ' renders with Now'));
   // The old Now sections are DELETED, not just unwired (Step 17): the Now card paints from nowModel().
   ['renderNoticeBoard', 'renderNowBanner', 'splitNowBanner', 'renderFollowCard', 'renderMyElectives', 'renderLiveHome', 'homeBoardGame', 'liveHomeGames']
     .forEach((fn) => assert.notOk(new RegExp('\\b' + fn + '\\b').test(src), fn + ' is gone from app.js (the Now engine replaced it)'));
