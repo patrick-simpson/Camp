@@ -134,7 +134,8 @@ Files:
   Every commit to `state.config` or the roster goes through `configEdit` / `stateEdit` (an Undo entry;
   see "Undo core"), looking its record up by id when it runs. The strip of what the config engine
   set aside (`configNotesHtml`: Put it back / Use mine, see "The week config is a field-op engine")
-  now lives at the top of the Games screen (`#sg-notes`, setup-ui.js)
+  now lives at the top of the Games screen, above the day it shows (`#sg-notes`, setup-ui.js; the hub's Games row
+  counts them: "1 change was set aside")
 - `chat.js` — Camp Chat (see "Camp chat" below): four channels, automatic
   mention alerts, compressed in-database photos. Self-contained layer,
   loaded after settings.js; every hook in app.js is typeof-guarded
@@ -1826,7 +1827,7 @@ into it from app.js / settings.js is typeof-guarded.
   plain `view` from the page and tests hand one in. Marks `ok | warn | todo | skip | info`
   (`soon` and its "Editing comes next" word, `HUB_SOON_WORD`, are unused now that every row has its screen). Evaluated
   today: **Games** (a game on no day, a day with no games, a tournament with no bracket for
-  the camp's team count, "N games still say TBA"), **Teams** (wrong count / bad id →
+  the camp's team count, "N games still say TBA", "1 change was set aside" by the config engine), **Teams** (wrong count / bad id →
   "Ask Patrick to repair team slots", an unnamed team; Step 25 adds "Foxes has no short
   name" / "has no emoji", "Two teams are Blue", and a gentle `note` — never a counted
   warning — for an older colour that is hard to read on a theme: see "Team colours and the
@@ -5065,7 +5066,7 @@ More sync invariants (each fixed after it bit us — don't regress these;
     can ever come (sync not configured, SDK down, config read refused).
   - **Notes** (`state._cfgNotes`, ≤ 30, in the cache blob, not synced): `putback`
     `{section, key, name, record, collide?}` and `clash` `{path, mine, theirs, what}`;
-    shown in a strip above the builder's tabs (`configNotesHtml`, wired once, escaped;
+    shown in a strip at the top of the Games screen (`configNotesHtml`, wired once, escaped; counted on the hub's Games row;
     a whole-record clash reads "you deleted X, but someone changed it too" with
     **Delete it anyway**). `cfgPutBack` re-creates the record with my edits (a `collide`
     note re-keys it with a fresh random tail — the other record is somebody's and stays)
@@ -5732,17 +5733,29 @@ should expire on its own.
   `#setup-notice.nbs[data-state=empty|draft|posted|hollow]` (the state picks the headline words, the dock's one button and
   whether there is a picture), in index.html's comment at `#setup-notice` (the copy per state and every row template) and
   styles.css's last block. One grouped sheet per part, in a counselor's reading order: Heading and intro, Where each team
-  goes (a row per roster team, its mark, an empty place = not on the notice, Move up only), Steps (numbered, Move up /
-  Remove step), Closing line, then `#nbs-preview` (`noticeCardHtml(true, notice)` in Tell everyone's phone outline) and the
-  dock (`#nbs-post` gold "Put it on every phone" / the dashed "Write the notice first"; `#nbs-down` "Take it down").
+  goes (a row per roster team, its mark, an empty place = not on the notice, Move up only; a place stops at 40 characters,
+  its extra line at 60), Steps (numbered; the emoji is the Meals screen's tile opening the game sheet's grid, whose Other box
+  takes only an emoji; Move up / Remove step), Closing line, then `#nbs-preview` (`noticeCardHtml(true, notice)` in Tell
+  everyone's phone outline, reached from the lede by `#nbs-see`) and the dock (`#nbs-post` gold "Put it on every phone" / the
+  dashed "Write the notice first"; `#nbs-down` "Take it down").
   Ids are `nbs-`; field classes keep the old tab's `nb-` names. No field for the stored `eyebrow` (no phone draws it; it is
   the heading's hint when the heading is empty). **Behaviour** (setup-ui.js section 18; `tests/notice-screen.test.js`): every edit
-  writes the live `noticeBoard()` object and saves it whole with `saveState()` + `renderAll()` (no second path); a field commits on
-  its native `change` (blur, only if changed since focus), a team's area is addressed by `data-team`, never by position
-  (typing a place puts the team on, clearing it takes it off, Move up swaps with the previous listed team), steps are
-  positional; the painter (`nbsSyncRows`) patches rows in place and never writes a focused field, so an idle `renderAll`
-  writes nothing; Put it on every phone asks (`askDialog`), Take it down is Tell everyone's `tellNoticeDown()` (10 s Undo);
-  Start again / Clear ask and leave a draft. The preview is `noticeCardHtml(true, notice, { team })` as a counselor on the
+  goes through `nbsEdit(label, mutate)`, which edits the live notice, saves it whole with `saveState()` + `renderAll()` (no second
+  path) and records an undo entry in the `notice` domain (`UNDO_DOMAINS.notice`, defined there: path `notice` = the words in
+  canonical form, `status` only for Clear / Start again, so an Undo puts a notice that was up back up only while it is still the
+  draft they left, and putting it up or down never makes an earlier edit "changed since"); the docked pill offers "Undo:
+  Removed step 2", so Remove step asks nothing. `nbsEdit` reads `state.notice` as it stands before the edit, never through
+  `noticeBoard()`: `normalizeNotice` rebuilds every zone and step object, which would strand the edit's handles. A field commits
+  on its native `change` (blur, only if changed since focus), a team's area is addressed by `data-team`, never by position
+  (typing a place puts the team on, clearing it takes it off, Move up swaps with the previous listed team); steps have no ids, so
+  each gets a key kept in memory (`nbsStepKeys`: by its words, else the key of the step that stood in its place; Remove and Move
+  up move the keys first), and a removed or moved step takes its own row with it. The painter (`nbsSyncRows`) patches rows in
+  place, never writes a focused field (an idle `renderAll` writes nothing) and **never moves the row holding the focus** (or the
+  one Next is moving into, or whose field is committing: `nbsHeldRow`): the rows around it move instead, so typing a place for an
+  unlisted team keeps the keyboard. The lists are no scroll anchor (`overflow-anchor: none`), so a move glides only the rows that
+  moved; Move up lets go of the focus first so the moved row itself travels. Put it on every phone asks (`askDialog`), Take it
+  down is Tell everyone's `tellNoticeDown()` (10 s Undo); Start again / Clear ask, leave a draft and are undoable (Clear is not
+  offered while nothing is written). The preview is `noticeCardHtml(true, notice, { team })` as a counselor on the
   director's own team (if the notice lists it, else the first listed) would see it. Tell everyone's "Write a full notice"
   is `setupOpenNotice('tell')` (Back reads "Tell everyone" and comes home to the composer). A counselor reaches none of it
   (`canEdit()` on every handler); a focused field holds the auto-reload (`editorMidEntry`).

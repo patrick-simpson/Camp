@@ -2034,6 +2034,12 @@
                  <span class="cb-end"><button type="button" class="btn btn-sm sg-place" data-sg-place="<id>">Put on the schedule</button></span>
                </div> -->
         <section class="setup-screen sg" id="setup-games" data-setup-screen="games" role="tabpanel" aria-labelledby="sg-title">
+          <!-- What the config engine set aside instead of dropping (cfgNotes in app.js): a game somebody removed while an edit of
+               mine was on its way (Put it back with my changes / Discard), and an offline change that lost to a colleague's
+               on the same field (Use mine / Dismiss). Written by setup-ui.js configNotesHtml, empty when there is none. It sits
+               ABOVE the day (a note is about a game on any day: under "Monday" it read as Monday's), and the hub's Games row
+               counts them ("1 change was set aside"). -->
+          <div class="settings-notes" id="sg-notes"></div>
           <div class="setup-intro sg-intro">
             <!-- Kicker "Games · Junior camp"; the answer is the DAY you're
                  looking at ("Wednesday"); the lede where it stands: "Today · 5
@@ -2052,10 +2058,6 @@
                  pin; hidden when there's none. -->
             <p class="sg-note" id="sg-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><span id="sg-note-text"></span></p>
           </div>
-          <!-- What the config engine set aside instead of dropping (cfgNotes in app.js): a game somebody removed while an edit of
-               mine was on its way (Put it back with my changes / Discard), and an offline change that lost to a colleague's
-               on the same field (Use mine / Dismiss). Written by setup-ui.js configNotesHtml, empty when there is none. -->
-          <div class="settings-notes" id="sg-notes"></div>
           <!-- The schedule is the original (meta/on/schedule off): games are
                grouped by session there, and a move picks a session. -->
           <p class="setup-note" id="sg-orig" hidden><svg class="ico" aria-hidden="true"><use href="#i-calendar"/></svg><span>Games are grouped by part of the day while the schedule is the original one.</span></p>
@@ -2116,12 +2118,14 @@
                                                 lede     "It’s at the top of Now for everyone. Changes show there as you make them."
                                                 dock     #nbs-down: "Take it down" / "Keeps it here as a draft"
                hollow  posted, nothing in it    headline "Nothing to show"
-                                                lede     "It’s switched on, but phones show nothing until something is written here."
+                                                lede     "It’s pinned, but phones show nothing until something is written here."
                                                 dock     #nbs-down
              (noticePosted() is the "with words" test; the hub's Notice row says the same thing in its own words.)
              The kicker reads "Notice board · Junior camp". The stored `eyebrow` (the old tab's "Small label") has no
              field: no phone draws it (the strip falls back to it only when the heading is empty), so the heading field
              shows it as its placeholder in that case and the data is left alone.
+             Every edit is an undo entry (setup-ui.js's `notice` undo domain: the docked pill offers "Undo: Removed step 2",
+             "Undo: Cleared the notice"), so Remove step asks nothing.
              Fields commit on blur / Enter and only when changed since focus (setupFocusIn / Out, P2 §6.4.9); rows are
              patched in place by data-key, never rebuilt under a focused field; a value is set only while its field is
              not focused. Text goes in through `value`, never markup. Every text field is a <textarea> that grows with its
@@ -2132,12 +2136,15 @@
             <h2 class="setup-kicker" id="nbs-title">Notice board</h2>
             <p class="setup-headline" id="nbs-headline"></p>
             <p class="setup-lede" id="nbs-lede"></p>
+            <!-- The picture is at the foot of a long screen: one link-blue line takes the director to it (a scroll, not a
+                 link: a #hash is the shell's). Hidden with the picture (empty, hollow). -->
+            <button type="button" class="nbs-see" id="nbs-see"><span>See it on a counselor’s phone</span><svg class="ico" aria-hidden="true"><use href="#i-chev-d"/></svg></button>
           </div>
 
           <div class="more-sec nbs-sec">
             <div class="gl-head"><h3 class="gl-label">Heading and intro</h3><span class="gl-note">At the top of Now</span></div>
             <div class="gl nbs-list">
-              <label class="fld nbs-fld"><span class="fld-label">Heading</span><textarea class="fld-input nb-field nbs-grow nbs-heading" data-nb-field="title" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Like “Where your team cleans”"></textarea></label>
+              <label class="fld nbs-fld"><span class="fld-label">Heading</span><textarea class="fld-input nb-field nbs-grow nbs-heading" data-nb-field="title" data-oneline rows="1" maxlength="60" autocomplete="off" enterkeyhint="next" placeholder="Like “Where your team cleans”"></textarea></label>
               <label class="fld nbs-fld"><span class="fld-label">Intro</span><textarea class="fld-input nb-field nbs-grow" data-nb-field="sub" data-oneline rows="2" enterkeyhint="next" placeholder="One or two sentences under the heading"></textarea></label>
             </div>
           </div>
@@ -2154,34 +2161,45 @@
                    <button type="button" class="nbs-up nb-zone-move" data-team="t3" data-dir="-1" aria-label="Move Particularly Perilous Pumpkins up"><svg class="ico" aria-hidden="true"><use href="#i-up"/></svg></button>
                        (hidden on the first listed row and on every unlisted one)
                    <span class="nbs-zone-flds">
-                     <textarea class="fld-input nbs-grow nb-zone-place" data-team="t3" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Where they go" aria-label="Where Particularly Perilous Pumpkins go"></textarea>
-                     <textarea class="fld-input nbs-grow nb-zone-note" data-team="t3" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Small print (optional)" aria-label="Small print for Particularly Perilous Pumpkins (optional)"></textarea>
+                     <textarea class="fld-input nbs-grow nb-zone-place" data-team="t3" data-oneline rows="1" maxlength="40" autocomplete="off" enterkeyhint="next" placeholder="Where they go" aria-label="Where Particularly Perilous Pumpkins go"></textarea>
+                     <textarea class="fld-input nbs-grow nb-zone-note" data-team="t3" data-oneline rows="1" maxlength="60" autocomplete="off" enterkeyhint="next" placeholder="Extra line (optional)" aria-label="Extra line for Particularly Perilous Pumpkins (optional)"></textarea>
                    </span>
                  </div>
-               The small print is CSS-only progressive disclosure: an EMPTY small-print box shows only while the row has
-               focus and a place (typing the place, the box appears under it, and Next moves into it); one with words always
-               shows. A team with no place never shows it. Nothing for the renderer to do.
+               The extra line (stored as the zone's `note`) is CSS-only progressive disclosure: an EMPTY box shows only while
+               the row has focus and a place (typing the place, the box appears under it, and Next moves into it); one with
+               words always shows. A team with no place never shows it. The row holding the focus is never moved by a repaint
+               (setup-ui.js nbsSyncRows: the rows around it move instead), so the box stays under the finger when a team
+               joins the listed group. The place is capped at 40 characters (it sits beside the team's name), the line at 60.
                A zone whose team is not on this camp's roster is not drawn (phones skip it too) and is left in the data. -->
           <div class="more-sec nbs-sec">
             <div class="gl-head"><h3 class="gl-label">Where each team goes</h3><span class="gl-note" id="nbs-zones-note"></span></div>
             <div class="gl nbs-list nbs-zones" id="nbs-zones"></div>
+            <p class="nbs-hint">Keep each place short: it sits beside the team’s name on phones.</p>
           </div>
 
           <!-- The steps, numbered as counselors read them. #nbs-steps-note: "5 steps" (empty: the list is no box and the
-               note says "None yet"). Row (keyed by position: steps have no ids; a re-sort is a FLIP of the kept nodes):
-                 <div class="nbs-step" data-key="s-0" data-step="0">
+               note says "None yet"). Row (steps have no ids: each gets a key kept in memory, setup-ui.js nbsStepKeys, so a
+               removed or moved step takes its own row with it and the others glide; data-idx, the number and the words are
+               patched when a kept row changes place):
+                 <div class="nbs-step" data-key="s-3" data-step="0">
                    <span class="nbs-num" aria-hidden="true">1</span>
                    <span class="nbs-step-head">
-                     <input type="text" class="fld-input nbs-emo nb-step-emoji" data-idx="0" maxlength="16" autocomplete="off" placeholder="+" aria-label="Step 1 emoji (optional)">
-                     <textarea class="fld-input nbs-grow nbs-when nb-step-when" data-idx="0" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Heading, like “In your area”" aria-label="Step 1 heading"></textarea>
+                     <button type="button" class="sec-emo-btn nbs-emo nb-step-emoji" data-idx="0" aria-expanded="false" aria-label="Step 1 emoji (optional)" [data-empty]><span class="sec-emo-now" aria-hidden="true">🧹</span><svg class="ico sec-emo-plus" aria-hidden="true"><use href="#i-plus"/></svg></button>
+                     <textarea class="fld-input nbs-grow nbs-when nb-step-when" data-idx="0" data-oneline rows="1" maxlength="60" autocomplete="off" enterkeyhint="next" placeholder="Heading, like “In your area”" aria-label="Step 1 heading"></textarea>
+                   </span>
+                   <span class="si-emoji nbs-emo-pick" role="group" aria-label="An emoji for step 1" hidden>   (filled the first time it opens:)
+                     <button type="button" class="si-emo nbs-emo-none" data-emo="" aria-pressed="false">None</button>
+                     <button type="button" class="si-emo" data-emo="🧹" aria-pressed="true" aria-label="Broom">🧹</button> …
+                     <input type="text" class="fld-input si-emoji-other nbs-emo-other" data-idx="0" maxlength="8" placeholder="Other" aria-label="Another emoji for step 1">
                    </span>
                    <textarea class="fld-input nbs-grow nb-step-items" data-idx="0" rows="2" placeholder="One instruction per line" aria-label="Step 1, one instruction per line"></textarea>
                    <span class="nbs-acts">
-                     <button type="button" class="btn-quiet nb-step-move" data-idx="0" data-dir="-1">Move up</button>   (not on the first)
+                     <button type="button" class="btn-quiet nb-step-move" data-idx="0" data-dir="-1" [hidden on the first]><svg class="ico"><use href="#i-up"/></svg>Move up</button>
                      <button type="button" class="btn-quiet btn-quiet-danger nb-step-remove" data-idx="0">Remove step</button>
                    </span>
                  </div>
-               The emoji goes through safeEmoji on its way to a phone (nowNoticeData); the box shows what was typed. -->
+               The emoji is the Meals screen's tile opening the game sheet's grid: a pick is one commit; Other takes only an
+               emoji ("Pick an emoji, or leave it empty."), and safeEmoji launders it on its way to a phone (nowNoticeData). -->
           <div class="more-sec nbs-sec">
             <div class="gl-head"><h3 class="gl-label">Steps</h3><span class="gl-note" id="nbs-steps-note"></span></div>
             <div class="gl nbs-list nbs-steps" id="nbs-steps"></div>
@@ -2207,8 +2225,9 @@
             <p class="setup-note nbs-preview-none"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg><span>Phones show nothing until the notice has words in it.</span></p>
           </div>
 
-          <!-- Start over: each asks first (askDialog), each leaves the notice a draft. The example is the camp's own
-               (defaultNotice(): both camps' are the cleanup notice). -->
+          <!-- Start over: each asks first (askDialog), each leaves the notice a draft, and each is one undo entry (its Undo puts
+               the words back and, while it is still the draft this left, puts a notice that was up back up). The example is the
+               camp's own (defaultNotice(): both camps' are the cleanup notice). Clear is not offered while nothing is written. -->
           <div class="nbs-foot">
             <button type="button" class="btn-quiet" id="nbs-reset">Start again from the cleanup example…</button>
             <button type="button" class="btn-quiet btn-quiet-danger" id="nbs-clear">Clear the whole notice…</button>
@@ -2219,7 +2238,7 @@
                and focuses the heading). Putting it on every phone asks first ("Put the notice on every phone now?" · Put it
                on every phone / Not now); taking it down is Tell everyone's tellNoticeDown() (the 10-second Undo). -->
           <div class="setup-dock nbs-dock" id="nbs-dock">
-            <button type="button" class="btn btn-gold btn-block nbs-post" id="nbs-post"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><span id="nbs-post-label">Put it on every phone</span></button>
+            <button type="button" class="btn btn-gold btn-block nbs-post" id="nbs-post"><span class="nbs-post-l"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><span id="nbs-post-label">Put it on every phone</span></span></button>
             <button type="button" class="btn btn-block nbs-down" id="nbs-down"><span class="nbs-down-t">Take it down</span><small class="nbs-down-s">Keeps it here as a draft</small></button>
           </div>
         </section>

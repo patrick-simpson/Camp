@@ -206,6 +206,10 @@ function hubStatus(section, view) {
       }
       const tba = games.filter((g) => g && String(g.location || '').trim().toLowerCase() === 'tba').length;
       if (tba) problems.push(tba === 1 ? '1 game has no place yet' : tba + ' games have no place yet');
+      // What the config engine set aside (a game removed while an edit was on its way, an offline change that lost a clash): the
+      // notes wait at the top of the Games screen, so a director who never opens it would never learn of them.
+      const aside = Number(v.setAside) || 0;
+      if (aside) problems.push(aside === 1 ? '1 change was set aside' : aside + ' changes were set aside');
       const summary = games.length ? hubPlural(games.length, 'game', 'games') + ' · ' + hubPlural(days.length, 'day', 'days') : 'No games yet';
       return hubMark(problems.length ? 'warn' : games.length ? 'ok' : 'todo', summary, problems);
     }
@@ -478,6 +482,7 @@ function hubView() {
     doorActions,
     held: ['schedule'].concat(HUB_SECTIONS).reduce((o, s) => { o[s] = !!(hubSetupMeta().on && hubSetupMeta().on[s] === false); return o; }, {}),
     unscheduled: hubUnscheduledGames(),
+    setAside: typeof cfgNotes === 'function' ? cfgNotes().length : 0,
     brackets: (function () { const b = typeof bracketNotes === 'function' ? bracketNotes() : { late: [], recheck: [] }; return { late: b.late.map((x) => x.name), recheck: b.recheck.map((x) => x.name) }; })(),
     schedule: hubScheduleView(),
     sec: hubSecView(),
@@ -10243,9 +10248,14 @@ SETUP_OWNER_ACTIONS.advanced = { run: () => setupSheet('setup-advanced'), advanc
 // path: the notice object is edited in place (noticeBoard()) and saved whole with saveState() — the same path Tell everyone's pin
 // and setNoticeStatus use — never a second copy. Every handler reads the notice AT CALL TIME (a snapshot replaces the object), and
 // a team's area is addressed by its team id, never by its position in the array. A field commits on its native `change` (blur,
-// and only when it changed since focus) and the painter never writes a focused field.
+// and only when it changed since focus) and the painter never writes a focused field. Every edit is an undo entry (the `notice`
+// domain below), as on every other screen of the frame.
+//   stepRows  the steps' row keys as last painted, [{ key, sig }]: steps have no ids, so the screen gives each one a key of its own
+//             (nbsStepKeys), and a removed or moved step takes its row with it instead of its words moving into the next row
+//   focusTo   the field Next is moving the focus to (its row must not move while the commit that move sets off repaints)
+//   changing  the field whose change is being committed (its row is held the same way, for a tap that moves the focus)
 
-const noticeUi = { from: '', pend: '', wired: false };
+const noticeUi = { from: '', pend: '', wired: false, stepRows: [], stepSeq: 0, focusTo: null, changing: null };
 
 // More → Set up the week → Notice, or Tell everyone's "Write a full notice" (`from: 'tell'`: Back then comes home to the composer).
 function setupOpenNotice(from) {
@@ -10275,15 +10285,37 @@ function nbsModel() {
     empty: ['Nothing written yet', 'Write it here, then put it on every phone when it’s ready.'],
     draft: ['A draft only directors see', 'Counselors see nothing until you put it on every phone. Edit it as long as you like.'],
     posted: ['On every phone', 'It’s at the top of Now for everyone. Changes show there as you make them.'],
-    hollow: ['Nothing to show', 'It’s switched on, but phones show nothing until something is written here.'],
+    hollow: ['Nothing to show', 'It’s pinned, but phones show nothing until something is written here.'],
   }[state_];
   // The picture is a counselor's: the director's own team if the notice lists it, else the first team it lists.
   const mine = typeof nowMyTeam === 'function' ? nowMyTeam() : '';
   const previewTeam = listed.indexOf(mine) !== -1 ? mine : (listed[0] || '');
   return {
     n, state: state_, headline: copy[0], lede: copy[1], zones, listedCount: listed.length, total: ids.length, previewTeam,
-    steps: n.steps.map((s, i) => ({ key: 's-' + i, i, step: s })),
+    steps: nbsStepKeys(n.steps).map((key, i) => ({ key, i, step: n.steps[i] })),
   };
+}
+
+// One key per step, kept in memory. A step whose words are unchanged keeps its key wherever it moved (a colleague's reorder
+// too); one whose words changed keeps the key of the step that stood in its place; a new one gets a new key. The screen's own
+// Remove and Move up also move the keys first (nbsStepRemove / nbsStepUp), so two steps with the same words stay apart.
+function nbsStepKeys(steps) {
+  const prev = noticeUi.stepRows;
+  const sigs = steps.map((s) => JSON.stringify([s.emoji, s.when, s.items]));
+  const used = {};
+  const keys = sigs.map((sig) => {
+    const p = prev.find((x) => !used[x.key] && x.sig === sig);
+    if (!p) return '';
+    used[p.key] = true;
+    return p.key;
+  });
+  keys.forEach((k, i) => {
+    if (k) return;
+    const p = prev[i];
+    if (p && !used[p.key]) { used[p.key] = true; keys[i] = p.key; } else keys[i] = 's-' + (++noticeUi.stepSeq);
+  });
+  noticeUi.stepRows = keys.map((key, i) => ({ key, sig: sigs[i] }));
+  return keys;
 }
 
 function nbsPlural(n, one, many) { return n === 1 ? one : many; }
@@ -10296,10 +10328,17 @@ function nbsZoneHtml(r) {
     '<p class="nbs-zone-name"><span class="nbs-zone-nm">' + nm + '</span><small>Not on the notice</small></p>' +
     '<button type="button" class="nbs-up nb-zone-move" data-team="' + id + '" data-dir="-1" aria-label="Move ' + nm + ' up" hidden><svg class="ico" aria-hidden="true"><use href="#i-up"/></svg></button>' +
     '<span class="nbs-zone-flds">' +
-    '<textarea class="fld-input nbs-grow nb-zone-place" data-team="' + id + '" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Where they go" aria-label="Where ' + nm + ' go"></textarea>' +
-    '<textarea class="fld-input nbs-grow nb-zone-note" data-team="' + id + '" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Small print (optional)" aria-label="Small print for ' + nm + ' (optional)"></textarea>' +
+    '<textarea class="fld-input nbs-grow nb-zone-place" data-team="' + id + '" data-oneline rows="1" maxlength="40" autocomplete="off" enterkeyhint="next" placeholder="Where they go" aria-label="Where ' + nm + ' go"></textarea>' +
+    '<textarea class="fld-input nbs-grow nb-zone-note" data-team="' + id + '" data-oneline rows="1" maxlength="60" autocomplete="off" enterkeyhint="next" placeholder="Extra line (optional)" aria-label="Extra line for ' + nm + ' (optional)"></textarea>' +
     '</span></div>';
 }
+
+// A step's emoji is picked, not typed (the Meals screen's tile and the game sheet's grid): the tile shows it or a link-blue
+// "+", and opens a grid under the step's heading. "Other" takes any emoji the grid lacks, and only an emoji.
+const NBS_EMOJI = [['🧹', 'Broom'], ['🗑️', 'Trash'], ['🧺', 'Basket'], ['🧽', 'Sponge'], ['🪣', 'Bucket'], ['🧤', 'Gloves'],
+  ['🚶', 'Walk'], ['🏃', 'Run'], ['⛪', 'Chapel'], ['🛏️', 'Bed'], ['🚿', 'Shower'], ['🎒', 'Backpack'],
+  ['👕', 'Clothes'], ['📦', 'Box'], ['🚌', 'Bus'], ['🍽️', 'Dining'], ['⏰', 'Clock'], ['📣', 'Announcement'],
+  ['🏕️', 'Camp'], ['🌲', 'Tree'], ['🙏', 'Prayer'], ['✅', 'Done']];
 
 function nbsStepHtml(r) {
   const i = r.i;
@@ -10307,14 +10346,22 @@ function nbsStepHtml(r) {
   return '<div class="nbs-step" data-key="' + esc(r.key) + '" data-step="' + i + '">' +
     '<span class="nbs-num" aria-hidden="true">' + (i + 1) + '</span>' +
     '<span class="nbs-step-head">' +
-    '<input type="text" class="fld-input nbs-emo nb-step-emoji" data-idx="' + i + '" maxlength="16" autocomplete="off" placeholder="+" aria-label="' + nth + ' emoji (optional)">' +
-    '<textarea class="fld-input nbs-grow nbs-when nb-step-when" data-idx="' + i + '" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Heading, like “In your area”" aria-label="' + nth + ' heading"></textarea>' +
+    '<button type="button" class="sec-emo-btn nbs-emo nb-step-emoji" data-idx="' + i + '" aria-expanded="false" aria-label="' + nth + ' emoji (optional)" data-empty><span class="sec-emo-now" aria-hidden="true"></span><svg class="ico sec-emo-plus" aria-hidden="true"><use href="#i-plus"/></svg></button>' +
+    '<textarea class="fld-input nbs-grow nbs-when nb-step-when" data-idx="' + i + '" data-oneline rows="1" maxlength="60" autocomplete="off" enterkeyhint="next" placeholder="Heading, like “In your area”" aria-label="' + nth + ' heading"></textarea>' +
     '</span>' +
+    '<span class="si-emoji nbs-emo-pick" role="group" aria-label="An emoji for step ' + (i + 1) + '" hidden></span>' +
     '<textarea class="fld-input nbs-grow nb-step-items" data-idx="' + i + '" rows="2" placeholder="One instruction per line" aria-label="' + nth + ', one instruction per line"></textarea>' +
     '<span class="nbs-acts">' +
-    (i > 0 ? '<button type="button" class="btn-quiet nb-step-move" data-idx="' + i + '" data-dir="-1">Move up</button>' : '') +
+    '<button type="button" class="btn-quiet nb-step-move" data-idx="' + i + '" data-dir="-1"' + (i > 0 ? '' : ' hidden') + '><svg class="ico" aria-hidden="true"><use href="#i-up"/></svg>Move up</button>' +
     '<button type="button" class="btn-quiet btn-quiet-danger nb-step-remove" data-idx="' + i + '">Remove step</button>' +
     '</span></div>';
+}
+
+// The grid, built the first time it opens (a list of five steps holds no 115 hidden buttons).
+function nbsEmoPickHtml(i) {
+  return '<button type="button" class="si-emo nbs-emo-none" data-emo="" aria-pressed="false">None</button>' +
+    NBS_EMOJI.map((e) => '<button type="button" class="si-emo" data-emo="' + e[0] + '" aria-pressed="false" aria-label="' + esc(e[1]) + '">' + e[0] + '</button>').join('') +
+    '<input type="text" class="fld-input si-emoji-other nbs-emo-other" data-idx="' + i + '" maxlength="8" autocomplete="off" enterkeyhint="done" placeholder="Other" aria-label="Another emoji for step ' + (i + 1) + '">';
 }
 
 function nbsSetAttr(el, name, v) {
@@ -10333,17 +10380,37 @@ function nbsZonePatch(el, r) {
   const place = q('.nb-zone-place');
   const note = q('.nb-zone-note');
   nbsSetAttr(place, 'aria-label', 'Where ' + nm + ' go');
-  nbsSetAttr(note, 'aria-label', 'Small print for ' + nm + ' (optional)');
+  nbsSetAttr(note, 'aria-label', 'Extra line for ' + nm + ' (optional)');
   secSetValue(place, r.zone ? r.zone.place : '');
   secSetValue(note, r.zone ? r.zone.note : '');
   secGrow(place); secGrow(note);
 }
 
+// A kept row may now stand at another place (a step removed or moved above it): its number, its words for a screen reader and
+// the index every handler reads are patched with the rest.
 function nbsStepPatch(el, r) {
   const q = (s) => el.querySelector(s);
-  secSetValue(q('.nb-step-emoji'), r.step.emoji);
+  const i = r.i;
+  const nth = 'Step ' + (i + 1);
+  nbsSetAttr(el, 'data-step', String(i));
+  el.querySelectorAll('[data-idx]').forEach((f) => nbsSetAttr(f, 'data-idx', String(i)));
+  setTextIfChanged(q('.nbs-num'), String(i + 1));
+  const emo = q('.nb-step-emoji');
+  const e = r.step.emoji || '';
+  setTextIfChanged(emo.querySelector('.sec-emo-now'), e);
+  secSetFlag(emo, 'data-empty', !e);
+  nbsSetAttr(emo, 'aria-label', e ? nth + ' emoji: ' + e + ' (change it)' : nth + ' emoji (optional)');
+  const pick = q('.nbs-emo-pick');
+  nbsSetAttr(pick, 'aria-label', 'An emoji for step ' + (i + 1));
+  if (pick.firstChild) {
+    pick.querySelectorAll('.si-emo').forEach((b) => nbsSetAttr(b, 'aria-pressed', String(b.dataset.emo === e)));
+    nbsSetAttr(q('.nbs-emo-other'), 'aria-label', 'Another emoji for step ' + (i + 1));
+  }
   const when = q('.nb-step-when');
   const items = q('.nb-step-items');
+  nbsSetAttr(when, 'aria-label', nth + ' heading');
+  nbsSetAttr(items, 'aria-label', nth + ', one instruction per line');
+  setHiddenIfChanged(q('.nb-step-move'), i === 0);
   secSetValue(when, r.step.when);
   secSetValue(items, r.step.items.join('\n'));
   secGrow(when); secGrow(items);
@@ -10351,7 +10418,9 @@ function nbsStepPatch(el, r) {
 
 // A list of keyed rows kept in place: a row that is gone leaves, a new one is built and arrives, the rest are patched (a
 // focused field keeps its text and caret) and, when the order changed, glide to their new places (calm: they just move).
-// Nodes are moved only when they must be (a moved node drops its focus). Without a live DOM (the test stub) it is one plain write.
+// The row that holds the focus — or is about to (Next moving on), or whose field is being committed — is NEVER moved: a moved
+// node drops its focus, and on a phone the keyboard with it (typing a place for a team the notice doesn't list yet re-sorts that
+// team into the listed group). The other rows are placed around it. Without a live DOM (the test stub) it is one plain write.
 function nbsSyncRows(list, rows, build, patch) {
   if (!list) return;
   if (!list.children || typeof list.insertBefore !== 'function' || typeof document.createElement !== 'function') {
@@ -10370,8 +10439,9 @@ function nbsSyncRows(list, rows, build, patch) {
   });
   const want = rows.map((r) => r.key);
   Object.keys(byKey).forEach((k) => { if (want.indexOf(k) === -1 && !byKey[k].__leaving) { byKey[k].remove(); delete byKey[k]; } });
+  const els = {};
   const fresh = [];
-  let prev = null;
+  const order = [];
   rows.forEach((r) => {
     let el = byKey[r.key];
     if (!el) {
@@ -10381,17 +10451,25 @@ function nbsSyncRows(list, rows, build, patch) {
       if (!el) return;
       fresh.push(el);
     }
-    const ref = prev ? prev.nextSibling : list.firstChild;
-    if (ref !== el) list.insertBefore(el, ref);
-    prev = el;
-    patch(el, r);
+    els[r.key] = el;
+    order.push(el);
   });
+  if (!order.length) return;
+  let a = order.indexOf(nbsHeldRow(list));
+  if (a === -1) {
+    a = 0;
+    if (list.firstChild !== order[0]) list.insertBefore(order[0], list.firstChild);
+  }
+  for (let i = a - 1; i >= 0; i--) if (order[i].nextSibling !== order[i + 1]) list.insertBefore(order[i], order[i + 1]);
+  for (let i = a + 1; i < order.length; i++) if (order[i - 1].nextSibling !== order[i]) list.insertBefore(order[i], order[i - 1].nextSibling);
+  rows.forEach((r) => { if (els[r.key]) patch(els[r.key], r); });
   const motion = typeof JellyMotion !== 'undefined' && typeof calmMotion === 'function' && !calmMotion();
-  if (!motion) return;
+  const had = Object.keys(before).length > 0;
   rows.forEach((r) => {
-    const el = byKey[r.key];
+    const el = els[r.key];
     if (!el) return;
-    if (fresh.indexOf(el) !== -1) { if (Object.keys(before).length) secArrive(el); return; }
+    if (fresh.indexOf(el) !== -1) { if (had) secArrive(el); return; } // a new row arrives (calm: the fade)
+    if (!motion) return;
     const b = before[r.key];
     if (!b || !el.getBoundingClientRect) return;
     const nr = el.getBoundingClientRect();
@@ -10400,6 +10478,18 @@ function nbsSyncRows(list, rows, build, patch) {
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
     JellyMotion.play(el, 'glide', (x) => ({ transform: 'translate(' + dx * (1 - x) + 'px,' + dy * (1 - x) + 'px)' }), { calm: false, layer: true });
   });
+}
+
+// The row (a direct child of `list`) holding the focus, the field Next is moving to, or the field being committed.
+function nbsHeldRow(list) {
+  const want = [typeof document !== 'undefined' ? document.activeElement : null, noticeUi.focusTo, noticeUi.changing];
+  for (let k = 0; k < want.length; k++) {
+    let f = want[k];
+    if (!f || f === document.body || typeof list.contains !== 'function' || !list.contains(f) || f === list) continue;
+    while (f && f.parentNode !== list) f = f.parentNode;
+    if (f) return f;
+  }
+  return null;
 }
 
 function renderNoticeScreen() {
@@ -10439,19 +10529,63 @@ function renderNoticeScreen() {
 function nbsOneLine(v) { return String(v == null ? '' : v).replace(/\s*[\r\n]+\s*/g, ' ').trim(); }
 function nbsLines(v) { return String(v == null ? '' : v).split(/\r?\n/).map((s) => s.trim()).filter(Boolean); }
 
-function nbsCommit() {
+// ── undo (§7.1): the `notice` domain ──
+// The notice is one synced record written whole, so its undo works on two paths: `notice` = its words (everything but the status,
+// in canonical form) and `status` = up or a draft. An ordinary edit records only the words, so putting the notice up or taking it
+// down later never makes an earlier edit "changed since"; Clear and Start again (which also take a posted notice down) record the
+// status too, so their Undo puts it back up — but only while it is still the draft they left. undoEntry's own rule applies: a path
+// is put back ONLY while it still equals what the edit left; a colleague's edit since is left alone and said.
+function nbsWordsOf(n) {
+  const c = JSON.parse(JSON.stringify(n));
+  delete c.status;
+  return syncCanon(c) || null;
+}
+UNDO_DOMAINS.notice = {
+  valueAt: (path) => (path === 'status' ? noticeBoard().status : nbsWordsOf(noticeBoard())),
+  what: (path) => (path === 'status' ? 'whether the notice is up' : 'the notice'),
+  apply: (changes, label) => {
+    nbsEdit(label, () => {
+      const status = changes.status || noticeBoard().status;
+      if (changes.notice !== undefined) {
+        state.notice = Object.assign({ eyebrow: '', title: '', sub: '', signoff: '', zones: [], steps: [] }, JSON.parse(JSON.stringify(changes.notice || {})));
+      }
+      state.notice.status = status;
+    }, { quiet: true });
+    return [];
+  },
+};
+
+// The one commit: run the edit on the live notice, save it whole, repaint, and record what changed as an undo entry (inside Set up
+// the week the docked pill offers it). Returns whether anything changed. `opts.quiet`: no pill (undoEntry's own apply).
+// The notice is read as it stands, NOT through noticeBoard() before the edit: normalizeNotice rebuilds every zone and step object,
+// so a call here would leave the edit's own handle on a step or a zone writing into an object the notice no longer holds. Every
+// caller has read the notice through noticeBoard() just before (so it is whole), and the edit's handles are the live objects.
+function nbsEdit(label, mutate, opts) {
+  if (!state.notice || typeof state.notice !== 'object') noticeBoard();
+  const before = nbsWordsOf(state.notice);
+  const was = state.notice.status;
+  if (mutate() === false) return false;
+  const after = nbsWordsOf(noticeBoard());
+  const now = noticeBoard().status;
+  const ops = [];
+  if (JSON.stringify(before) !== JSON.stringify(after)) ops.push(['notice', 'notice', before, after]);
+  if (was !== now) ops.push(['notice', 'status', was, now]);
+  if (!ops.length) return false;
+  if (was !== now) touchData({ celebrate: false }); // up or down is a real broadcast (setNoticeStatus stamps it the same way)
   saveState();
   renderAll();
+  if (label && typeof undoRecord === 'function') undoRecord(label, ops, opts);
+  return true;
 }
 
+const NBS_FIELD_WORDS = { title: 'the heading', sub: 'the intro', signoff: 'the closing line' };
+function nbsTeamWord(id) { return teamShort(id) || teamName(id); }
+
 function nbsSetField(field, value) {
-  if (!canEdit() || ['title', 'sub', 'signoff'].indexOf(field) === -1) return false;
-  const n = noticeBoard();
+  if (!canEdit() || !NBS_FIELD_WORDS[field]) return false;
   const v = nbsOneLine(value);
-  if (n[field] === v) return false;
-  n[field] = v;
-  nbsCommit();
-  return true;
+  if (noticeBoard()[field] === v) return false;
+  return nbsEdit('Changed ' + NBS_FIELD_WORDS[field], () => { noticeBoard()[field] = v; });
 }
 
 function nbsZoneSet(team, patch) {
@@ -10461,18 +10595,16 @@ function nbsZoneSet(team, patch) {
   const z = i === -1 ? null : n.zones[i];
   const place = patch.place !== undefined ? nbsOneLine(patch.place) : z ? z.place : '';
   const note = patch.note !== undefined ? nbsOneLine(patch.note) : z ? z.note : '';
+  const who = nbsTeamWord(team);
   if (!z) {
-    if (!place) return false; // small print without a place puts nobody on the notice
-    n.zones.push({ teamId: team, place, note });
-  } else if (!place && patch.place !== undefined) {
-    n.zones.splice(i, 1); // clearing the place takes the team off the notice
-  } else if (z.place === place && z.note === note) {
-    return false;
-  } else {
-    z.place = place; z.note = note;
+    if (!place) return false; // an extra line without a place puts nobody on the notice
+    return nbsEdit('Put ' + who + ' on the notice', () => { noticeBoard().zones.push({ teamId: team, place, note }); });
   }
-  nbsCommit();
-  return true;
+  if (!place && patch.place !== undefined) {
+    return nbsEdit('Took ' + who + ' off the notice', () => { noticeBoard().zones.splice(i, 1); }); // clearing the place takes the team off
+  }
+  if (z.place === place && z.note === note) return false;
+  return nbsEdit('Changed where ' + who + ' go', () => { z.place = place; z.note = note; });
 }
 
 // Move a team's area up one place among the teams the notice lists (a team the roster no longer has is stepped over).
@@ -10485,48 +10617,54 @@ function nbsZoneUp(team) {
   let j = i - 1;
   while (j >= 0 && ids.indexOf(n.zones[j].teamId) === -1) j--;
   if (j < 0) return false;
-  const t = n.zones[i]; n.zones[i] = n.zones[j]; n.zones[j] = t;
-  nbsCommit();
-  return true;
+  return nbsEdit('Moved ' + nbsTeamWord(team) + ' up', () => { const t = n.zones[i]; n.zones[i] = n.zones[j]; n.zones[j] = t; });
 }
 
 function nbsStepSet(idx, patch) {
   if (!canEdit()) return false;
   const st = noticeBoard().steps[idx];
   if (!st) return false;
-  let changed = false;
-  if (patch.emoji !== undefined && st.emoji !== patch.emoji.trim()) { st.emoji = patch.emoji.trim(); changed = true; }
-  if (patch.when !== undefined && st.when !== nbsOneLine(patch.when)) { st.when = nbsOneLine(patch.when); changed = true; }
-  if (patch.items !== undefined) {
-    const items = nbsLines(patch.items);
-    if (JSON.stringify(items) !== JSON.stringify(st.items)) { st.items = items; changed = true; }
-  }
-  if (changed) nbsCommit();
-  return changed;
+  const next = { emoji: st.emoji, when: st.when, items: st.items };
+  if (patch.emoji !== undefined) next.emoji = patch.emoji.trim();
+  if (patch.when !== undefined) next.when = nbsOneLine(patch.when);
+  if (patch.items !== undefined) next.items = nbsLines(patch.items);
+  if (next.emoji === st.emoji && next.when === st.when && JSON.stringify(next.items) === JSON.stringify(st.items)) return false;
+  return nbsEdit('Changed step ' + (idx + 1), () => { st.emoji = next.emoji; st.when = next.when; st.items = next.items; });
 }
 
 function nbsStepAdd() {
   if (!canEdit()) return false;
-  noticeBoard().steps.push({ emoji: '', when: '', items: [] });
-  nbsCommit();
+  nbsEdit('Added a step', () => { noticeBoard().steps.push({ emoji: '', when: '', items: [] }); });
   // The new step's heading is where the director types next.
   const f = setupEl('nbs-steps') && setupEl('nbs-steps').querySelector ? setupEl('nbs-steps').querySelector('.nbs-step:last-child .nb-step-when') : null;
   if (f && typeof f.focus === 'function') { try { f.focus({ preventScroll: false }); } catch (e) { /* fine */ } }
   return true;
 }
 
+// The row keys move with the steps (nbsStepKeys): the row that held the step goes with it, the others glide.
 function nbsStepUp(idx) {
   if (!canEdit()) return false;
   const steps = noticeBoard().steps;
   if (!(idx > 0 && idx < steps.length)) return false;
-  const t = steps[idx]; steps[idx] = steps[idx - 1]; steps[idx - 1] = t;
-  nbsCommit();
-  return true;
+  const rows = noticeUi.stepRows;
+  if (rows.length === steps.length) { const r = rows[idx]; rows[idx] = rows[idx - 1]; rows[idx - 1] = r; }
+  return nbsEdit('Moved step ' + (idx + 1) + ' up', () => { const t = steps[idx]; steps[idx] = steps[idx - 1]; steps[idx - 1] = t; });
 }
 
+// Removing a step needs no question: the docked pill offers "Undo: Removed step 2" at once. The row squashes out first; the
+// step is found again by its row's key when that ends (a snapshot meanwhile may have moved it).
 function nbsStepRemove(idx, row) {
   if (!canEdit() || !noticeBoard().steps[idx]) return false;
-  const go = () => { if (canEdit() && noticeBoard().steps[idx]) { noticeBoard().steps.splice(idx, 1); nbsCommit(); } };
+  const key = row && row.dataset ? row.dataset.key : '';
+  const go = () => {
+    if (!canEdit()) return;
+    const rows = noticeUi.stepRows;
+    const steps = noticeBoard().steps;
+    const at = key ? rows.findIndex((r) => r.key === key) : idx;
+    if (at === -1 || !steps[at]) return;
+    if (rows.length === steps.length) rows.splice(at, 1);
+    nbsEdit('Removed step ' + (at + 1), () => { noticeBoard().steps.splice(at, 1); });
+  };
   if (row && typeof playRowOut === 'function') playRowOut(row, go); else go();
   return true;
 }
@@ -10556,8 +10694,9 @@ async function nbsStartOver(kind) {
     actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: reset ? 'Replace it' : 'Clear it', value: 'go', kind: 'danger' }],
   });
   if (choice !== 'go' || !canEdit()) return;
-  state.notice = reset ? Object.assign(defaultNotice(), { status: 'draft' }) : { status: 'draft', eyebrow: '', title: '', sub: '', signoff: '', zones: [], steps: [] };
-  nbsCommit();
+  nbsEdit(reset ? 'Back to the cleanup example' : 'Cleared the notice', () => {
+    state.notice = reset ? Object.assign(defaultNotice(), { status: 'draft' }) : { status: 'draft', eyebrow: '', title: '', sub: '', signoff: '', zones: [], steps: [] };
+  });
 }
 
 function nbsFocusHeading() {
@@ -10570,7 +10709,51 @@ function nbsNextField(el) {
   const root = setupEl('setup-notice');
   const all = root && root.querySelectorAll ? Array.prototype.filter.call(root.querySelectorAll('textarea, input'), (f) => f.offsetParent !== null) : [];
   const nxt = all[all.indexOf(el) + 1];
-  if (nxt && typeof nxt.focus === 'function') nxt.focus(); else if (typeof el.blur === 'function') el.blur();
+  // The field being left commits while the focus moves (its change event fires inside focus()): the row it moves to is held
+  // still through that repaint (nbsHeldRow), or the focus would land on a node that was just moved and fall to the page.
+  noticeUi.focusTo = nxt || null;
+  try {
+    if (nxt && typeof nxt.focus === 'function') nxt.focus(); else if (typeof el.blur === 'function') el.blur();
+  } finally { noticeUi.focusTo = null; }
+}
+
+// A step's emoji grid: one open at a time; it opens under the step's heading.
+function nbsEmoPicker(row, open) {
+  if (!row || !row.querySelector) return;
+  const btn = row.querySelector('.nb-step-emoji');
+  const pick = row.querySelector('.nbs-emo-pick');
+  if (!btn || !pick) return;
+  const want = open === undefined ? !!pick.hidden : open;
+  if (want === !pick.hidden) return;
+  if (want) {
+    const list = setupEl('nbs-steps');
+    if (list && list.querySelectorAll) list.querySelectorAll('.nbs-emo-pick:not([hidden])').forEach((p) => { if (p !== pick) nbsEmoPicker(p.closest('.nbs-step'), false); });
+    if (!pick.firstChild) pick.innerHTML = nbsEmoPickHtml(+btn.dataset.idx);
+    const cur = (noticeBoard().steps[+btn.dataset.idx] || {}).emoji || '';
+    pick.querySelectorAll('.si-emo').forEach((b) => nbsSetAttr(b, 'aria-pressed', String(b.dataset.emo === cur)));
+  }
+  pick.hidden = !want;
+  btn.setAttribute('aria-expanded', String(want));
+  if (want && typeof JellyMotion !== 'undefined') JellyMotion.play(pick, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'translateY(' + (-6 * (1 - Math.min(1, x))) + 'px)' }), { calm: [{ opacity: 0 }, { opacity: 1 }] });
+}
+
+// Only an emoji is an emoji: "Hi" typed into Other would print as the step's icon on every counselor's phone.
+const NBS_PICTO = /\p{Extended_Pictographic}/u;
+function nbsEmojiOk(v) {
+  return v === '' || (NBS_PICTO.test(v) && !/[A-Za-z0-9<>&"']/.test(v) && safeEmoji(v, '') === v);
+}
+
+// A pick (or Other) is one commit; the grid closes and the focus goes back to the tile, which pops.
+function nbsEmoPick(row, emoji) {
+  if (!row) return;
+  const btn = row.querySelector('.nb-step-emoji');
+  const v = String(emoji || '').trim();
+  if (!nbsEmojiOk(v)) { setupSay('Pick an emoji, or leave it empty.'); return; }
+  nbsEmoPicker(row, false);
+  nbsStepSet(+btn.dataset.idx, { emoji: v });
+  if (btn && typeof btn.focus === 'function') { try { btn.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+  const now = btn && btn.querySelector ? btn.querySelector('.sec-emo-now') : null;
+  if (now && v && typeof JellyMotion !== 'undefined') JellyMotion.play(now, 'press', (x) => ({ transform: 'scale(' + (0.6 + 0.4 * x) + ')' }), { calm: false });
 }
 
 // The config notes' buttons: one delegated listener, because the strip is rewritten through setHtmlIfChanged.
@@ -10595,31 +10778,58 @@ function wireNoticeScreen() {
   root.addEventListener('change', (e) => {
     const el = e.target;
     if (!el || !el.classList) return;
-    if (el.dataset.nbField) nbsSetField(el.dataset.nbField, el.value);
-    else if (el.classList.contains('nb-zone-place')) nbsZoneSet(el.dataset.team, { place: el.value });
-    else if (el.classList.contains('nb-zone-note')) nbsZoneSet(el.dataset.team, { note: el.value });
-    else if (el.classList.contains('nb-step-emoji')) nbsStepSet(+el.dataset.idx, { emoji: el.value });
-    else if (el.classList.contains('nb-step-when')) nbsStepSet(+el.dataset.idx, { when: el.value });
-    else if (el.classList.contains('nb-step-items')) nbsStepSet(+el.dataset.idx, { items: el.value });
+    noticeUi.changing = el; // its row stays where it is through this commit's repaint (nbsHeldRow)
+    try {
+      if (el.dataset.nbField) nbsSetField(el.dataset.nbField, el.value);
+      else if (el.classList.contains('nb-zone-place')) nbsZoneSet(el.dataset.team, { place: el.value });
+      else if (el.classList.contains('nb-zone-note')) nbsZoneSet(el.dataset.team, { note: el.value });
+      else if (el.classList.contains('nbs-emo-other')) { if (String(el.value || '').trim()) nbsEmoPick(el.closest('.nbs-step'), el.value); el.value = ''; }
+      else if (el.classList.contains('nb-step-when')) nbsStepSet(+el.dataset.idx, { when: el.value });
+      else if (el.classList.contains('nb-step-items')) nbsStepSet(+el.dataset.idx, { items: el.value });
+    } finally { noticeUi.changing = null; }
   });
   root.addEventListener('input', (e) => { if (e.target && e.target.classList && e.target.classList.contains('nbs-grow')) secGrow(e.target); });
   root.addEventListener('keydown', (e) => {
     const el = e.target;
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && el && el.hasAttribute && el.hasAttribute('data-oneline')) { e.preventDefault(); nbsNextField(el); }
+    else if (e.key === 'Enter' && !e.isComposing && el && el.classList && el.classList.contains('nbs-emo-other')) { e.preventDefault(); if (typeof el.blur === 'function') el.blur(); }
+    else if (e.key === 'Escape' && el && el.closest && el.closest('.nbs-emo-pick')) {
+      const row = el.closest('.nbs-step');
+      nbsEmoPicker(row, false);
+      const t = row && row.querySelector('.nb-step-emoji');
+      if (t && typeof t.focus === 'function') t.focus();
+    }
   });
   root.addEventListener('click', (e) => {
     let b;
+    // Move up lets go of the focus first: the row holding it is never moved by a repaint (nbsSyncRows), so it would stay put
+    // under the finger while the rest slid round it. The moved row glides up, and the focus is put back on it afterwards.
     if ((b = q(e, '.nb-zone-move'))) {
       const team = b.dataset.team;
-      if (nbsZoneUp(team)) { // the button may have gone (the first row has none): keep the focus in the row
+      const had = focusWas(b); // a tap that never focused it (iOS) gets no focus back: the place field would raise the keyboard
+      if (had && typeof b.blur === 'function') b.blur();
+      if (nbsZoneUp(team) && had) { // the button may have gone (the first row has none): keep the focus in the row
         const row = root.querySelector('.nbs-zone[data-team="' + team + '"]');
         const up = row && row.querySelector('.nbs-up');
-        const to = up && !up.hidden ? up : row && row.querySelector('.nb-zone-place');
-        if (to && typeof to.focus === 'function') { try { to.focus({ preventScroll: true }); } catch (x) { /* fine */ } }
+        focusBack(true, up && !up.hidden ? up : row && row.querySelector('.nb-zone-place'));
       }
-    } else if ((b = q(e, '.nb-step-move'))) nbsStepUp(+b.dataset.idx);
+    } else if ((b = q(e, '.nb-step-move'))) {
+      const had = focusWas(b);
+      const key = b.closest('.nbs-step') && b.closest('.nbs-step').dataset.key;
+      if (had && typeof b.blur === 'function') b.blur();
+      if (nbsStepUp(+b.dataset.idx) && had) { // on the first place its Move up hides: the focus goes to the step's emoji tile
+        const row = root.querySelector('.nbs-step[data-key="' + key + '"]');
+        const up = row && row.querySelector('.nb-step-move');
+        focusBack(true, up && !up.hidden ? up : row && row.querySelector('.nb-step-emoji'));
+      }
+    } else if ((b = q(e, '.nb-step-emoji'))) nbsEmoPicker(b.closest('.nbs-step'));
+    else if ((b = q(e, '.nbs-emo-pick .si-emo'))) nbsEmoPick(b.closest('.nbs-step'), b.dataset.emo);
     else if ((b = q(e, '.nb-step-remove'))) nbsStepRemove(+b.dataset.idx, b.closest('.nbs-step'));
     else if (q(e, '#nbs-add-step')) nbsStepAdd();
+    else if (q(e, '#nbs-see')) {
+      const to = setupEl('nbs-preview-label');
+      if (to && typeof to.scrollIntoView === 'function') to.scrollIntoView({ behavior: typeof calmMotion === 'function' && calmMotion() ? 'auto' : 'smooth', block: 'start' });
+    }
     else if (q(e, '#nbs-post')) nbsPost();
     else if (q(e, '#nbs-down')) nbsDown();
     else if (q(e, '#nbs-reset')) nbsStartOver('reset');

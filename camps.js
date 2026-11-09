@@ -646,7 +646,7 @@ function seniorDefaultNotice() {
     status: 'draft',
     eyebrow: '🧹 Campground cleanup',
     title: 'Where your team cleans',
-    sub: 'Assignments to come — edit this notice in Settings → Set up the week → Notice.',
+    sub: 'Assignments to come.',
     zones: [
       { teamId: 't0', place: 'TBA', note: '' },
       { teamId: 't1', place: 'TBA', note: '' },

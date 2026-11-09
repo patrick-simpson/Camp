@@ -4940,10 +4940,11 @@ button.cb-row:active {
   box-shadow: inset 0 0 0 5px var(--ink);
 }
 
-/* What the config engine set aside (settings.js configNotesHtml: "Put it back
+/* What the config engine set aside (setup-ui.js configNotesHtml: "Put it back
    with my changes", "Use mine"): the clash look, not an amber callout. One
-   hairline-divided strip above the builder's tabs; the buttons are small
-   chunky ones, Discard in danger text. Empty ⇒ zero height. */
+   hairline-divided strip at the TOP of the Games screen, above the day it shows
+   (a note is about a game on any day, never the day under it); the buttons are
+   small chunky ones, Discard in danger text. Empty ⇒ zero height. */
 .settings-notes:not(:empty) {
   margin: 0 0 var(--s-3);
   border-top: 1px solid var(--line-2);
@@ -10393,7 +10394,7 @@ select.form-input {
   padding: 0.5rem 0.7rem;
 }
 
-/* What the config engine set aside (settings.js, configNotesHtml): a record removed
+/* What the config engine set aside (setup-ui.js, configNotesHtml, on the Games screen): a record removed
    while an edit of mine was on its way, an offline change that lost a clash. Its
    look is the clash's (SET UP THE WEEK above, next to .clash); only the layout of
    the two lines lives here. */
@@ -14746,7 +14747,11 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
 }
 .nb-zone {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr) minmax(0, auto);
+  /* The team's name keeps a floor (7.5rem, or under half the row) and the place
+     wraps beside it: with `minmax(0, auto)` a long place took its whole width
+     and starved the name to one letter a line, on a counselor's See all and in
+     the director's preview alike. */
+  grid-template-columns: 26px minmax(min(7.5rem, 45%), 1fr) minmax(0, max-content);
   align-items: center;
   column-gap: 10px;
   min-height: 3rem;
@@ -14771,6 +14776,7 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
 }
 .nb-place {
   min-width: 0;
+  max-width: 100%;
   text-align: right;
   font: 800 1rem/1.25 var(--font-ui);
   overflow-wrap: break-word;
@@ -18879,9 +18885,13 @@ jelly-chip.sched-day-chip[data-today][selected] {
   padding-bottom: 0;
 }
 /* Every row layout below follows the list's own width in its own text size, so
-   130% and 200% text step down by themselves (the hub rows' 18em test). */
+   130% and 200% text step down by themselves (the hub rows' 18em test). The
+   rows are never the browser's scroll anchor: when a step or a team moves, the
+   page must not scroll to pin some other row in place (every row on screen then
+   slid by the moved row's height); the moved rows glide, the rest stay. */
 .nbs-list {
   container-type: inline-size;
+  overflow-anchor: none;
 }
 /* A field row: its label over the field, a hairline between rows. */
 .nbs-fld {
@@ -18963,8 +18973,8 @@ jelly-chip.sched-day-chip[data-today][selected] {
   display: none;
 }
 .nbs-up .ico {
-  width: 20px;
-  height: 20px;
+  width: 1.25em; /* with the type: it stays beside a 200% team name, not a speck */
+  height: 1.25em;
   stroke-width: 2.4;
 }
 .nbs-up:active {
@@ -19007,6 +19017,7 @@ jelly-chip.sched-day-chip[data-today][selected] {
   grid-template-columns: minmax(30px, max-content) minmax(0, 1fr);
   grid-template-areas:
     "num  head"
+    ".    pick"
     ".    items"
     ".    acts";
   column-gap: 10px;
@@ -19031,19 +19042,26 @@ jelly-chip.sched-day-chip[data-today][selected] {
   gap: 8px;
   min-width: 0;
 }
-/* The emoji: a 48px square of its own, the glyph a fixed size (it doesn't grow
-   past the square at 200% text); empty, a link-blue "+" like the Meals screen's. */
-.nbs-emo {
+/* The emoji: the Meals screen's tile (.sec-emo-btn: a 44px square, the
+   heading box's height, the glyph a fixed size; empty, a link-blue "+"). A tap
+   opens the game sheet's grid under the heading (.si-emoji: 44px choices and
+   an Other box); a pick closes it. */
+.nbs-step-head .nbs-emo {
   flex: none;
-  width: 48px;
-  padding: 0;
-  text-align: center;
-  font-size: 22px;
-  line-height: 1;
 }
-.nbs-emo::placeholder {
-  color: var(--link);
-  font: 750 22px/1 var(--font-ui);
+.nbs-emo-pick {
+  grid-area: pick;
+  margin-top: 0;
+}
+.nbs-emo-pick[hidden] {
+  display: none;
+}
+.nbs-emo-pick .nbs-emo-none {
+  width: auto;
+  min-width: var(--target);
+  padding: 0 10px;
+  color: var(--ink-2);
+  font: 750 0.875rem/1 var(--font-ui);
 }
 .nbs-when {
   flex: 1 1 auto;
@@ -19062,6 +19080,21 @@ jelly-chip.sched-day-chip[data-today][selected] {
   margin: 0 -8px;
   padding: 0 8px;
 }
+/* Move up says it in a word AND an arrow (the teams' Move up is the arrow
+   alone at the row's edge, with the same icon), sized with the words. */
+.nbs-acts .nb-step-move {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+}
+.nbs-acts .nb-step-move[hidden] {
+  display: none;
+}
+.nbs-acts .nb-step-move .ico {
+  width: 1.15em;
+  height: 1.15em;
+  stroke-width: 2.4;
+}
 .nbs-acts .btn-quiet-danger {
   margin-left: auto;
 }
@@ -19072,6 +19105,7 @@ jelly-chip.sched-day-chip[data-today][selected] {
   .nbs-step {
     grid-template-areas:
       "num   emo"
+      "pick  pick"
       "when  when"
       "items items"
       "acts  acts";
@@ -19095,6 +19129,42 @@ jelly-chip.sched-day-chip[data-today][selected] {
    steps before the first one is added. */
 .nbs-list:empty {
   display: none;
+}
+/* The way down to the picture: one link-blue line under the lede (a 44px row
+   that is only as wide as its words), hidden with the picture. */
+/* Inline, not flex: when the words wrap at large text the chevron stays at the
+   end of them instead of floating at the far edge. 10px + 24px + 10px = 44. */
+.nbs-see {
+  display: inline-block;
+  min-height: var(--target);
+  margin: var(--s-1) -8px 0;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--link);
+  font: 750 1rem/1.5 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.nbs-see .ico {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin-left: 0.25em;
+  vertical-align: -0.25em;
+  stroke-width: 2.4;
+}
+.nbs[data-state="empty"] .nbs-see,
+.nbs[data-state="hollow"] .nbs-see {
+  display: none;
+}
+/* One plain line under the teams: a long place wraps on a phone beside the
+   name, so the screen says to keep it short (the box stops at 40). */
+.nbs-hint {
+  margin: var(--s-2) 0 0;
+  font: var(--t-meta);
+  color: var(--ink-2);
 }
 
 /* ── The preview: Tell everyone's phone outline (.tell-phone), holding the
@@ -19131,13 +19201,19 @@ jelly-chip.sched-day-chip[data-today][selected] {
   padding: 0 8px;
   text-align: left;
 }
+/* Nothing written: there is nothing to clear (the question would ask, then do
+   nothing). Hollow keeps it: clearing also takes the notice down. */
+.nbs[data-state="empty"] #nbs-clear {
+  display: none;
+}
 
 /* ── The dock: ONE action, chosen by the section's data-state. Empty is the
    dashed well naming what's missing (no pin on it: nothing is pinned yet);
    posted is a plain chunky button with what it keeps under the verb. ── */
 .nbs-dock .btn .ico {
-  width: 20px;
-  height: 20px;
+  flex: none;
+  width: 1.2em; /* with the label's type, so the pin stays a part of its words at 200% */
+  height: 1.2em;
   stroke-width: 2.4;
 }
 .nbs[data-state="posted"] .nbs-post,
@@ -19147,6 +19223,17 @@ jelly-chip.sched-day-chip[data-today][selected] {
 }
 .nbs-post[aria-disabled="true"] .ico {
   display: none;
+}
+/* The pin rides the label's FIRST line (one flex item holding both): beside a
+   label that wraps at large text it floated at the far left of the button. */
+.nbs-post-l {
+  display: block;
+  min-width: 0;
+}
+.nbs-post-l .ico {
+  display: inline-block;
+  margin-right: 0.35em;
+  vertical-align: -0.2em;
 }
 .nbs-down {
   flex-direction: column;
