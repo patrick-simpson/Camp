@@ -30,9 +30,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-11-09T12:56:22Z';
+const CODE_UPDATED_AT = '2026-11-09T15:50:28Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 214;
+const APP_VERSION = 215;
 
 // "What's new" notes (owner's answer of Nov 9, 2026; engine under "What's new notes" below, design in CLAUDE.md). Each entry
 // is a short, plain-English note about a change people would notice, shown ONE AN HOUR per phone in Now's message strip.
@@ -43,7 +43,7 @@ const APP_VERSION = 214;
 // its words: "Show me the Games tab") }.
 // THE DEPLOY MUST SET `WHATS_NEW_SHIPPED_AT` (the one `at` every note of this deploy carries) to the deploy's UTC time, the
 // same moment as CODE_UPDATED_AT; the next deploy's notes carry their own constant or literal `at`.
-const WHATS_NEW_SHIPPED_AT = '2026-11-09T12:56:22Z';
+const WHATS_NEW_SHIPPED_AT = '2026-11-09T15:50:28Z';
 const CHANGES = [
   { id: 'four-tabs', at: WHATS_NEW_SHIPPED_AT, for: 'counselors', text: 'Camp now has four tabs: Now, Games, Chat and More.' },
   { id: 'score-from-games', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['games'], text: 'Score each game from its row on the Games tab.', show: { to: 'games', where: 'the Games tab' } },
