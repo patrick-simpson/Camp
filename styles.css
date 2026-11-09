@@ -7216,41 +7216,6 @@ jelly-chip.sched-day-chip .today-dot {
   position: relative;
 }
 
-.sched-block {
-  display: grid;
-  grid-template-columns: 1.25rem 1fr;
-  gap: 0.65rem;
-}
-
-.sched-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.sched-dot {
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 50%;
-  background: var(--color-border);
-  margin-top: 0.9rem;
-  flex: 0 0 auto;
-  z-index: 1;
-}
-
-/* Connecting line between dots. */
-.sched-rail::after {
-  content: '';
-  flex: 1 1 auto;
-  width: 2px;
-  background: var(--color-border);
-  margin-top: -0.1rem;
-}
-
-.sched-block:last-child .sched-rail::after {
-  display: none;
-}
-
 .sched-card {
   padding: 0.6rem 0.8rem 0.75rem;
   margin-bottom: 0.6rem;
@@ -7300,18 +7265,9 @@ jelly-chip.sched-day-chip .today-dot {
   box-shadow: var(--shadow-card);
 }
 
-.sched-block.now .sched-dot {
-  background: var(--color-primary);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 22%, transparent);
-}
-
 /* Past blocks: dimmed so the eye lands on what's next. */
 .sched-block.past .sched-card {
   opacity: 0.55;
-}
-
-.sched-block.past .sched-dot {
-  background: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
 }
 
 /* Meal blocks get a warm accent. */
@@ -7722,25 +7678,6 @@ body.builder-open .sync-status-footer {
   margin-left: 0.4rem;
 }
 
-/* "You" highlight on the schedule sheet's station rows. The tint rides --color-primary via color-mix, so dark theme adapts for free. */
-.sched-station-you {
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg));
-  border-radius: var(--radius-md);
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-primary) 45%, transparent);
-}
-/* Base .sched-station has no padding — give the highlighted row room so the
-   ring doesn't hug the text. */
-.sched-station-you {
-  padding: 0.35rem 0.5rem;
-}
-.sched-station-you .sched-station-name {
-  color: var(--color-primary-dark);
-}
-.sched-you {
-  color: var(--color-primary-dark);
-  font-weight: 800;
-}
-
 .sched-ics-row {
   margin-top: 1rem;
   text-align: center;
@@ -7762,20 +7699,6 @@ body.builder-open .sync-status-footer {
   color: var(--color-text-muted);
   font-size: 0.8rem;
   line-height: 1.35;
-}
-
-/* The viewer's own station, pinned next to an elective block's label. */
-.sched-you-chip {
-  display: inline-block;
-  margin-left: 0.4rem;
-  padding: 0.05rem 0.45rem;
-  border: 1px solid var(--color-primary);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
-  color: var(--color-primary-dark);
-  font-size: 0.72rem;
-  font-weight: 800;
-  white-space: nowrap;
 }
 
 .medal-points {
@@ -8599,40 +8522,6 @@ body.builder-open .sync-status-footer {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.5rem;
-}
-
-.counter-btn {
-  flex: 1;
-  min-height: 3.25rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  border: 1.5px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 1.15rem;
-  font-weight: 800;
-  font-family: inherit;
-  cursor: pointer;
-  transition: transform 0.05s ease;
-}
-
-.counter-btn:active {
-  transform: scale(0.96);
-}
-
-.counter-btn.plus {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-}
-
-.counter-btn.minus {
-  max-width: 5rem;
-  color: var(--color-danger-text);
-  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
 }
 
 .counter-btn-sub {
@@ -9504,18 +9393,16 @@ jelly-button.secondary-btn {
   --jelly-button-height: 44px;
   --jelly-button-font-size: 0.95rem;
 }
-/* The legacy `.counter-btn.plus` chrome (0,2,0) outranks the host reset above
-   (0,1,1) and painted a pale square behind every +N pill. */
-jelly-button.counter-btn.plus,
-jelly-button.counter-btn.minus {
-  background: none;
-}
 jelly-button.counter-btn {
   flex: 1;
   display: block;
   --jelly-button-height: 52px;
   --jelly-button-font-size: 1.05rem;
   --jelly-button-padding-inline: 8px;
+}
+/* Taking one off is the narrower key: the row's weight stays on adding. */
+jelly-button.counter-btn.minus {
+  max-width: 5rem;
 }
 jelly-button.counter-btn .counter-btn-sub {
   display: block;
@@ -18109,9 +17996,6 @@ button.gs-row:focus-visible {
 .sched-block:first-child {
   border-top: 0;
 }
-.sched-rail {
-  display: none;
-}
 .sched-card,
 .sched-block.now .sched-card,
 .sched-block.meal .sched-card,
@@ -18208,17 +18092,24 @@ button.gs-row:focus-visible {
   border-radius: 8px;
   box-shadow: inset 0 0 0 2px var(--ink);
 }
+/* My own name in a station's list: ink and a weight step up, the one mark left now that the star is gone (the row
+   carries the ink outline above). Never the camp blue: blue is focus and links. */
 .sched-station-you .sched-station-name,
 .sched-you {
   color: var(--ink);
+}
+.sched-you {
+  font-weight: 800;
 }
 .sched-break .sched-station-name {
   font-style: normal;
   color: var(--ink-2);
 }
 .sched-you-chip {
+  display: inline-block;
   max-width: 100%;
   margin-left: 6px;
+  border-radius: var(--r-tag); /* the app's one tag shape (the old pill went with its blue) */
   padding: 1px 7px;
   border: 1.5px solid var(--ink);
   background: none;
@@ -19226,6 +19117,7 @@ jelly-chip.sched-day-chip[data-today][selected] {
   font: 600 0.8125rem/1.2 var(--font-ui);
   color: var(--ink-2);
 }
+
 /* ============================================================
    STEP 29, FINISHED: the bracket's keys, score entry's Save in the
    dock, the four-team card before it starts (the design pass; each

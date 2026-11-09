@@ -2647,7 +2647,6 @@ function renderScheduleBody() {
     }
 
     return `<div class="sched-block ${status} ${meal ? 'meal' : ''}">
-      <div class="sched-rail"><span class="sched-dot"></span></div>
       <div class="sched-card">
         <div class="sched-time">${raw.noTime ? '' : gamesWhen(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
         <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${hid.cleanup ? '' : mealCleanupNote(dow, b.label, blockMeal(raw))}${labelBadge}</div>
