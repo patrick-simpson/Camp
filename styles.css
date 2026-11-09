@@ -16805,17 +16805,42 @@ button.gs-row:focus-visible {
   overflow: visible;
 }
 
-/* ── The day's sheet (#sheet-sg-day) ── */
+/* ── The day's sheet (#sheet-sg-day) ──
+   Three fields, each with its one hint line under it (a group: the hint belongs to the field above, never to the next), then
+   the danger row a step further down. The weekday strip is the When pane's: seven chips that fit a 360px sheet at 100%, and
+   that scroll sideways (fading at the edge they continue past) at large text. */
 .sg-day-body {
   display: grid;
   grid-auto-rows: max-content;
-  gap: var(--s-3);
+  gap: var(--s-4);
 }
-.sg-day-body > .tms-hint {
-  margin-top: -6px;
+.sg-day-fld {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.sg-day-fld > .tms-hint,
+.sg-day-fld > .fld-warn {
+  margin: 0 2px;
+}
+.sg-day-dows {
+  margin: 0;
+}
+.sg-day-dows .daypick-btn {
+  min-width: 44px;
+  padding-inline: 0.25em; /* in em: the dashed edge below must clear the letters at 200% too */
+}
+/* A weekday that is already a games day: still a real button (a tap says why, in the gold "!" line under the hint), drawn as
+   the app's "unavailable" — a dashed ink-3 edge inside the chip (an outline, so the chip keeps its size) and the name a step
+   quieter in weight, never lighter than ink-2. */
+.sg-day-dows .daypick-btn[data-taken]:not([aria-checked="true"]) {
+  outline: 1.5px dashed var(--ink-3);
+  outline-offset: -4px;
+  color: var(--ink-2);
+  font-weight: 600;
 }
 .sg-day-acts {
-  margin-top: var(--s-3);
+  margin-top: var(--s-2);
 }
 
 @media (prefers-contrast: more) {
