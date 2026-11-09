@@ -9585,7 +9585,7 @@ function nywMonthWords(ymd) {
 }
 
 const NYW_CARRY_WORDS = {
-  schedule: 'The schedule back to the one the app came with', games: 'Games back to the ones the app came with', teams: 'Team names, emoji and colours back to the app’s own',
+  schedule: 'The schedule back to the one the app came with', games: 'Games back to the ones the app came with', teams: 'Team names, emoji and colours',
   counselors: 'Counselor names typed on teams', photos: 'Team photos', cleanup: 'Cleanup rota', meals: 'Meal menus', verses: 'Memory verses and theme',
   stations: 'Elective stations', stationPeople: 'Who’s at each station',
 };
@@ -10223,7 +10223,7 @@ function nywClearRows(a) {
     if (a.carry[k] !== 'clear' || !NYW_CARRY_WORDS[k]) return;
     if ((k === 'stations' || k === 'stationPeople') && !(CAMP.features && CAMP.features.electives)) return;
     if (k === 'stationPeople' && a.carry.stations === 'clear') return;
-    add('c-' + k, { mark: 'item' }, NYW_CARRY_WORDS[k], '');
+    add('c-' + k, { mark: 'item' }, NYW_CARRY_WORDS[k], k === 'teams' ? 'Teams become Team 1 to Team ' + CAMP.teamCount : '');
   });
   if (c.noticePosted) add('notice', { mark: 'item' }, 'Notice board · back to a draft', '');
   const mem = nywUi.members;
@@ -10266,6 +10266,7 @@ function paintNywStep5(out, next) {
   if (nywUi.a1Ran) add('a1', 'Editing turned on for the schedule', '');
   add('saved', (out || 'Last year') + ' saved', 'In Restore points, under Past years');
   add('cleared', 'Scoreboard cleared', '');
+  if (d ? d.teams : dd.teams) add('teams', 'Teams renamed Team 1 to Team ' + CAMP.teamCount, '');
   if (cleared) add('members', cleared + ' ' + nywWord(cleared, 'counselor taken off their team', 'counselors taken off their teams'), '');
   setHtmlIfChanged(setupEl('nyw-done-list'), rows);
   const failed = d ? d.members.failed.concat(d.members.incomplete.filter((p) => !d.members.failed.some((f) => f.key === p.key))) : [];

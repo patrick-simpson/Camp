@@ -133,6 +133,7 @@ test('the whole walk on screen: Start, a date, what carries over, save and check
     assert.equal(nywEl('nyw-hold-confirm').hidden, true);
     assert.ok(/game result/.test(nywEl('nyw-clear-list').innerHTML) && /data-key="campers-all"/.test(nywEl('nyw-clear-list').innerHTML), 'camper names are always named in the clear list (the count once held, else in words): ' + nywEl('nyw-clear-list').innerHTML);
     assert.ok(/counselors? taken off/.test(nywEl('nyw-clear-list').innerHTML), 'the members that will move: ' + nywEl('nyw-clear-list').innerHTML);
+    if (wizardAnswers().carry.teams === 'clear') assert.ok(new RegExp('Teams become Team 1 to Team ' + CAMP.teamCount).test(nywEl('nyw-clear-list').innerHTML), 'the tally says what a clear does to team names');
     assert.equal(nywEl('nyw-members-warn').hidden, false, 'the incomplete sign-in is named before the hold');
     // a tap reveals the two-tap alternative in the hold's place
     nywUi.clear.reveal = true; renderNywScreen();

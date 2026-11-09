@@ -4762,8 +4762,9 @@ function wizardClearUpdate(inp) {
     if (carry.counselors === 'clear' && t.counselor !== undefined && t.counselor !== '') u[p + 'counselor'] = null;
     if (carry.photos === 'clear' && t.photoV !== undefined) u[p + 'photoV'] = null;
     if (carry.teams === 'clear') {
-      const dflt = DEFAULT_TEAM_NAMES[i];
-      if (dflt !== undefined && t.name !== dflt) u[p + 'name'] = dflt;
+      // Owner's answer of Nov 9, 2026: a cleared team is plain "Team 1" … "Team N", not the camp's themed default.
+      const plain = 'Team ' + (i + 1);
+      if (t.name !== plain) u[p + 'name'] = plain;
       ['short', 'emoji', 'color'].forEach((f) => { if (t[f] !== undefined) u[p + f] = null; });
     }
   });
@@ -4934,9 +4935,10 @@ async function wizardClear(opts) {
   // 4. Then, best-effort, the counselors' teams.
   const moved = await wizardTakeMembersOff(carryMembers);
   const epoch = plan.updates['state/meta/epoch'];
-  const done = { epoch, at: Date.now(), archiveId, counts: plan.counts, members: { cleared: moved.cleared, failed: moved.failed, incomplete: members.incomplete } };
+  const teamsRenamed = answers.carry.teams === 'clear';
+  const done = { epoch, at: Date.now(), archiveId, counts: plan.counts, teams: teamsRenamed, members: { cleared: moved.cleared, failed: moved.failed, incomplete: members.incomplete } };
   const d = wizardDraftRead();
-  d.done = { epoch, at: done.at, archiveId, counts: plan.counts, cleared: moved.cleared, failed: moved.failed.length };
+  d.done = { epoch, at: done.at, archiveId, counts: plan.counts, teams: teamsRenamed, cleared: moved.cleared, failed: moved.failed.length };
   d.preWizard = '';
   wizardDraftWrite();
   setupNotify('tree');

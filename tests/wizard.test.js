@@ -286,7 +286,18 @@ test('the carry-over answers decide the setup paths: Keep writes nothing, Clear 
   assert.ok(sch.updates.config.games.every((g) => typeof g.blockId === 'string'));
   // the app's team names
   const t = wzPlan({ answers: { carry: { teams: 'clear' } } });
-  state.teams.forEach((tm, i) => { if (tm.name !== DEFAULT_TEAM_NAMES[i]) assert.equal(t.updates['state/teams/' + i + '/name'], DEFAULT_TEAM_NAMES[i]); });
+  state.teams.forEach((tm, i) => {
+    const plain = 'Team ' + (i + 1);
+    if (tm.name !== plain) assert.equal(t.updates['state/teams/' + i + '/name'], plain, 'a cleared team is plain Team N, not the camp\u2019s themed name');
+    assert.equal(t.updates['state/teams/' + i + '/short'], tm.short !== undefined ? null : undefined, 'short name goes');
+  });
+  assert.equal(Object.keys(t.updates).filter((k) => /^state\/teams\/\d+\/name$/.test(k)).every((k) => /^Team \d$/.test(t.updates[k])), true);
+  // once the wizard stamped an epoch, the 2026 roster migration never swaps "Team N" back
+  freshState();
+  state.teams = state.teams.map((tm, i) => Object.assign({}, tm, { name: 'Team ' + (i + 1), counselor: '' }));
+  state.meta.epoch = 'w20270718';
+  normalizeSyncedState();
+  assert.deepEqual(state.teams.map((tm) => tm.name), state.teams.map((tm, i) => 'Team ' + (i + 1)));
 });
 
 test('a clear that cannot be built is refused whole: no Sunday picked, or a roster that is not whole', () => {
