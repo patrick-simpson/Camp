@@ -1229,6 +1229,115 @@ function inDoubleBonusWindow() {
 
 const CAMP_TZ = 'America/New_York';
 
+// ── Formatters cache ─────────────────────────────────────────────────
+// Avoid re-instantiating Intl.DateTimeFormat in synchronous render loops
+let _fmtCampDateCache = null;
+function getCampDateFmt() {
+  if (!_fmtCampDateCache) {
+    try {
+      _fmtCampDateCache = new Intl.DateTimeFormat('en-CA', {
+        timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      });
+    } catch(e) {}
+  }
+  return _fmtCampDateCache;
+}
+
+let _fmtCampNowCache = null;
+function getCampNowFmt() {
+  if (!_fmtCampNowCache) {
+    try {
+      _fmtCampNowCache = new Intl.DateTimeFormat('en-US', {
+        timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+      });
+    } catch(e) {}
+  }
+  return _fmtCampNowCache;
+}
+
+let _fmtNowDateLongCache = null;
+function getNowDateLongFmt() {
+  if (!_fmtNowDateLongCache) {
+    try {
+      _fmtNowDateLongCache = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' });
+    } catch(e) {}
+  }
+  return _fmtNowDateLongCache;
+}
+
+let _fmtIcsSavedStampCache = null;
+function getIcsSavedStampFmt() {
+  if (!_fmtIcsSavedStampCache) {
+    try {
+      _fmtIcsSavedStampCache = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit', hour12: false });
+    } catch(e) {}
+  }
+  return _fmtIcsSavedStampCache;
+}
+
+let _fmtEasternStampCache = null;
+function getEasternStampFmt() {
+  if (!_fmtEasternStampCache) {
+    try {
+      _fmtEasternStampCache = new Intl.DateTimeFormat('en-US', {
+        timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+      });
+    } catch(e) {}
+  }
+  return _fmtEasternStampCache;
+}
+
+let _fmtStandingsSummaryCache = null;
+function getStandingsSummaryFmt() {
+  if (!_fmtStandingsSummaryCache) {
+    try {
+      _fmtStandingsSummaryCache = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' });
+    } catch(e) {}
+  }
+  return _fmtStandingsSummaryCache;
+}
+
+let _fmtGameSavedWordsCache = null;
+function getGameSavedWordsFmt() {
+  if (!_fmtGameSavedWordsCache) {
+    try {
+      _fmtGameSavedWordsCache = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+    } catch(e) {}
+  }
+  return _fmtGameSavedWordsCache;
+}
+
+let _fmtMessageClockPartsCache = null;
+function getMessageClockPartsFmt() {
+  if (!_fmtMessageClockPartsCache) {
+    try {
+      _fmtMessageClockPartsCache = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+    } catch(e) {}
+  }
+  return _fmtMessageClockPartsCache;
+}
+
+let _fmtMessageClockShortCache = null;
+function getMessageClockShortFmt() {
+  if (!_fmtMessageClockShortCache) {
+    try {
+      _fmtMessageClockShortCache = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short' });
+    } catch(e) {}
+  }
+  return _fmtMessageClockShortCache;
+}
+
+let _fmtMessageClockDayCache = null;
+function getMessageClockDayFmt() {
+  if (!_fmtMessageClockDayCache) {
+    try {
+      _fmtMessageClockDayCache = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric', month: 'numeric', day: 'numeric' });
+    } catch(e) {}
+  }
+  return _fmtMessageClockDayCache;
+}
+
+
 // The full set of kids at camp on a given day = everyone assigned to any
 // station across that day's elective slots. A kid missing from a particular
 // slot is on break for it (see electiveBreakKids).
@@ -1300,9 +1409,7 @@ let weatherData = null;
 // tell whether a cached forecast is still keyed to the right "today".
 function campDateStr() {
   try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date());
+    return getCampDateFmt() ? getCampDateFmt().format(new Date()) : '';
   } catch (e) { return ''; }
 }
 
@@ -1547,9 +1654,9 @@ function campNow() {
   const over = campNowOverride();
   if (over) return over;
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
-    }).formatToParts(new Date());
+    const fmt = getCampNowFmt();
+    if (!fmt) throw new Error();
+    const parts = fmt.formatToParts(new Date());
     const get = (type) => (parts.find((p) => p.type === type) || {}).value;
     const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
     const hour = parseInt(get('hour'), 10) % 24; // hour12:false renders midnight as "24"
@@ -1694,7 +1801,7 @@ function nowDateLong(str) {
   const p = String(str || '').split('-').map(Number);
   if (p.length !== 3 || p.some((x) => !Number.isFinite(x))) return '';
   try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(Date.UTC(p[0], p[1] - 1, p[2])));
+    return getNowDateLongFmt() ? getNowDateLongFmt().format(new Date(Date.UTC(p[0], p[1] - 1, p[2]))) : '';
   } catch (e) { return ''; }
 }
 
@@ -2874,7 +2981,9 @@ function icsWeekLabel(weekStart) {
 function icsSavedStamp(now) {
   const at = now || new Date();
   try {
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit', hour12: false }).formatToParts(at);
+    const fmt = getIcsSavedStampFmt();
+    if (!fmt) throw new Error();
+    const parts = fmt.formatToParts(at);
     const get = (t) => (parts.find((p) => p.type === t) || {}).value || '';
     const h = String(parseInt(get('hour'), 10) % 24).padStart(2, '0');
     const mi = get('minute');
@@ -3315,9 +3424,9 @@ function formatEasternStamp(iso) {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
-  }).formatToParts(d);
+  const fmt = getEasternStampFmt();
+  if (!fmt) return null;
+  const parts = fmt.formatToParts(d);
   const get = (type) => (parts.find((p) => p.type === type) || {}).value;
   return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
 }
@@ -7915,7 +8024,8 @@ function bindMatchupCopy(body, g, stage, aId, bId) {
 }
 
 function standingsSummaryText() {
-  const campDate = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
+  const fmt = getStandingsSummaryFmt();
+  const campDate = fmt ? fmt.format(new Date()) : '';
   const lines = ['🏅 Camp — ' + campDate];
   // Points and places are directors' eyes only (see "Standings secrecy"): the
   // table is built only for them, so a viewer who reaches Copy / Share — the
@@ -9315,7 +9425,7 @@ function gameResultState(gid) {
 function gameSavedWords(state_, savedAt) {
   const d = savedAt ? new Date(savedAt) : null;
   const at = d && !Number.isNaN(d.getTime())
-    ? ' ' + new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
+    ? ' ' + (getGameSavedWordsFmt() ? getGameSavedWordsFmt().format(d) : '')
     : '';
   if (state_ === 'saved') return 'Saved' + at + ' · everyone’s phone has it';
   if (state_ === 'saving') return 'Saving…';
@@ -12828,12 +12938,15 @@ function messageClock(iso, timeOnly) {
   const d = new Date(iso);
   if (!iso || Number.isNaN(d.getTime())) return '';
   try {
-    const fmt = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: CAMP_TZ }, o)).formatToParts(d);
-    const t = fmt({ hour: 'numeric', minute: '2-digit', hour12: true });
+    const fmtParts = getMessageClockPartsFmt();
+    if (!fmtParts) throw new Error();
+    const t = fmtParts.formatToParts(d);
+    const fmtShort = getMessageClockShortFmt();
     const get = (parts, type) => ((parts.find((p) => p.type === type) || {}).value || '').replace(/[  ]/g, ' ');
     const clock = get(t, 'hour') + ':' + get(t, 'minute') + ' ' + get(t, 'dayPeriod').toUpperCase();
-    const day = (x) => new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric', month: 'numeric', day: 'numeric' }).format(x);
-    return timeOnly || day(d) === day(new Date()) ? clock : get(fmt({ weekday: 'short' }), 'weekday') + ' ' + clock;
+    const dayFmt = getMessageClockDayFmt();
+    const day = (x) => dayFmt ? dayFmt.format(x) : '';
+    return timeOnly || day(d) === day(new Date()) ? clock : get(fmtShort ? fmtShort.formatToParts(d) : [], 'weekday') + ' ' + clock;
   } catch (e) { return ''; }
 }
 

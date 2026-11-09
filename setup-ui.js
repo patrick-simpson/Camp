@@ -1345,19 +1345,26 @@ function setupUndoRun(id) {
 }
 
 // The clock time and a short day word for a moment, in camp time (never the device's zone).
+let _fmtSetupClockTime = null;
+let _fmtSetupClockDay = null;
+let _fmtSetupClockWord = null;
 function setupClockParts(ms) {
   try {
-    const t = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(ms));
-    const day = (x) => new Intl.DateTimeFormat('en-CA', { timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(x));
+    if (!_fmtSetupClockTime) _fmtSetupClockTime = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+    if (!_fmtSetupClockDay) _fmtSetupClockDay = new Intl.DateTimeFormat('en-CA', { timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const t = _fmtSetupClockTime.format(new Date(ms));
+    const day = (x) => _fmtSetupClockDay.format(new Date(x));
     const now = Date.now();
     let word;
     if (day(ms) === day(now)) word = 'Today';
     else if (day(ms) === day(now - 86400000)) word = 'Yesterday';
-    else word = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(ms)).replace(',', '');
+    else { if (!_fmtSetupClockWord) _fmtSetupClockWord = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }); word = _fmtSetupClockWord.format(new Date(ms)).replace(',', ''); }
     return { time: t, day: word };
   } catch (e) { return { time: '', day: '' }; }
 }
 
+let _fmtSetupTimeY = null;
+let _fmtSetupTimeMD = null;
 function setupTimeCell(ms) {
   const p = setupClockParts(ms);
   return '<span class="cb-time">' + esc(p.time) + '<small>' + esc(p.day) + '</small></span>';
@@ -1557,8 +1564,10 @@ function rpWho(row) {
 function rpYearCell(ms) {
   try {
     const d = new Date(ms);
-    const y = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric' }).format(d);
-    const md = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, month: 'short', day: 'numeric' }).format(d);
+    if (!_fmtSetupTimeY) _fmtSetupTimeY = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric' });
+    if (!_fmtSetupTimeMD) _fmtSetupTimeMD = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, month: 'short', day: 'numeric' });
+    const y = _fmtSetupTimeY.format(d);
+    const md = _fmtSetupTimeMD.format(d);
     return '<span class="cb-time">' + esc(y) + '<small>' + esc(md) + '</small></span>';
   } catch (e) { return setupTimeCell(ms); }
 }

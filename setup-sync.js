@@ -1716,7 +1716,10 @@ function restoreAutoForEdit() {
   if (now - rpLastAt < RP_AUTO_IDLE_MS || now - rpLastAutoAt < RP_AUTO_MIN_MS) return;
   if (!restoreOnline() || !setupRef || !setupReady) return;
   let when = '';
-  try { when = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(now)); } catch (e) { when = ''; }
+  if (!_fmtSetupSyncTimeCache) {
+    try { _fmtSetupSyncTimeCache = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true }); } catch (e) {}
+  }
+  if (_fmtSetupSyncTimeCache) when = _fmtSetupSyncTimeCache.format(new Date(now));
   const first = typeof memberName === 'string' && memberName.trim() ? memberName.trim().split(/\s+/)[0] : 'a director';
   rpLastAutoAt = now; // claim the slot now: the write is async
   restoreSave('auto', 'Before ' + first + '’s edits' + (when ? ', ' + when : '')).catch(() => {});

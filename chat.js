@@ -943,17 +943,27 @@ function renderChatBadges() {
   });
 }
 
+let _fmtChatDay = null;
 function chatDayStamp(atMs) {
   if (!atMs) return '';
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'long', month: 'short', day: 'numeric' })
-    .format(new Date(atMs));
+  if (!_fmtChatDay) {
+    try {
+      _fmtChatDay = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'long', month: 'short', day: 'numeric' });
+    } catch (e) { return ''; }
+  }
+  const parts = _fmtChatDay.format(new Date(atMs));
   return parts;
 }
 
+let _fmtChatTime = null;
 function chatTimeStamp(atMs) {
   if (!atMs) return '';
-  return new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true })
-    .format(new Date(atMs)).toLowerCase();
+  if (!_fmtChatTime) {
+    try {
+      _fmtChatTime = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+    } catch (e) { return ''; }
+  }
+  return _fmtChatTime.format(new Date(atMs)).toLowerCase();
 }
 
 function chatBubbleHTML(ch, msg) {
