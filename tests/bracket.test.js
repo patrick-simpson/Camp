@@ -316,7 +316,7 @@ test('the bye: the Round 1 winner with the fewest points is suggested; a tie sug
     toBye(w, g);
     assert.ok(/The app suggests <strong>[^<]+<\/strong> — but you decide/.test(w.html()), w.html());
     assert.ok(w.html().indexOf(teamName('t2')) !== -1);
-    assert.ok(/suggested-chip/.test(w.html()) && /⭐/.test(w.html()), 'one chip is starred');
+    assert.ok(/suggested-chip/.test(w.html()) && /· suggested/.test(w.html()) && !/⭐/.test(w.html()), 'one chip is marked suggested, in words (the star is gone, on purpose)');
     assert.ok(/0 pts this week · suggested/.test(w.html()) && /7 pts this week/.test(w.html()) && /5 pts this week/.test(w.html()));
   });
   // Two winners tied for the fewest: pick whoever you like.

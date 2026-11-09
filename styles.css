@@ -8272,6 +8272,10 @@ body.builder-open .sync-status-footer {
 }
 
 .live-kicking-team {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
   font-weight: 700;
   font-size: 0.95rem;
   text-align: right;
@@ -9504,7 +9508,9 @@ jelly-icon-button.bonus-remove-btn {
 }
 .ladder-team-head { margin-bottom: 0.3rem; }
 .ladder-team-name {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--color-text);
@@ -19202,4 +19208,19 @@ button.copy-matchup-btn .ico {
    ordinary key's edge: */
 .pp-team[data-taken]:not([aria-disabled="true"]) .pp-taken {
   color: var(--ink);
+}
+
+/* The older bracket views carry a team's mark (bracketMarkHtml) beside the name: the ladder tracker's team head, the free-pick and
+   bye chips. A shield camp's mark is its emoji, so nothing here is an image that a rebuild re-creates. */
+.ladder-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  line-height: 1;
+}
+.live-kicking-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  line-height: 1;
 }

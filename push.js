@@ -419,7 +419,7 @@ function pushAudienceLabel(audience) {
   if (audience === 'followers') return 'People who follow these items';
   if (PUSH_TEAM_RE.test(String(audience || '')) && typeof teamName === 'function') {
     const t = (typeof state !== 'undefined' && state.teams || []).find((x) => x.id === audience);
-    return t ? `${teamEmoji(audience)} ${t.name} counselors` : 'One team';
+    return t ? `${t.name} counselors` : 'One team';
   }
   return 'Everyone';
 }
@@ -1633,7 +1633,7 @@ function pushComposerHTML() {
   const d = pushAlertDraft;
   const teams = ((typeof state !== 'undefined' && state.teams) || []).filter((t) => PUSH_TEAM_RE.test(t.id));
   const audiences = [['all', 'Everyone'], ['editors', 'Directors only']]
-    .concat(teams.map((t) => [t.id, `${teamEmoji(t.id)} ${t.name}`]));
+    .concat(teams.map((t) => [t.id, t.name]));
   if (!audiences.some((a) => a[0] === d.audience)) d.audience = 'all';
   return `<section class="pa-section">
     <h3 class="pa-heading">Send an alert</h3>

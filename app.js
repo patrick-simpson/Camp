@@ -10919,8 +10919,10 @@ function renderTournament(container, g) {
   // bracket object and build in several writes — so forget the key the static
   // cards above (and the other entry forms) compare against: the markup it
   // describes is about to be replaced under it.
-  container.__liveKey = null;
+  // (The summary is the exception: it is written through setLiveHtmlIfChanged below, so a junior director sitting on it does not
+  // see the team shields re-created by every snapshot. Its handlers close over the game alone and resolve the bracket at tap time.)
   const b = normalizeBracket(state.brackets[g.id]);
+  if (b.phase !== 'summary') container.__liveKey = null;
   // Where the bracket is, as ONE quiet line (the four-team bracket's: "Step 1 of 5 · Round 1"), never a row of pills and arrows.
   const order = ['round1', 'bye', 'semifinal', 'championship', 'summary'];
   const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship', championship: 'Final', summary: 'Results' };
@@ -10928,12 +10930,22 @@ function renderTournament(container, g) {
   let html = `<div class="bracket-steps">${at === -1 ? '' : `<p class="four-steps" data-six-step="${esc(b.phase)}">Step ${at + 1} of ${order.length} · ` +
     `<span aria-current="step" class="wizard-step active">${labels[b.phase]}</span></p>`}</div><div id="bracket-body"></div>
   <div class="wizard-footer"><button id="cancel-bracket-btn" class="link-btn danger-link">Cancel this bracket</button></div>`;
+  const wireCancel = () => {
+    document.getElementById('cancel-bracket-btn').addEventListener('click', () => {
+      if (!confirm('Cancel this bracket? Nothing will be saved.')) return;
+      cancelBracket(g, 'six');
+    });
+  };
+  if (b.phase === 'summary') {
+    const full = html.replace('<div id="bracket-body"></div>', `<div id="bracket-body">${bracketSummaryHtml(g, b)}</div>`);
+    if (setLiveHtmlIfChanged(container, full, [g])) {
+      wireCancel();
+      wireBracketSummary(document.getElementById('bracket-body'), g);
+    }
+    return;
+  }
   container.innerHTML = html;
-
-  document.getElementById('cancel-bracket-btn').addEventListener('click', () => {
-    if (!confirm('Cancel this bracket? Nothing will be saved.')) return;
-    cancelBracket(g, 'six');
-  });
+  wireCancel();
 
   const body = document.getElementById('bracket-body');
   if (b.phase === 'round1') renderBracketRound1(body, g, b);
@@ -11310,7 +11322,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
   const kickingRow = maxOuts ? `
     <div class="board-subrow">
       <span class="live-label">${esc(sideLabel.charAt(0).toUpperCase() + sideLabel.slice(1))}</span>
-      <span class="live-kicking-team" id="live-kicking-team">${teamEmoji(kickingTeamId(l, aId, bId))} ${esc(teamName(kickingTeamId(l, aId, bId)))}</span>
+      <span class="live-kicking-team" id="live-kicking-team"><span class="live-kicking-mark" data-team="${kickingTeamId(l, aId, bId)}">${bracketMarkHtml(kickingTeamId(l, aId, bId), 22)}</span> <span class="live-kicking-name">${esc(teamName(kickingTeamId(l, aId, bId)))}</span></span>
       ${viewer ? '' : `<button class="live-btn live-switch-btn" data-live="half-toggle" aria-label="Switch ${esc(sideLabel)} team">⇄</button>`}
     </div>
     <div class="board-subrow">
@@ -11400,7 +11412,13 @@ function bindLiveTracker(container, g, aId, bId) {
     const op = container.querySelector('#live-outs-pips');
     if (op) { op.textContent = outsPips(l.outs, maxOuts); op.setAttribute('aria-label', outsLabel(l.outs)); }
     const kt = container.querySelector('#live-kicking-team');
-    if (kt) { const kid = kickingTeamId(l, aId, bId); kt.textContent = `${teamEmoji(kid)} ${teamName(kid)}`; }
+    // The mark is rewritten only when the kicking team changes (a re-created flag or tile blinks), the name is text.
+    if (kt) {
+      const kid = kickingTeamId(l, aId, bId);
+      const mk = kt.querySelector('.live-kicking-mark'), nm = kt.querySelector('.live-kicking-name');
+      if (mk && mk.dataset.team !== kid) { mk.innerHTML = bracketMarkHtml(kid, 22); mk.dataset.team = kid; }
+      if (nm) nm.textContent = teamName(kid);
+    }
     container.querySelectorAll('[data-hr-team]').forEach((el) => {
       el.textContent = l.hr[el.dataset.hrTeam] || 0;
     });
@@ -11461,7 +11479,7 @@ function ladderMatchHTML(g, aId, bId) {
   const teamBlock = (id, side, total, raw) => `
     <div class="ladder-team">
       <div class="ladder-team-head">
-        <span class="ladder-team-name">${teamEmoji(id)} ${esc(teamName(id))}</span>
+        <span class="ladder-team-name"><span class="ladder-mark" aria-hidden="true">${bracketMarkHtml(id, 22)}</span> ${esc(teamName(id))}</span>
         <span class="ladder-total" data-ladder-total="${side}">${total}</span>
       </div>
       <div class="ladder-round-line">This round: <span class="ladder-round-val" data-ladder-round="${side}">${raw}</span></div>
@@ -11476,7 +11494,7 @@ function ladderMatchHTML(g, aId, bId) {
     ? `<p class="ladder-won">${esc(teamName(winner))} reached ${target}. Tap their <strong>“won”</strong> button above to lock it in.</p>`
     : '';
   return `<div class="ladder-tracker">
-    <p class="ladder-target">🪜 First to exactly ${target} · cancellation scoring each round</p>
+    <p class="ladder-target">First to exactly ${target} · cancellation scoring each round</p>
     <div class="ladder-teams">
       ${teamBlock(aId, 'a', l.a, l.ra)}
       ${teamBlock(bId, 'b', l.b, l.rb)}
@@ -11628,7 +11646,7 @@ function renderBracketRound1(body, g, b) {
     <p class="muted">Pick the two teams to call up next.</p>
     ${suggest ? `<p class="muted seed-suggest">Suggested by the points: ${esc(teamName(suggest[0]))} v ${esc(teamName(suggest[1]))} <button type="button" id="seed-suggest-btn" class="link-btn">Call them up</button></p>` : ''}
     <div class="team-chip-grid">
-      ${b.pool.map((id) => `<button class="team-chip ${b.selectedPair.includes(id) ? 'selected' : ''}" data-team-id="${id}">${esc(teamName(id))}<span class="chip-sub">${esc(counselorName(id))}</span></button>`).join('')}
+      ${b.pool.map((id) => `<button class="team-chip ${b.selectedPair.includes(id) ? 'selected' : ''}" data-team-id="${id}"><span class="chip-emoji">${bracketMarkHtml(id, 24)}</span> ${esc(teamName(id))}<span class="chip-sub">${esc(counselorName(id))}</span></button>`).join('')}
     </div>`;
 
   if (b.selectedPair.length === 2) {
@@ -11799,7 +11817,7 @@ function renderBracketBye(body, g, b) {
         const p = pointsOf(id);
         const sug = id === suggestedId;
         const sub = seeTotals ? `<span class="chip-sub">${p} pt${p === 1 ? '' : 's'} this week${sug ? ' · suggested' : ''}</span>` : '';
-        return `<button class="team-chip tiebreak-chip ${sug ? 'suggested-chip' : ''}" data-team-id="${id}">${sug ? '⭐ ' : ''}${esc(teamName(id))}${sub}</button>`;
+        return `<button class="team-chip tiebreak-chip ${sug ? 'suggested-chip' : ''}" data-team-id="${id}"><span class="chip-emoji">${bracketMarkHtml(id, 24)}</span> ${esc(teamName(id))}${sub}</button>`;
       }).join('')}
     </div>
     <button id="undo-to-round1-btn" class="link-btn"><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg>Back to Round 1</button>
@@ -11834,7 +11852,7 @@ function sixUndoHtml(id, label, teams) {
 function renderBracketSemifinal(body, g, b) {
   body.innerHTML = `
     <h3>Championship Game</h3>
-    <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Final.</p>
+    <p class="bye-note"><strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Final.</p>
     ${matchupCalloutHTML(b.semifinal.a, b.semifinal.b)}
     ${matchTrackerHTML(g, b.semifinal.a, b.semifinal.b)}
     <p class="completed-matches"><button type="button" id="undo-bye-btn" class="link-btn"><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg>Back to the bye</button></p>
@@ -11867,7 +11885,7 @@ function renderBracketChampionship(body, g, b) {
   const mult = g.messtival ? 2 : 1; // match medalCounts()'s weighting
   body.innerHTML = `
     <h3>Final</h3>
-    <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal${standingsVisible() ? ` (+${MEDAL_POINTS.bronze * mult} pts)` : ''}.</p>
+    <p class="bronze-note"><strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal${standingsVisible() ? ` (+${MEDAL_POINTS.bronze * mult} pts)` : ''}.</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
     ${matchTrackerHTML(g, b.championship.a, b.championship.b)}
     ${sixUndoHtml('undo-semifinal-btn', 'Undo the championship game', [b.semifinal.a, b.semifinal.b])}
@@ -11899,7 +11917,7 @@ function renderBracketChampionship(body, g, b) {
   }
 }
 
-function renderBracketSummary(body, g, b) {
+function bracketSummaryHtml(g, b) {
   const medals = sixMedals(b);
   const goldId = medals.gold;
   const silverId = medals.silver;
@@ -11912,7 +11930,7 @@ function renderBracketSummary(body, g, b) {
   const list = typeof gamesResultHtml === 'function'
     ? gamesResultHtml(Object.assign(gamesResultModel(g, { medals: { gold: goldId, silver: silverId, bronze: bronzeId } }), { saved: null, scores: null, change: false }))
     : `<div class="medal-summary">${[goldId, silverId, bronzeId].map((id, i) => `<p class="medal-row">${i + 1}. <strong>${esc(teamName(id))}</strong>${medalWorthChip(MEDAL_POINTS[PODIUM_MEDALS[i]] * mult)}</p>`).join('')}</div>`;
-  body.innerHTML = `
+  return `
     <h3>Game results</h3>
     <p class="four-meta">Check the winners, then save the result for everyone.</p>
     ${list}
@@ -11920,7 +11938,14 @@ function renderBracketSummary(body, g, b) {
     <jelly-button id="save-bracket-btn" class="primary-btn" block>Save result</jelly-button>
     ${sixUndoHtml('undo-final-btn', 'Undo the final', [b.championship.a, b.championship.b])}
   `;
+}
 
+function renderBracketSummary(body, g, b) {
+  body.innerHTML = bracketSummaryHtml(g, b);
+  wireBracketSummary(body, g);
+}
+
+function wireBracketSummary(body, g) {
   document.getElementById('save-bracket-btn').addEventListener('click', () => {
     // The podium comes from the bracket as it is when the button is tapped, never from the screen that was drawn.
     const live = sixLive(g, 'summary');
