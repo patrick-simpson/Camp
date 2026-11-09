@@ -38,6 +38,15 @@ const MEASURE = (rootSel) => {
   [...root.querySelectorAll('button, .gl-title, .gl-sub, .aw-name, .tell-tick-title, .tell-live-title, .cb-title, .cb-sub, .nw-label-w, .gr-name, .msg-text')]
     .filter((e) => shown(e) && e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflow !== 'visible' && getComputedStyle(e).textOverflow !== 'ellipsis' && !e.closest('.daypick, .chat-tabs'))
     .forEach((e) => out.clipped.push('label cut: ' + ((e.id || e.className) + '').slice(0, 30) + ' ' + e.scrollWidth + '>' + e.clientWidth));
+  // A native select shows its chosen option on one line it cannot wrap, and the clipped-label check above cannot see inside it:
+  // measure the chosen option's text against the select's own inner width (padding and the arrow set aside).
+  const ctx = document.createElement('canvas').getContext('2d');
+  [...root.querySelectorAll('select')].filter(shown).forEach((e) => {
+    const cs = getComputedStyle(e); ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    const t = e.options[e.selectedIndex] ? e.options[e.selectedIndex].text : '';
+    const room = e.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 20;
+    if (t && ctx.measureText(t).width > room) out.clipped.push('select cut: ' + ((e.id || e.className) + '').slice(0, 24) + ' "' + t.slice(0, 20) + '" ' + Math.round(ctx.measureText(t).width) + '>' + Math.round(room));
+  });
   [...root.querySelectorAll('.gl-title, .gl-sub, .cb-title, .cb-sub, .aw-name, .gr-name')]
     .filter((e) => shown(e) && e.getBoundingClientRect().width < 80 && (e.textContent || '').trim().length > 12)
     .forEach((e) => out.narrow.push((e.textContent || '').trim().slice(0, 24) + ' ' + Math.round(e.getBoundingClientRect().width) + 'px'));

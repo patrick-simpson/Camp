@@ -561,8 +561,12 @@ function gamesPodiumTap(btn) {
     return r;
   }
   renderAll();
-  // A move says what happened (the key's "has silver" tab was the warning; the screen then shows it).
+  // A move says what happened (the key's "has silver" tab was the warning; the screen then shows it); a swap names both teams.
   if (r.action === 'move') showToast(nowTeamWord(btn.dataset.team) + ' moved from ' + r.from + ' to ' + r.medal + '.');
+  if (r.action === 'swap') {
+    showToast(nowTeamWord(r.team) + ' and ' + nowTeamWord(r.other) + ' swapped: ' + nowTeamWord(r.team) + ' has ' + r.medal + ', '
+      + nowTeamWord(r.other) + ' has ' + r.from + '.');
+  }
   return r;
 }
 

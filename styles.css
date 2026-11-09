@@ -19150,6 +19150,11 @@ button.copy-matchup-btn .ico {
    picker's eighteen keys (the scores already put the teams in order above them). */
 .medal-slot select.medal-pick {
   font: 750 1rem/1.2 var(--font-ui);
+  /* The whole row under the medal's word (the slot is one grid track): the older rule's 60% cut "Particularly Perilous
+     Pumpkins" to "Particula" at large text. A native select cannot wrap, so its options are the teams' short names. */
+  width: 100%;
+  max-width: none;
+  min-width: 0;
 }
 
 /* ── The game takeover's dock while a result is being made (gamesDock tones `tally` and `six`, games-ui.js gamesDockHtml) ──
@@ -19221,4 +19226,160 @@ button.copy-matchup-btn .ico {
   display: inline-grid;
   place-items: center;
   line-height: 1;
+}
+/* The Kicking row (label · mark + name · ⇄) must fit the board's own width at large text: the team shrinks (its name wraps
+   by words) and, under ~19em of the board's text, the label takes its own line above the team and the switch (which share the
+   next one, the name centred beside its mark), so neither
+   "Kicking" nor the ⇄ key runs off the sheet at 360px and 200%. */
+.big-board {
+  container: board / inline-size;
+}
+.live-kicking-team {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.live-kicking-name {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+@container board (max-width: 19em) {
+  .board-subrow:has(.live-kicking-team) {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .board-subrow:has(.live-kicking-team) > .live-label {
+    flex-basis: 100%;
+    text-align: center;
+  }
+  .board-subrow > .live-kicking-team {
+    flex: 1 1 0;
+    justify-content: center;
+    text-align: left;
+  }
+}
+
+/* ── Ladder Ball's round scorer in the app's language (ladderMatchHTML) ──
+   One plain section: the rule in a meta line, then a sheet per team (its mark and name on one left-aligned row, the total, this
+   round, the rung keys), side by side while two fit (two ~9.5rem columns: both phones at 100%) and stacked at larger text, so the
+   second team never runs off the screen. The rung keys are well keys with ink words (the counter keys' look), never blue pills;
+   "Score this round" is a plain chunky key, the dashed well naming the team once one has reached the target (gold is a Save's
+   alone); "Undo last round" is a 44px target. */
+.ladder-tracker {
+  margin: 4px 0 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+.ladder-target {
+  margin: 0 2px 10px;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+.ladder-teams {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.ladder-team {
+  container: ladder-team / inline-size;
+  min-width: 0;
+  padding: 12px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--sheet);
+}
+.ladder-team-head {
+  margin-bottom: 2px;
+}
+.ladder-team-name {
+  align-items: flex-start;
+  gap: 8px;
+  font: 750 1rem/1.25 var(--font-ui);
+  color: var(--ink);
+}
+.ladder-name {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.ladder-total {
+  margin-top: 4px;
+  font: 850 2.5rem/1.05 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+/* A stacked sheet with room to spare puts the total at the right of the name, as a scoreboard row does. */
+@container ladder-team (min-width: 12em) {
+  .ladder-team-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .ladder-total {
+    flex: none;
+    margin-top: 0;
+  }
+}
+.ladder-round-line {
+  margin-bottom: 8px;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+.ladder-round-val {
+  color: var(--ink);
+}
+.ladder-rungs {
+  justify-content: flex-start;
+  gap: 6px;
+}
+.ladder-tracker .live-btn.ladder-rung,
+.ladder-tracker .live-btn.ladder-clear {
+  flex: 1 1 auto;
+  width: auto;
+  height: auto;
+  min-width: var(--target);
+  min-height: var(--target);
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--well);
+  color: var(--ink);
+  font: 800 0.9375rem/1.15 var(--font-ui);
+}
+.ladder-tracker .live-btn.ladder-clear {
+  flex: 0 0 auto;
+  padding: 4px;
+  color: var(--ink-2);
+  font-size: 1.125rem;
+}
+.ladder-tracker .live-btn:active {
+  background: var(--well);
+}
+.ladder-score-round {
+  margin: 0;
+  font: 850 min(1.0625rem, 24px)/1.2 var(--font-ui);
+}
+.ladder-undo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--target);
+  margin: 4px auto 0;
+  font-size: 0.875rem;
+}
+.ladder-won {
+  margin: 10px 2px 0;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+/* The bracket's team chips (free pick, the bye, the four-team pick): two columns while two fit, one at large text. `repeat(2, 1fr)`
+   kept each column at its longest word, so at 200% the second column ran off a 360px screen. */
+.team-chip-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+}
+.team-chip {
+  min-width: 0;
+  overflow-wrap: break-word;
 }

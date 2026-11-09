@@ -9187,8 +9187,8 @@ function gamesPodium(g) {
       const taken = !picked && holder[team] ? holder[team] : '';
       const name = teamName(team);
       const short = nowTeamWord(team);
-      // A team holding another medal is MOVED by a tap (one draft update: its old leaf cleared, this one set); only a row that is
-      // still waiting for the medal above it keeps its keys dashed and dead.
+      // A team holding another medal is MOVED by a tap (one draft update: its old leaf cleared, or given to the team this row held:
+      // a swap, which the toast names); only a row that is still waiting for the medal above it keeps its keys dashed and dead.
       const label = name + (!picked && wait ? ', waiting for ' + above : taken ? ', has ' + taken + '. Tap to make them ' + medal : '');
       return { team, name, short, picked, taken, disabled: !picked && wait, label };
     });
@@ -9202,10 +9202,11 @@ function gamesPodium(g) {
   return { gid: g ? g.id : null, doubled: mult === 2, rows, picks, save: { ready: !missing.length, label, target: missing[0] || null } };
 }
 
-// A tap on a key: pick the team for that medal, or (the same key again) clear it. Refused, saying why, when the game is not a
-// podium, already has a result (a second director saved first), the row is still waiting for the medal above, or the team already
-// holds another medal. Writes the draft leaf and saves (the per-leaf push); the caller renders. { ok, action: 'pick' | 'clear',
-// medal, team } or { ok: false, problem: 'unavailable' | 'unknown' | 'wait' | 'taken', by? }.
+// A tap on a key: pick the team for that medal, or (the same key again) clear it; a team holding another medal moves here, and
+// swaps with the team this row held (action 'swap', other = that team). Refused, saying why, when the game is not a podium,
+// already has a result (a second director saved first) or the row is still waiting for the medal above. Writes the draft leaves
+// and saves (the per-leaf push); the caller renders. { ok, action: 'pick' | 'clear' | 'move' | 'swap', medal, team, from?,
+// other? } or { ok: false, problem: 'unavailable' | 'unknown' | 'wait' }.
 function podiumPick(gid, medal, team) {
   const g = gameById(gid);
   if (!g || !canEdit() || !gameIsPodium(g) || (state.results && state.results[g.id])) return { ok: false, problem: 'unavailable' };
@@ -9217,12 +9218,19 @@ function podiumPick(gid, medal, team) {
   else if (row.wait) return { ok: false, problem: 'wait' };
   else if (key.taken) action = 'move';
   const d = normalizeDraft(state.drafts[g.id] || (state.drafts[g.id] = { medals: {} }));
+  // A move into a row that already holds a team is a SWAP: that team takes the medal the moving one leaves, so "these two are the
+  // wrong way round" is one tap and nobody drops off the podium unsaid. Still one saveState: both leaves go up in one update.
+  const other = action === 'move' ? row.pick : null;
   if (action === 'clear') delete d.medals[medal];
   else {
-    if (action === 'move') delete d.medals[key.taken]; // one saveState: both leaves go up in the same update
+    if (action === 'move') {
+      if (other) d.medals[key.taken] = other;
+      else delete d.medals[key.taken];
+    }
     d.medals[medal] = team;
   }
   saveState();
+  if (action === 'move' && other) return { ok: true, action: 'swap', medal, team, from: key.taken, other };
   return action === 'move' ? { ok: true, action, medal, team, from: key.taken } : { ok: true, action, medal, team };
 }
 
@@ -9796,10 +9804,12 @@ function medalPickerHTML(picks, game) {
     ${slots.map((s) => `
       <div class="medal-slot medal-slot-${s.key}">
         <span class="medal-slot-word">${s.label}</span>
-        <select class="fld-input medal-pick" data-medal="${s.key}" aria-label="${s.key} medal team">
+        <select class="fld-input medal-pick" data-medal="${s.key}" aria-label="${PODIUM_WORDS[s.key] || s.key} medal team">
           <option value="">Pick a team</option>
           ${state.teams.map((t) =>
-            `<option value="${esc(t.id)}"${picks[s.key] === t.id ? ' selected' : ''}>${esc(t.name)}</option>`
+            // The team's SHORT name: a closed native select shows one line it cannot wrap, so "Particularly Perilous Pumpkins"
+            // would be cut at large text (the score rows above carry the whole name and the mark).
+            `<option value="${esc(t.id)}"${picks[s.key] === t.id ? ' selected' : ''}>${esc(nowTeamWord(t.id))}</option>`
           ).join('')}
         </select>
       </div>
@@ -11560,28 +11570,30 @@ function ladderMatchHTML(g, aId, bId) {
   const teamBlock = (id, side, total, raw) => `
     <div class="ladder-team">
       <div class="ladder-team-head">
-        <span class="ladder-team-name"><span class="ladder-mark" aria-hidden="true">${bracketMarkHtml(id, 22)}</span> ${esc(teamName(id))}</span>
+        <span class="ladder-team-name"><span class="ladder-mark" aria-hidden="true">${bracketMarkHtml(id, 22)}</span><span class="ladder-name">${esc(teamName(id))}</span></span>
         <span class="ladder-total" data-ladder-total="${side}">${total}</span>
       </div>
       <div class="ladder-round-line">This round: <span class="ladder-round-val" data-ladder-round="${side}">${raw}</span></div>
       <div class="ladder-rungs">
         <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${Number(sc.top) || 0}">Top +${sc.top}</button>
-        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${Number(sc.mid) || 0}">Mid +${sc.mid}</button>
-        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${Number(sc.bottom) || 0}">Bot +${sc.bottom}</button>
+        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${Number(sc.mid) || 0}">Middle +${sc.mid}</button>
+        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${Number(sc.bottom) || 0}">Bottom +${sc.bottom}</button>
         <button class="live-btn ladder-clear" data-ladder="round-clear" data-side="${side}" aria-label="Clear this round for ${esc(teamName(id))}">↺</button>
       </div>
     </div>`;
+  // Once a team reaches the target no round is scored: the key is the dashed well saying why, never a faded gold (gold is a
+  // Save's alone), and the line under it says what to tap instead.
   const wonBanner = winner
-    ? `<p class="ladder-won">${esc(teamName(winner))} reached ${target}. Tap their <strong>“won”</strong> button above to lock it in.</p>`
+    ? `<p class="ladder-won">Tap “${esc(teamName(winner))} won” above to lock it in.</p>`
     : '';
   return `<div class="ladder-tracker">
-    <p class="ladder-target">First to exactly ${target} · cancellation scoring each round</p>
+    <p class="ladder-target">First to exactly ${target} · the bigger score each round cancels the smaller</p>
     <div class="ladder-teams">
       ${teamBlock(aId, 'a', l.a, l.ra)}
       ${teamBlock(bId, 'b', l.b, l.rb)}
     </div>
-    <jelly-button class="primary-btn ladder-score-round" block data-ladder="score-round"${winner ? ' disabled' : ''}>Score this round</jelly-button>
-    ${l.log.length ? '<button class="link-btn ladder-undo" data-ladder="undo-round">Undo last round</button>' : ''}
+    <button type="button" class="btn btn-block ladder-score-round" data-ladder="score-round"${winner ? ' disabled' : ''}>${winner ? `${esc(teamName(winner))} reached ${target}` : 'Score this round'}</button>
+    ${l.log.length ? '<button type="button" class="link-btn ladder-undo" data-ladder="undo-round">Undo last round</button>' : ''}
     ${wonBanner}
   </div>`;
 }
