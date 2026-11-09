@@ -30,9 +30,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-11-09T20:05:13Z';
+const CODE_UPDATED_AT = '2026-11-09T22:30:31Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 216;
+const APP_VERSION = 217;
 
 // "What's new" notes (owner's answer of Nov 9, 2026, item 9; engine under "What's new notes" below, design in CLAUDE.md). Each
 // entry is a short, plain-English note about a change people would notice. A note is LIVE for ONE HOUR from its `at`, by the
