@@ -127,6 +127,9 @@
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v10.8M7.6 10.6 12 15l4.4-4.4M5 19.6h14"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.2V4.4M7.6 8.8 12 4.4l4.4 4.4M5 19.6h14"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9.2 4h5.6l-.9 5.2 3 3.2H7.1l3-3.2z"/><path d="M12 12.4v7.8"/></symbol>
+    <!-- What's new notes (the messages strip's NOTE MARKUP): a trail sign. A note says what changed and where to find it,
+         so the mark is a signpost, never a sparkle or a "NEW" badge. -->
+    <symbol id="i-signpost" viewBox="0 0 24 24"><path d="M12 2.6v2M12 9.4v2.8M12 17v4.2M9 21.2h6"/><path d="M5.4 4.6h12.4l2.4 2.4-2.4 2.4H5.4z"/><path d="M18.6 12.2H6.2l-2.4 2.4 2.4 2.4h12.4z"/></symbol>
     <!-- Step 15 (Schedule, rain plan): swap, earlier / later, add, rain. -->
     <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 8.4h13.4M14.8 4.7l3.7 3.7-3.7 3.7"/><path d="M19 15.6H5.6M9.2 11.9l-3.7 3.7 3.7 3.7"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19.4V5.2M6.3 10.9 12 5.2l5.7 5.7"/></symbol>
@@ -410,10 +413,6 @@
         </div>
       </section>
 
-      <!-- ── WHAT'S NEW (queued banners; roll in one every 15 min, 7am–9pm) —
-           kept at the very top of the page so notices are the first thing seen. -->
-      <section id="whats-new" class="whats-new" hidden></section>
-
       <!-- ── THE MESSAGES STRIP (redesign §3.2; Step 17) ─────────────────────
            Three siblings, in this order, so annBelow()'s "sections under the
            strip" still starts at #announcements' next sibling:
@@ -425,8 +424,12 @@
                              send-off Saturday (the notice IS the Now card there)
                              and under a live reveal. No × : a notice stays until
                              a director takes it down.
-             #announcements  the banners (BANNER MARKUP, after Tell everyone),
-                             unchanged: join bar first, then newest first.
+             #announcements  the banners (BANNER MARKUP, after Tell everyone):
+                             join bar first, then newest first, then at most
+                             ONE What's new note, last (NOTE MARKUP, after
+                             BANNER MARKUP): drawn only while the strip has
+                             room for it, never behind "N more messages", never
+                             in #sheet-messages, never under a live reveal.
              #now-msgs-more  "2 more messages" when the strip would pass a third
                              of the screen (§3.2: about 280px on a 390×844 phone;
                              measured here, the notice strip is ~118px and a one-
@@ -3207,6 +3210,34 @@
        Jenn", no Remove (delete it in chat). Directors only: .msg-remove. The
        preview: the meta reads "Now · Jenn", no Remove, and .msg-x is drawn but
        inert. -->
+
+  <!-- NOTE MARKUP (What's new, owner's answer of Nov 9, 2026): one note about a
+       change to the app, in the strip's own message language. It rides
+       #announcements LAST (after the join bar and every banner), at most ONE at
+       a time, and only while the strip has room for it (never behind "N more
+       messages", never in #sheet-messages, never under a live reveal, never in
+       a counselor preview). The one blue tint like any message; its tile is the
+       quiet one (an ink-3 ring on the sheet, the signpost in ink-2) so a
+       director's banner (the filled blue tile) always reads as the louder
+       thing. No badge, no emoji, no capitals, no exclamation mark; the meta
+       line names what it is ("What's new") instead of a time and a name.
+         <div class="msg" data-kind="new" data-key="wn-<id>" role="status">
+           <span class="msg-ico" aria-hidden="true"><svg class="ico"><use href="#i-signpost"/></svg></span>
+           <div class="msg-body">
+             <p class="msg-text">Every game and its winners are on the Games tab.</p>
+             <p class="msg-meta"><span>What’s new</span><button type="button" class="msg-show" data-wn-show="<id>" aria-label="Show me the Games tab">Show me<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button></p>
+           </div>
+           <button type="button" class="msg-x" data-wn-x="<id>" aria-label="Dismiss this note on this phone"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+         </div>
+       .msg-show ("Show me", 16px link ink: the size the contrast rule needs on
+       the message tint) is drawn only when the note names a place this phone
+       may open right now; without one the meta line is the label alone. The ×
+       and Show me carry data-wn-* (never .msg-remove / data-ann-id), so the
+       strip's delegated handler (annStripClick) tells them from a banner's.
+       Motion (from diffs, calm-aware): a released note UNFOLDS in place from its
+       top (scaleY .6 → 1 on glide, no drop: a note is never as loud as a
+       banner), the sections under the strip glide down (annGlideBelow); ×
+       squashes it out (playRowOut) and the rest glide up; calm: fades. -->
 
   <!-- ── AWARD POINTS (redesign §7.3; Step 24) ──────────────────────────
        Directors only, from More → Director → Award points: the place for

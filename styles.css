@@ -2242,7 +2242,11 @@ jelly-switch:not([checked])::part(track) {
    notice strip, the Now card and its lists, the grid and the champion line step
    aside; announcements and their "N more" row (an emergency outranks the
    moment) and the builder stay. */
-#tab-now[data-reveal="live"] > :is(#whats-new, #now-reveal-grid, #now-champion, #now-notice, #now-card, #now-todo, #now-next, #now-later) {
+#tab-now[data-reveal="live"] > :is(#now-reveal-grid, #now-champion, #now-notice, #now-card, #now-todo, #now-next, #now-later) {
+  display: none;
+}
+/* …and a What's new note never rides the strip through the reveal (the engine leaves it out; this is the belt to its braces). */
+#tab-now[data-reveal="live"] #announcements > .msg[data-kind="new"] {
   display: none;
 }
 .now-reveal[hidden],
@@ -8861,57 +8865,6 @@ html.calm-motion .toast-out { animation: none; }
 }
 
 /* ============================================================
-   WHAT'S NEW BANNERS (auto-expire 2h after each change)
-   ============================================================ */
-.whats-new {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.whats-new-banner {
-  position: relative;
-  background: var(--color-gold-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.6rem 2.2rem 0.7rem 0.8rem; /* room for the dismiss button at right */
-}
-.whats-new-badge {
-  display: inline-block;
-  margin-bottom: 0.35rem;
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
-  border-radius: 999px;
-  padding: 0.14rem 0.5rem;
-}
-.whats-new-text {
-  display: block;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--color-text);
-  line-height: 1.35;
-}
-.whats-new-dismiss {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 1.1rem;
-  font-weight: 800;
-  line-height: 1;
-  padding: 0.1rem 0.35rem;
-  cursor: pointer;
-  font-family: inherit;
-  border-radius: var(--radius-md);
-}
-.whats-new-dismiss:active { background: color-mix(in srgb, var(--color-text-muted) 20%, transparent); }
-
-/* ============================================================
    PHONE ALERTS DRAWER (Settings → 📲 Phone alerts; push.js)
    One status card, then grouped lists in the iOS-settings idiom: a single
    bordered box per group with hairline dividers between rows. With ~35
@@ -11177,8 +11130,10 @@ div.sec-st-name {
   color: var(--ink-2);
 }
 /* Directors' "Remove for everyone": danger TEXT, its 44px hit area padded
-   round the words (it rides a meta line). */
-.msg-remove {
+   round the words (it rides a meta line). A What's new note's "Show me" has
+   the same box (its link ink and 16px are the join bar's rule, further down). */
+.msg-remove,
+.msg-show {
   display: inline-flex;
   align-items: center;
   min-height: var(--target);
@@ -11216,6 +11171,14 @@ div.sec-st-name {
   background: var(--sheet);
   color: var(--link);
   box-shadow: inset 0 0 0 2px var(--link);
+}
+/* A What's new note (NOTE MARKUP, index.html): the same message tint, the QUIET tile — an ink-3 ring on the sheet and the
+   signpost in ink-2 — so a director's banner (the filled blue tile) and a chat announcement (the blue ring) always read as
+   louder than a note about the app. Never a badge, never a second tint (§8.1 rule 7). */
+.msg[data-kind="new"] .msg-ico {
+  background: var(--sheet);
+  color: var(--ink-2);
+  box-shadow: inset 0 0 0 2px var(--ink-3);
 }
 
 /* ── Tell everyone (#takeover-tell) ─────────────────────────────
@@ -13188,7 +13151,8 @@ html.counselor-preview .sheet {
 }
 
 /* The join bar's "See" (a director's "Taylor Reed is asking to join"): the Remove link's box, in link ink, with a 44px-wide hit area. */
-.msg-remove[data-join-see] {
+.msg-remove[data-join-see],
+.msg-show {
   min-width: var(--target);
   justify-content: center;
   gap: 2px;
@@ -13197,7 +13161,8 @@ html.counselor-preview .sheet {
   color: var(--link);
   font: 750 1rem/1.35 var(--font-ui); /* 16px: link ink on the dark message tint is 6.3:1, which §8.1 rule 6 allows from 16px, not under */
 }
-.msg-remove[data-join-see] .ico {
+.msg-remove[data-join-see] .ico,
+.msg-show .ico {
   width: 16px;
   height: 16px;
   stroke-width: 2.6;
