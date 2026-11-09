@@ -18269,6 +18269,63 @@ jelly-chip.sched-day-chip[data-today][selected] {
 .board-name {
   font: 750 0.9375rem/1.2 var(--font-ui);
 }
+/* A long team name WRAPS on the Big Board, it is never cut: at 200% text "Ferocious Foxes" read "erociou" in a column that
+   could not shrink below its longest word. The two team columns may now shrink (minmax(0, 1fr)); the name breaks between
+   words, and only a word longer than its column breaks inside, with a hyphen. The columns stretch to one height and the
+   name takes the spare room (centred in it), so the two scores stay level when one name wraps and the other doesn't. The
+   mark gives way first, sized against the board (cqi of the board container) rather than the root text. */
+.board-cols {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+}
+.board-dash {
+  align-self: center;
+}
+.board-name {
+  flex: 1 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch; /* the words get the column's width, never their own longest word's */
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+.board-emoji {
+  font-size: min(2.4rem, 16cqi);
+}
+.big-board.viewer .board-emoji {
+  font-size: min(3.4rem, 20cqi);
+}
+/* A board under ~18em of its own text (130% and up on a phone) names each team by its SHORT name, whole words on up to two
+   lines (the reveal remote's .rv-name-short rule), and the words are capped against the board so an eight-letter short name
+   ("Pumpkins") still fits its half at 200%. The renderer writes both: <span class="board-name-full">Particularly Perilous
+   Pumpkins</span><span class="board-name-short" aria-hidden="true">Pumpkins</span> (nowTeamWord); a board with only the full
+   name still wraps it (above), never cut. */
+.board-name-short {
+  display: none;
+}
+@container board (max-width: 18em) {
+  .big-board .board-name:has(.board-name-short) > .board-name-full {
+    /* out of sight, still read aloud (the short name is aria-hidden) */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .big-board .board-name-short {
+    display: inline;
+  }
+  .big-board .board-col {
+    padding-inline: 2px;
+  }
+  .big-board .board-name,
+  .big-board.viewer .board-name {
+    font-size: min(0.9375rem, 7.4cqi);
+  }
+}
 /* The call-up is a plain section between hairlines: gold tint is the cleanup moment's alone (rule 7). */
 .matchup-callout {
   padding: 16px 0;
