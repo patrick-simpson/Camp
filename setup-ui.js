@@ -55,7 +55,7 @@ const HUB_OPENS = {
   electives: { screen: 'electives' },
   games: { screen: 'games' },
   teams: { screen: 'teams' },
-  notice: { screen: 'classic', tab: 'notice' },
+  notice: { screen: 'notice' },
   people: { screen: 'people' },
   campers: { screen: 'campers' },
   restore: { screen: 'backups' },
@@ -652,7 +652,7 @@ function hubScheduleView() {
 
 // #setup[data-screen] is the ONE switch the CSS reads (styles.css "SET UP THE WEEK"): hub | backups |
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
-const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers', 'games', 'wizard'];
+const SETUP_SCREENS = ['hub', 'backups', 'classic', 'notice', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers', 'games', 'wizard'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
 const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add', 'game', 'sg-day', 'setup-advanced', 'nyw-staff', 'nyw-undo'];
 // The sheets that hold a half-made edit and ask before they let it go: the id → a function that takes the close over
@@ -703,8 +703,10 @@ function setupScreen() {
 // caller that names a classic tab ("Add games" on an empty day) lands on that tab of the classic screen.
 function setupOnOpen(tab, screen) {
   // A named screen opens straight onto it (More → People); a named classic tab onto the classic editor; else the hub.
-  state.ui.builderScreen = tab ? 'classic' : (screen && screen !== 'hub' && SETUP_SCREENS.indexOf(screen) !== -1 ? screen : 'hub');
+  state.ui.builderScreen = tab === 'notice' ? 'notice' : tab ? 'classic' : (screen && screen !== 'hub' && SETUP_SCREENS.indexOf(screen) !== -1 ? screen : 'hub');
   if (state.ui.builderScreen !== 'people') peopleUi.from = '';
+  noticeUi.from = state.ui.builderScreen === 'notice' ? noticeUi.pend : '';
+  noticeUi.pend = '';
 }
 
 // What this device should tell the other directors it is looking at.
@@ -720,6 +722,7 @@ function setupWhereNow() {
   if (s === 'teams') return teamUi.edit && /^t[0-9]$/.test(teamUi.edit.id) && shell.sheets.includes('team-edit') ? 'team:' + teamUi.edit.id : 'teams';
   if (s === 'people') return 'people';
   if (s === 'campers') return 'campers';
+  if (s === 'notice') return 'notice';
   if (s === 'games') {
     // While a saved game's sheet is up, which game (the other directors read its name); an id past the vocabulary's 60 characters is just "the games".
     const o = gmUi.open;
@@ -742,6 +745,7 @@ function setupGo(screen, opts) {
   const o = opts || {};
   if (o.tab) state.ui.settingsTab = o.tab;
   if (screen !== 'people') peopleUi.from = '';
+  if (screen !== 'notice') noticeUi.from = '';
   state.ui.builderScreen = screen;
   setupUi.detailsOpen = false;
   shellStamp();
@@ -789,6 +793,7 @@ async function setupBack() {
   if (screen === 'hub') setupCloseBuilder();
   else if (screen === 'wizard') await nywBackFromScreen();
   else if (screen === 'people' && peopleUi.from === 'more') { peopleUi.from = ''; setupCloseBuilder(); } // opened from More: Back goes back there
+  else if (screen === 'notice' && noticeUi.from === 'tell') { noticeUi.from = ''; setupCloseBuilder(); } // opened from Tell everyone: its composer comes back
   else {
     if (typeof discardGameDraft === 'function') discardGameDraft();
     setupGo('hub');
@@ -1014,7 +1019,7 @@ function renderSetupUi(open) {
   // Back from the hub returns to the tab the builder was opened FROM (More, or Games from an empty day's
   // "Add games"): the shell keeps state.ui.tab untouched while the builder is up.
   const cameFrom = { now: 'Now', games: 'Games', chat: 'Chat', more: 'More' }[state.ui.tab] || 'More';
-  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : screen === 'rain' ? (setupRain.cameFrom === 'now' ? 'Now' : 'Schedule') : screen === 'people' && peopleUi.from === 'more' ? cameFrom : 'Set up the week');
+  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : screen === 'rain' ? (setupRain.cameFrom === 'now' ? 'Now' : 'Schedule') : screen === 'people' && peopleUi.from === 'more' ? cameFrom : screen === 'notice' && noticeUi.from === 'tell' ? 'Tell everyone' : 'Set up the week');
   paintSetupSync();
   paintSetupHere();
   paintSetupDock();
@@ -1030,6 +1035,7 @@ function renderSetupUi(open) {
   else if (screen === 'campers') renderCampersScreen();
   else if (screen === 'games') renderGamesScreen();
   else if (screen === 'wizard') renderNywScreen();
+  else if (screen === 'notice') renderNoticeScreen();
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
@@ -1072,6 +1078,7 @@ function setupUiClosed() {
   setupUi.where = '';
   setupUi.detailsOpen = false;
   peopleUi.from = '';
+  noticeUi.from = '';
   campersUiReset();
   if (typeof campersWant === 'function') campersWant(false);
   if (typeof editorsHereStop === 'function') editorsHereStop();
@@ -4208,6 +4215,7 @@ function wireSetupUi() {
   wirePeopleScreen();
   wireCampersScreen();
   wireGamesScreen();
+  wireNoticeScreen();
   wireNyw();
   on('#hub-door-watch', 'click', () => { if (typeof nywWatch === 'function') nywWatch(); });
   on('#hub-door-takeover', 'click', () => { if (typeof nywTakeOver === 'function') nywTakeOver(); });
@@ -10215,3 +10223,379 @@ SETUP_OWNER_ACTIONS['undo-new-year'] = {
   why: () => { const o = nywUndoRowNow(); return !o ? 'Nothing to undo yet' : o.recent ? '' : 'More than ' + WIZARD_UNDO_DAYS + ' days ago: find it under Past years'; },
 };
 SETUP_OWNER_ACTIONS.advanced = { run: () => setupSheet('setup-advanced'), advanced: true };
+
+// ── 18. The Notice board screen (Step 30) ────────────────────────────
+// state.notice as a screen of the frame (markup: index.html `#setup-notice`, its comment names every hook). There is ONE write
+// path: the notice object is edited in place (noticeBoard()) and saved whole with saveState() — the same path Tell everyone's pin
+// and setNoticeStatus use — never a second copy. Every handler reads the notice AT CALL TIME (a snapshot replaces the object), and
+// a team's area is addressed by its team id, never by its position in the array. A field commits on its native `change` (blur,
+// and only when it changed since focus) and the painter never writes a focused field.
+
+const noticeUi = { from: '', pend: '', wired: false };
+
+// More → Set up the week → Notice, or Tell everyone's "Write a full notice" (`from: 'tell'`: Back then comes home to the composer).
+function setupOpenNotice(from) {
+  if (typeof canEdit === 'function' && !canEdit()) return;
+  noticeUi.pend = from || '';
+  openBuilder(undefined, 'notice');
+}
+
+function noticeHasWords(n) {
+  return !!(n.title || n.sub || n.signoff || n.zones.length || n.steps.length);
+}
+
+// The screen as plain data: the one `state` the CSS switches on, the words, the rows. Pure over the notice and the roster.
+function nbsModel() {
+  const n = noticeBoard();
+  const ids = teamIds();
+  const words = noticeHasWords(n);
+  const posted = n.status === 'posted';
+  const state_ = posted ? (words ? 'posted' : 'hollow') : (words ? 'draft' : 'empty');
+  const zoneOf = (id) => n.zones.find((z) => z.teamId === id) || null;
+  const on = (z) => !!(z && (z.place || z.note));
+  const listed = [];
+  n.zones.forEach((z) => { if (ids.indexOf(z.teamId) !== -1 && on(z) && z === zoneOf(z.teamId) && listed.indexOf(z.teamId) === -1) listed.push(z.teamId); });
+  const rest = ids.filter((id) => listed.indexOf(id) === -1);
+  const zones = listed.concat(rest).map((id, i) => ({ key: 'z-' + id, id, zone: on(zoneOf(id)) ? zoneOf(id) : null, first: i === 0 }));
+  const copy = {
+    empty: ['Nothing written yet', 'Write it here, then put it on every phone when it’s ready.'],
+    draft: ['A draft only directors see', 'Counselors see nothing until you put it on every phone. Edit it as long as you like.'],
+    posted: ['On every phone', 'It’s at the top of Now for everyone. Changes show there as you make them.'],
+    hollow: ['Nothing to show', 'It’s switched on, but phones show nothing until something is written here.'],
+  }[state_];
+  // The picture is a counselor's: the director's own team if the notice lists it, else the first team it lists.
+  const mine = typeof nowMyTeam === 'function' ? nowMyTeam() : '';
+  const previewTeam = listed.indexOf(mine) !== -1 ? mine : (listed[0] || '');
+  return {
+    n, state: state_, headline: copy[0], lede: copy[1], zones, listedCount: listed.length, total: ids.length, previewTeam,
+    steps: n.steps.map((s, i) => ({ key: 's-' + i, i, step: s })),
+  };
+}
+
+function nbsPlural(n, one, many) { return n === 1 ? one : many; }
+
+function nbsZoneHtml(r) {
+  const id = esc(r.id);
+  const nm = esc(teamName(r.id));
+  return '<div class="nbs-zone" data-key="' + esc(r.key) + '" data-team="' + id + '" data-empty>' +
+    '<span class="nbs-mark"></span>' +
+    '<p class="nbs-zone-name"><span class="nbs-zone-nm">' + nm + '</span><small>Not on the notice</small></p>' +
+    '<button type="button" class="nbs-up nb-zone-move" data-team="' + id + '" data-dir="-1" aria-label="Move ' + nm + ' up" hidden><svg class="ico" aria-hidden="true"><use href="#i-up"/></svg></button>' +
+    '<span class="nbs-zone-flds">' +
+    '<textarea class="fld-input nbs-grow nb-zone-place" data-team="' + id + '" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Where they go" aria-label="Where ' + nm + ' go"></textarea>' +
+    '<textarea class="fld-input nbs-grow nb-zone-note" data-team="' + id + '" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Small print (optional)" aria-label="Small print for ' + nm + ' (optional)"></textarea>' +
+    '</span></div>';
+}
+
+function nbsStepHtml(r) {
+  const i = r.i;
+  const nth = 'Step ' + (i + 1);
+  return '<div class="nbs-step" data-key="' + esc(r.key) + '" data-step="' + i + '">' +
+    '<span class="nbs-num" aria-hidden="true">' + (i + 1) + '</span>' +
+    '<span class="nbs-step-head">' +
+    '<input type="text" class="fld-input nbs-emo nb-step-emoji" data-idx="' + i + '" maxlength="16" autocomplete="off" placeholder="+" aria-label="' + nth + ' emoji (optional)">' +
+    '<textarea class="fld-input nbs-grow nbs-when nb-step-when" data-idx="' + i + '" data-oneline rows="1" autocomplete="off" enterkeyhint="next" placeholder="Heading, like “In your area”" aria-label="' + nth + ' heading"></textarea>' +
+    '</span>' +
+    '<textarea class="fld-input nbs-grow nb-step-items" data-idx="' + i + '" rows="2" placeholder="One instruction per line" aria-label="' + nth + ', one instruction per line"></textarea>' +
+    '<span class="nbs-acts">' +
+    (i > 0 ? '<button type="button" class="btn-quiet nb-step-move" data-idx="' + i + '" data-dir="-1">Move up</button>' : '') +
+    '<button type="button" class="btn-quiet btn-quiet-danger nb-step-remove" data-idx="' + i + '">Remove step</button>' +
+    '</span></div>';
+}
+
+function nbsSetAttr(el, name, v) {
+  if (el && el.getAttribute(name) !== v) el.setAttribute(name, v);
+}
+
+function nbsZonePatch(el, r) {
+  const q = (s) => el.querySelector(s);
+  secSetFlag(el, 'data-empty', !r.zone);
+  paintTeamMark(q('.nbs-mark'), r.id, { size: 28 });
+  const nm = teamName(r.id);
+  setTextIfChanged(q('.nbs-zone-nm'), nm);
+  const up = q('.nbs-up');
+  setHiddenIfChanged(up, !(r.zone && !r.first));
+  nbsSetAttr(up, 'aria-label', 'Move ' + nm + ' up');
+  const place = q('.nb-zone-place');
+  const note = q('.nb-zone-note');
+  nbsSetAttr(place, 'aria-label', 'Where ' + nm + ' go');
+  nbsSetAttr(note, 'aria-label', 'Small print for ' + nm + ' (optional)');
+  secSetValue(place, r.zone ? r.zone.place : '');
+  secSetValue(note, r.zone ? r.zone.note : '');
+  secGrow(place); secGrow(note);
+}
+
+function nbsStepPatch(el, r) {
+  const q = (s) => el.querySelector(s);
+  secSetValue(q('.nb-step-emoji'), r.step.emoji);
+  const when = q('.nb-step-when');
+  const items = q('.nb-step-items');
+  secSetValue(when, r.step.when);
+  secSetValue(items, r.step.items.join('\n'));
+  secGrow(when); secGrow(items);
+}
+
+// A list of keyed rows kept in place: a row that is gone leaves, a new one is built and arrives, the rest are patched (a
+// focused field keeps its text and caret) and, when the order changed, glide to their new places (calm: they just move).
+// Nodes are moved only when they must be (a moved node drops its focus). Without a live DOM (the test stub) it is one plain write.
+function nbsSyncRows(list, rows, build, patch) {
+  if (!list) return;
+  if (!list.children || typeof list.insertBefore !== 'function' || typeof document.createElement !== 'function') {
+    setHtmlIfChanged(list, rows.map(build).join(''));
+    return;
+  }
+  const kids = Array.prototype.slice.call(list.children);
+  const byKey = {};
+  const before = {};
+  kids.forEach((k) => {
+    const key = k.dataset && k.dataset.key;
+    if (!key) { k.remove(); return; }
+    byKey[key] = k;
+    const r = k.getBoundingClientRect ? k.getBoundingClientRect() : null;
+    if (r) before[key] = { x: r.left, y: r.top };
+  });
+  const want = rows.map((r) => r.key);
+  Object.keys(byKey).forEach((k) => { if (want.indexOf(k) === -1 && !byKey[k].__leaving) { byKey[k].remove(); delete byKey[k]; } });
+  const fresh = [];
+  let prev = null;
+  rows.forEach((r) => {
+    let el = byKey[r.key];
+    if (!el) {
+      const t = document.createElement('div');
+      t.innerHTML = build(r);
+      el = t.firstElementChild || t.children[0];
+      if (!el) return;
+      fresh.push(el);
+    }
+    const ref = prev ? prev.nextSibling : list.firstChild;
+    if (ref !== el) list.insertBefore(el, ref);
+    prev = el;
+    patch(el, r);
+  });
+  const motion = typeof JellyMotion !== 'undefined' && typeof calmMotion === 'function' && !calmMotion();
+  if (!motion) return;
+  rows.forEach((r) => {
+    const el = byKey[r.key];
+    if (!el) return;
+    if (fresh.indexOf(el) !== -1) { if (Object.keys(before).length) secArrive(el); return; }
+    const b = before[r.key];
+    if (!b || !el.getBoundingClientRect) return;
+    const nr = el.getBoundingClientRect();
+    const dx = b.x - nr.left;
+    const dy = b.y - nr.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    JellyMotion.play(el, 'glide', (x) => ({ transform: 'translate(' + dx * (1 - x) + 'px,' + dy * (1 - x) + 'px)' }), { calm: false, layer: true });
+  });
+}
+
+function renderNoticeScreen() {
+  const root = setupEl('setup-notice');
+  if (!root) return;
+  const m = nbsModel();
+  const n = m.n;
+  setDataIfChanged(root, 'state', m.state);
+  setTextIfChanged(setupEl('nbs-title'), 'Notice board · ' + campWord());
+  setTextIfChanged(setupEl('nbs-headline'), m.headline);
+  setTextIfChanged(setupEl('nbs-lede'), m.lede);
+  // The three plain fields. The stored small label (`eyebrow`) has no field: no phone draws it, but the strip falls back to it
+  // when the heading is empty, so the heading shows it as its hint then.
+  root.querySelectorAll('[data-nb-field]').forEach((el) => {
+    const f = el.dataset.nbField;
+    secSetValue(el, n[f] || '');
+    if (f === 'title') nbsSetAttr(el, 'placeholder', n.eyebrow ? n.eyebrow : 'Like “Where your team cleans”');
+    secGrow(el);
+  });
+  setTextIfChanged(setupEl('nbs-zones-note'), m.listedCount ? m.listedCount + ' of ' + m.total + ' listed' : 'None listed yet');
+  nbsSyncRows(setupEl('nbs-zones'), m.zones, nbsZoneHtml, nbsZonePatch);
+  setTextIfChanged(setupEl('nbs-steps-note'), m.steps.length ? m.steps.length + ' ' + nbsPlural(m.steps.length, 'step', 'steps') : 'None yet');
+  nbsSyncRows(setupEl('nbs-steps'), m.steps, nbsStepHtml, nbsStepPatch);
+  // A counselor's phone, as it draws the notice (phones show nothing for a notice with no words: CSS hides the picture then).
+  const showPic = m.state === 'draft' || m.state === 'posted';
+  const team = m.previewTeam;
+  setTextIfChanged(setupEl('nbs-preview-label'), team ? 'On a ' + (teamShort(team) || teamName(team)) + ' counselor’s phone' : 'On a counselor’s phone');
+  setHtmlIfChanged(setupEl('nbs-preview'), showPic ? (noticeCardHtml(true, n, team ? { team } : undefined) || '') : '');
+  const post = setupEl('nbs-post');
+  if (post) {
+    nbsSetAttr(post, 'aria-disabled', m.state === 'empty' ? 'true' : 'false');
+    setTextIfChanged(setupEl('nbs-post-label'), m.state === 'empty' ? 'Write the notice first' : 'Put it on every phone');
+  }
+}
+
+// ── the edits (each reads the live notice; each returns whether it changed anything) ──
+function nbsOneLine(v) { return String(v == null ? '' : v).replace(/\s*[\r\n]+\s*/g, ' ').trim(); }
+function nbsLines(v) { return String(v == null ? '' : v).split(/\r?\n/).map((s) => s.trim()).filter(Boolean); }
+
+function nbsCommit() {
+  saveState();
+  renderAll();
+}
+
+function nbsSetField(field, value) {
+  if (!canEdit() || ['title', 'sub', 'signoff'].indexOf(field) === -1) return false;
+  const n = noticeBoard();
+  const v = nbsOneLine(value);
+  if (n[field] === v) return false;
+  n[field] = v;
+  nbsCommit();
+  return true;
+}
+
+function nbsZoneSet(team, patch) {
+  if (!canEdit() || teamIds().indexOf(team) === -1) return false;
+  const n = noticeBoard();
+  const i = n.zones.findIndex((z) => z.teamId === team);
+  const z = i === -1 ? null : n.zones[i];
+  const place = patch.place !== undefined ? nbsOneLine(patch.place) : z ? z.place : '';
+  const note = patch.note !== undefined ? nbsOneLine(patch.note) : z ? z.note : '';
+  if (!z) {
+    if (!place) return false; // small print without a place puts nobody on the notice
+    n.zones.push({ teamId: team, place, note });
+  } else if (!place && patch.place !== undefined) {
+    n.zones.splice(i, 1); // clearing the place takes the team off the notice
+  } else if (z.place === place && z.note === note) {
+    return false;
+  } else {
+    z.place = place; z.note = note;
+  }
+  nbsCommit();
+  return true;
+}
+
+// Move a team's area up one place among the teams the notice lists (a team the roster no longer has is stepped over).
+function nbsZoneUp(team) {
+  if (!canEdit()) return false;
+  const n = noticeBoard();
+  const ids = teamIds();
+  const i = n.zones.findIndex((z) => z.teamId === team);
+  if (i === -1) return false;
+  let j = i - 1;
+  while (j >= 0 && ids.indexOf(n.zones[j].teamId) === -1) j--;
+  if (j < 0) return false;
+  const t = n.zones[i]; n.zones[i] = n.zones[j]; n.zones[j] = t;
+  nbsCommit();
+  return true;
+}
+
+function nbsStepSet(idx, patch) {
+  if (!canEdit()) return false;
+  const st = noticeBoard().steps[idx];
+  if (!st) return false;
+  let changed = false;
+  if (patch.emoji !== undefined && st.emoji !== patch.emoji.trim()) { st.emoji = patch.emoji.trim(); changed = true; }
+  if (patch.when !== undefined && st.when !== nbsOneLine(patch.when)) { st.when = nbsOneLine(patch.when); changed = true; }
+  if (patch.items !== undefined) {
+    const items = nbsLines(patch.items);
+    if (JSON.stringify(items) !== JSON.stringify(st.items)) { st.items = items; changed = true; }
+  }
+  if (changed) nbsCommit();
+  return changed;
+}
+
+function nbsStepAdd() {
+  if (!canEdit()) return false;
+  noticeBoard().steps.push({ emoji: '', when: '', items: [] });
+  nbsCommit();
+  // The new step's heading is where the director types next.
+  const f = setupEl('nbs-steps') && setupEl('nbs-steps').querySelector ? setupEl('nbs-steps').querySelector('.nbs-step:last-child .nb-step-when') : null;
+  if (f && typeof f.focus === 'function') { try { f.focus({ preventScroll: false }); } catch (e) { /* fine */ } }
+  return true;
+}
+
+function nbsStepUp(idx) {
+  if (!canEdit()) return false;
+  const steps = noticeBoard().steps;
+  if (!(idx > 0 && idx < steps.length)) return false;
+  const t = steps[idx]; steps[idx] = steps[idx - 1]; steps[idx - 1] = t;
+  nbsCommit();
+  return true;
+}
+
+function nbsStepRemove(idx, row) {
+  if (!canEdit() || !noticeBoard().steps[idx]) return false;
+  const go = () => { if (canEdit() && noticeBoard().steps[idx]) { noticeBoard().steps.splice(idx, 1); nbsCommit(); } };
+  if (row && typeof playRowOut === 'function') playRowOut(row, go); else go();
+  return true;
+}
+
+async function nbsPost() {
+  if (!canEdit()) return;
+  if (!noticeHasWords(noticeBoard())) { nbsFocusHeading(); return; }
+  const choice = await askDialog({
+    title: 'Put the notice on every phone now?',
+    body: 'Everyone with Camp open sees it at the top of Now.',
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Put it on every phone', value: 'go', kind: 'gold' }],
+  });
+  if (choice === 'go' && canEdit()) setNoticeStatus('posted');
+}
+
+function nbsDown() {
+  if (!canEdit()) return;
+  if (typeof tellNoticeDown === 'function') tellNoticeDown(); else setNoticeStatus('draft', { celebrate: false });
+}
+
+async function nbsStartOver(kind) {
+  if (!canEdit()) return;
+  const reset = kind === 'reset';
+  const choice = await askDialog({
+    title: reset ? 'Start again from the cleanup example?' : 'Clear the whole notice?',
+    body: (reset ? 'What’s written here is replaced by the cleanup example.' : 'Everything written here is removed.') + (noticeBoard().status === 'posted' ? ' It comes down from every phone and stays here as a draft.' : ' It stays a draft.'),
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: reset ? 'Replace it' : 'Clear it', value: 'go', kind: 'danger' }],
+  });
+  if (choice !== 'go' || !canEdit()) return;
+  state.notice = reset ? Object.assign(defaultNotice(), { status: 'draft' }) : { status: 'draft', eyebrow: '', title: '', sub: '', signoff: '', zones: [], steps: [] };
+  nbsCommit();
+}
+
+function nbsFocusHeading() {
+  const h = document.querySelector ? document.querySelector('#setup-notice .nbs-heading') : null;
+  if (h && typeof h.focus === 'function') { try { h.focus(); } catch (e) { /* fine */ } }
+}
+
+// Enter finishes a one-line field: on to the next field, or off the keyboard after the last.
+function nbsNextField(el) {
+  const root = setupEl('setup-notice');
+  const all = root && root.querySelectorAll ? Array.prototype.filter.call(root.querySelectorAll('textarea, input'), (f) => f.offsetParent !== null) : [];
+  const nxt = all[all.indexOf(el) + 1];
+  if (nxt && typeof nxt.focus === 'function') nxt.focus(); else if (typeof el.blur === 'function') el.blur();
+}
+
+function wireNoticeScreen() {
+  if (noticeUi.wired) return;
+  const root = setupEl('setup-notice');
+  if (!root || typeof root.addEventListener !== 'function') return;
+  noticeUi.wired = true;
+  const q = (e, sel) => (e.target && e.target.closest ? e.target.closest(sel) : null);
+  root.addEventListener('change', (e) => {
+    const el = e.target;
+    if (!el || !el.classList) return;
+    if (el.dataset.nbField) nbsSetField(el.dataset.nbField, el.value);
+    else if (el.classList.contains('nb-zone-place')) nbsZoneSet(el.dataset.team, { place: el.value });
+    else if (el.classList.contains('nb-zone-note')) nbsZoneSet(el.dataset.team, { note: el.value });
+    else if (el.classList.contains('nb-step-emoji')) nbsStepSet(+el.dataset.idx, { emoji: el.value });
+    else if (el.classList.contains('nb-step-when')) nbsStepSet(+el.dataset.idx, { when: el.value });
+    else if (el.classList.contains('nb-step-items')) nbsStepSet(+el.dataset.idx, { items: el.value });
+  });
+  root.addEventListener('input', (e) => { if (e.target && e.target.classList && e.target.classList.contains('nbs-grow')) secGrow(e.target); });
+  root.addEventListener('keydown', (e) => {
+    const el = e.target;
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && el && el.hasAttribute && el.hasAttribute('data-oneline')) { e.preventDefault(); nbsNextField(el); }
+  });
+  root.addEventListener('click', (e) => {
+    let b;
+    if ((b = q(e, '.nb-zone-move'))) {
+      const team = b.dataset.team;
+      if (nbsZoneUp(team)) { // the button may have gone (the first row has none): keep the focus in the row
+        const row = root.querySelector('.nbs-zone[data-team="' + team + '"]');
+        const up = row && row.querySelector('.nbs-up');
+        const to = up && !up.hidden ? up : row && row.querySelector('.nb-zone-place');
+        if (to && typeof to.focus === 'function') { try { to.focus({ preventScroll: true }); } catch (x) { /* fine */ } }
+      }
+    } else if ((b = q(e, '.nb-step-move'))) nbsStepUp(+b.dataset.idx);
+    else if ((b = q(e, '.nb-step-remove'))) nbsStepRemove(+b.dataset.idx, b.closest('.nbs-step'));
+    else if (q(e, '#nbs-add-step')) nbsStepAdd();
+    else if (q(e, '#nbs-post')) nbsPost();
+    else if (q(e, '#nbs-down')) nbsDown();
+    else if (q(e, '#nbs-reset')) nbsStartOver('reset');
+    else if (q(e, '#nbs-clear')) nbsStartOver('clear');
+  });
+}

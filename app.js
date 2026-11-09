@@ -1489,7 +1489,10 @@ function noticeZoneFor(teamId) {
 // the notice is not posted and this is not a preview; '' without now-ui.js (there is no Now to show it on).
 function noticeCardHtml(preview, notice, opts) {
   if (!preview && !noticePosted()) return null;
-  return typeof nowNoticePreviewHtml === 'function' ? nowNoticePreviewHtml(nowNoticeData(nowCtx(), notice), opts) : '';
+  if (typeof nowNoticePreviewHtml !== 'function') return '';
+  const ctx = nowCtx();
+  if (opts && opts.team && teamIds().includes(opts.team)) ctx.myTeam = opts.team; // the builder draws it as a named team's counselor would see it
+  return nowNoticePreviewHtml(nowNoticeData(ctx, notice), opts);
 }
 
 // Post / un-post from the builder. Editors only — it shows on every device.

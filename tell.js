@@ -559,7 +559,7 @@ function tellOpenFullNotice() {
   if (!tellMayUse()) return;
   tell.returnToDraft = true;
   tellSaveDraft();
-  openBuilder('notice');
+  if (typeof setupOpenNotice === 'function') setupOpenNotice('tell'); else openBuilder('notice');
 }
 
 // ════════════════════════════════════════════════════════════════════

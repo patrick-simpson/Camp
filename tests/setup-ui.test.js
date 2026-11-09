@@ -48,7 +48,7 @@ test('More → Set up the week opens the hub; a named classic tab opens the clas
   } finally { suClose(); }
 });
 
-test('hub rows open their screens: Camp week, Schedule, Games and Teams → theirs, Notice → the classic editor on that tab, Restore points → backups, People → its own screen', () => {
+test('hub rows open their screens: Camp week, Schedule, Games and Teams → theirs, Notice → its own screen, Restore points → backups, People → its own screen', () => {
   suOpen();
   try {
     hubOpen('games');
@@ -56,7 +56,7 @@ test('hub rows open their screens: Camp week, Schedule, Games and Teams → thei
     hubOpen('teams');
     assert.equal(state.ui.builderScreen, 'teams', 'Step 25: Teams has its own screen now (the classic Teams tab is still reachable from the Classic editor)');
     hubOpen('notice');
-    assert.deepEqual([state.ui.builderScreen, state.ui.settingsTab], ['classic', 'notice']);
+    assert.equal(state.ui.builderScreen, 'notice', 'Step 30: the Notice board has its own screen');
     hubOpen('restore');
     assert.equal(state.ui.builderScreen, 'backups');
     hubOpen('people');
