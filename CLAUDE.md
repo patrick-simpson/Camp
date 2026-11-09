@@ -1717,7 +1717,7 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
 
 - **`#setup[data-screen]` is the one switch** (`hub | backups | classic`, and
   Step 15's `week | schedule | rain`, Step 19's `meals | verses | cleanup | electives`, Step 25's `teams`, Step 21's
-  `games`, Step 28's `wizard` (its CSS line exists; the routing doesn't yet); a later
+  `games`, Step 28's `wizard`, Step 30's `notice` (its CSS line exists; the routing doesn't yet); a later
   screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
   inside `#tab-now`, shown only under `body.builder-open` (which hides every
   other child of main-wrap: `:not(#setup)`). **No `data-screen` = the v197
@@ -5833,6 +5833,16 @@ should expire on its own.
   (`renderNoticeTab` in settings.js), not typed into a single box: heading,
   intro, per-team assignments, numbered steps with bullets, closing line —
   plus a live preview that renders the real card.
+- **Its own screen (Step 30; markup and CSS from the design pass, NOT wired yet)**: `#setup[data-screen="notice"]`,
+  `#setup-notice.nbs[data-state=empty|draft|posted|hollow]` (the state picks the headline words, the dock's one button and
+  whether there is a picture), in index.html's comment at `#setup-notice` (the copy per state and every row template) and
+  styles.css's last block. One grouped sheet per part, in a counselor's reading order: Heading and intro, Where each team
+  goes (a row per roster team, its mark, an empty place = not on the notice, Move up only), Steps (numbered, Move up /
+  Remove step), Closing line, then `#nbs-preview` (`noticeCardHtml(true, notice)` in Tell everyone's phone outline) and the
+  dock (`#nbs-post` gold "Put it on every phone" / the dashed "Write the notice first"; `#nbs-down` "Take it down").
+  Ids are `nbs-` (the classic tab's `notice-*` ids still live in `#settings-view`); field classes keep the classic `nb-`
+  names. No field for the stored `eyebrow` (no phone draws it). `docs/build-notes/verify/step30-design.cjs` draws every
+  state into the real page.
 - **Draft or posted, no timer.** `status: 'draft'` means nobody but the editor
   sees it (keep editing indefinitely); `'posted'` puts it on every device until
   someone puts it back to draft. `setNoticeStatus()` is the only way to flip
@@ -5849,10 +5859,10 @@ should expire on its own.
   `steps`, junk rows) and is called from `normalizeSyncedState()`, so it runs
   after every remote merge. Same rule as everything else synced — see the RTDB
   gotcha above.
-- Builder form hooks are prefixed **`nb-`** so they can't collide with the
-  card's own `notice-` classes: the preview renders the real card, so both
-  sets of markup live in the same tab. (They did collide once — card list CSS
-  landed on the form's textareas.)
+- Builder form hooks are prefixed **`nb-`** (`nb-field`, `nb-zone-place`, `nb-step-when` …) and the screen's layout
+  classes `nbs-`: the preview renders the real card (now-ui.js's `.nb`, `.nb-zone`, `.nb-step`, `.nb-when` …, exact
+  class names), so both sets of markup live on one screen and must never share a name. (They did collide once — card
+  list CSS landed on the form's textareas.)
 - Editor-typed text is escaped on render; nothing typed into the builder can
   inject markup.
 

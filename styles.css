@@ -19473,3 +19473,301 @@ jelly-chip.sched-day-chip[data-today][selected] {
     --mine-ring: var(--team-accent-d, var(--team-accent-l, var(--ink)));
   }
 }
+
+/* ============================================================
+   SET UP THE WEEK: the notice board (P2 §11.16; Step 30)
+   ============================================================
+   The structured notice as a screen of the frame, read top to bottom in the
+   order a counselor reads it: the heading and intro (the strip on Now), where
+   each team goes, the numbered steps, the closing line, then the notice as a
+   counselor's phone draws it and the dock's one action. Fields sit in hairline
+   rows of ONE grouped sheet per part (§8.1 rule 2), never a box per item; a
+   team wears its own mark, a step its number in a run-sheet column. Nothing
+   here is tinted: the preview is the only picture, and it is the real markup.
+   Markup: index.html #setup-notice (the row templates are in its comments). */
+.setup[data-screen="notice"] [data-setup-screen="notice"] {
+  display: block;
+}
+/* The dock rides the foot of the screen (Restore points' way). */
+.setup-screen.nbs {
+  padding-bottom: 0;
+}
+/* Every row layout below follows the list's own width in its own text size, so
+   130% and 200% text step down by themselves (the hub rows' 18em test). */
+.nbs-list {
+  container-type: inline-size;
+}
+/* A field row: its label over the field, a hairline between rows. */
+.nbs-fld {
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+}
+/* The heading field reads as the heading it makes (the strip's title). */
+.nbs-heading {
+  font: 800 1.0625rem/1.25 var(--font-ui);
+  letter-spacing: var(--track-row);
+}
+/* A box that grows with its words instead of scrolling inside itself
+   (field-sizing where the browser has it; setup-ui.js secGrow elsewhere). */
+.nbs-grow {
+  min-height: var(--target);
+  field-sizing: content;
+  resize: none;
+  font-weight: 600;
+  line-height: 1.38;
+}
+
+/* ── Where each team goes: the mark, the name, Move up at the edge; the place
+   (and its small print) under the name. A team the notice doesn't list says
+   so under its name, quieter, with only the place to type. ── */
+.nbs-zone {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "mark name up"
+    ".    flds flds";
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 8px;
+  padding: 10px 4px 12px 14px; /* Move up's 44px hit area sits on the right edge */
+  border-top: 1px solid var(--line);
+}
+.nbs-mark {
+  grid-area: mark;
+  display: grid;
+  place-items: center;
+}
+.nbs-zone-name {
+  grid-area: name;
+  min-width: 0;
+  margin: 0;
+  padding-right: 10px; /* off the edge when Move up is not there */
+  font: 750 1rem/1.28 var(--font-ui);
+  letter-spacing: var(--track-row);
+  overflow-wrap: break-word;
+}
+.nbs-zone-name small {
+  display: none;
+  margin-top: 1px;
+  font: 600 0.84375rem/1.3 var(--font-ui);
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.nbs-zone[data-empty] .nbs-zone-name {
+  color: var(--ink-2);
+}
+.nbs-zone[data-empty] .nbs-zone-name small {
+  display: block;
+}
+/* Move up: an arrow, not a chevron (a chevron means "opens something"). */
+.nbs-up {
+  grid-area: up;
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.nbs-up[hidden] {
+  display: none;
+}
+.nbs-up .ico {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.4;
+}
+.nbs-up:active {
+  background: color-mix(in srgb, var(--ink) 8%, var(--sheet));
+}
+.nbs-zone-flds {
+  grid-area: flds;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 10px;
+}
+/* The small print: under the place, a step quieter. It is rare (one team in
+   the cleanup example), so an EMPTY box shows only while that team's row is
+   being edited and has a place — typing the place, it appears under it and
+   Next moves into it — instead of five empty boxes down the list. With words
+   it always shows; a team with no place never does. CSS alone: no state. */
+.nbs-zone .nb-zone-note {
+  font-weight: 600;
+}
+.nbs-zone:not(:focus-within) .nb-zone-note:placeholder-shown,
+.nbs-zone:has(.nb-zone-place:placeholder-shown) .nb-zone-note:placeholder-shown,
+.nbs-zone[data-empty]:not(:focus-within) .nb-zone-note {
+  display: none;
+}
+/* Large text: the fields take the whole row under the name. */
+@container (max-width: 18em) {
+  .nbs-zone {
+    grid-template-areas:
+      "mark name up"
+      "flds flds flds";
+  }
+}
+
+/* ── Steps: the number in a run-sheet column, the emoji and heading on one
+   line, the instructions under them, Move up / Remove step at the foot (the
+   game sheet's How to play, one look for "a heading and its points"). ── */
+.nbs-step {
+  display: grid;
+  grid-template-columns: minmax(30px, max-content) minmax(0, 1fr);
+  grid-template-areas:
+    "num  head"
+    ".    items"
+    ".    acts";
+  column-gap: 10px;
+  row-gap: 8px;
+  padding: 12px 14px 2px;
+  border-top: 1px solid var(--line);
+}
+/* The numeral as counselors read it ("1", "2" …): heavy ink, tabular, a step
+   bigger than the words beside it, as a run sheet numbers its lines. */
+.nbs-num {
+  grid-area: num;
+  align-self: center;
+  font: 850 1.375rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--ink);
+}
+.nbs-step-head {
+  grid-area: head;
+  display: flex;
+  align-items: flex-start; /* the emoji stays a square when the heading wraps */
+  gap: 8px;
+  min-width: 0;
+}
+/* The emoji: a 48px square of its own, the glyph a fixed size (it doesn't grow
+   past the square at 200% text); empty, a link-blue "+" like the Meals screen's. */
+.nbs-emo {
+  flex: none;
+  width: 48px;
+  padding: 0;
+  text-align: center;
+  font-size: 22px;
+  line-height: 1;
+}
+.nbs-emo::placeholder {
+  color: var(--link);
+  font: 750 22px/1 var(--font-ui);
+}
+.nbs-when {
+  flex: 1 1 auto;
+  font-weight: 800;
+}
+.nbs-step > .nb-step-items {
+  grid-area: items;
+}
+.nbs-acts {
+  grid-area: acts;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s-3);
+}
+.nbs-acts .btn-quiet {
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+.nbs-acts .btn-quiet-danger {
+  margin-left: auto;
+}
+/* Larger text (130% and up on a phone): the number and the emoji share the
+   first line and the heading gets the whole width under them (beside the
+   emoji it was squeezed to a word a line, "Taberna / cle", at 200%). */
+@container (max-width: 18em) {
+  .nbs-step {
+    grid-template-areas:
+      "num   emo"
+      "when  when"
+      "items items"
+      "acts  acts";
+  }
+  .nbs-step-head {
+    display: contents;
+  }
+  .nbs-step .nbs-emo {
+    grid-area: emo;
+    justify-self: start;
+  }
+  .nbs-step .nbs-when {
+    grid-area: when;
+  }
+}
+.nbs-steps + .sched-add {
+  margin-top: var(--s-2);
+}
+
+/* An empty part is no box (a bordered nothing read as a heavy rule): the
+   steps before the first one is added. */
+.nbs-list:empty {
+  display: none;
+}
+
+/* ── The preview: Tell everyone's phone outline (.tell-phone), holding the
+   strip and what See all opens. A notice with nothing in it is skipped by
+   every phone, so then there is no picture, only the line that says so. ── */
+.nbs-phone .nb-preview {
+  margin-top: var(--s-2);
+}
+.nbs .nbs-preview-none {
+  display: none;
+  margin-top: 0;
+}
+.nbs[data-state="empty"] .nbs-phone,
+.nbs[data-state="hollow"] .nbs-phone {
+  display: none;
+}
+.nbs[data-state="empty"] .nbs-preview-none,
+.nbs[data-state="hollow"] .nbs-preview-none {
+  display: flex;
+}
+
+/* ── Start over: two quiet lines from the left edge under a hairline (the
+   safe one in link blue, Clear in danger text), each asking first. ── */
+.nbs-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: var(--s-6);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--line-2);
+}
+.nbs-foot .btn-quiet {
+  margin: 0 -8px;
+  padding: 0 8px;
+  text-align: left;
+}
+
+/* ── The dock: ONE action, chosen by the section's data-state. Empty is the
+   dashed well naming what's missing (no pin on it: nothing is pinned yet);
+   posted is a plain chunky button with what it keeps under the verb. ── */
+.nbs-dock .btn .ico {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.4;
+}
+.nbs[data-state="posted"] .nbs-post,
+.nbs[data-state="hollow"] .nbs-post,
+.nbs:not([data-state="posted"]):not([data-state="hollow"]) .nbs-down {
+  display: none;
+}
+.nbs-post[aria-disabled="true"] .ico {
+  display: none;
+}
+.nbs-down {
+  flex-direction: column;
+  gap: 1px;
+  padding-block: 5px;
+}
+.nbs-down-s {
+  font: 600 0.8125rem/1.2 var(--font-ui);
+  color: var(--ink-2);
+}
