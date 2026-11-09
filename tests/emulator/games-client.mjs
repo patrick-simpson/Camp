@@ -268,6 +268,32 @@ for (const R of ROOTS) {
     d.stop();
   });
 
+  await s.t(`${R}: renaming a games day and moving it to another weekday (games re-placed on the schedule) are accepted and leave nothing unconfirmed`, async () => {
+    await reseed();
+    const d = await phone(R, ED, 'editor', 'Ed');
+    await d.attach();
+    const first = d.run(`SETUP_DK.find((dk) => gmIsGamesDay(dk) && gmGamesOnDay(dk).length)`);
+    const to = d.run(`SETUP_DK.find((dk) => !gmIsGamesDay(dk))`);
+    if (!first || !to) fail('a games day and a free weekday');
+    const id = d.run(`gmDayRecs(${jstr(first)})[0].id`);
+    const n = d.run(`gmGamesOnDay(${jstr(first)}).length`);
+    const r = d.run(`gmSetDayName(${jstr(id)}, 'Messtival')`);
+    if (!r.ok || !r.changed) fail('rename: ' + jstr(r));
+    await d.settle();
+    let rec = (await val(ed(), `${R}/config/days`)).filter(Boolean).find((x) => x.id === id);
+    if (!rec || rec.name !== 'Messtival') fail('the name on the server: ' + jstr(rec));
+    const m = d.run(`gmMoveDay(${jstr(id)}, ${jstr(to)})`);
+    if (!m.ok || !m.changed) fail('move: ' + jstr(m));
+    await d.settle();
+    const days = (await val(ed(), `${R}/config/days`)).filter(Boolean);
+    rec = days.find((x) => x.id === id);
+    if (!rec || rec.dow !== d.run(`gmDow(${jstr(to)})`)) fail('the weekday on the server: ' + jstr(rec));
+    const dows = days.map((x) => x.dow);
+    if (jstr(dows) !== jstr(dows.slice().sort((a, b) => a - b))) fail('days stay in week order: ' + dows.join());
+    if ((await games(R)).filter((g) => g.dayId === id).length !== n) fail('every game stayed with its day');
+    d.stop();
+  });
+
   await s.t(`${R}: the ⚡ quick game, named through the real sheet, lands on the item and is accepted`, async () => {
     await reseed();
     const d = await phone(R, ED, 'editor', 'Ed');
