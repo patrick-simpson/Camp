@@ -707,7 +707,7 @@ test('a failed push is retried by the next builder change and reported, not lost
       saveConfig();
       flushPendingPush();
       await waitQuiet();
-      assert.ok(toasts.some((t) => /Couldn't save the week setup/.test(t.msg)));
+      assert.ok(toasts.some((t) => /Couldn’t save the week setup/.test(t.msg)));
       assert.equal(pendingConfigWrites, 0, 'the counter did not wedge');
       assert.ok(Object.keys(cfgUnconfirmed()).length, 'the edit is still on this phone, unconfirmed');
     });

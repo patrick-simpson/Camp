@@ -274,7 +274,7 @@ function hubStatus(section, view) {
     }
     case 'notice': {
       const n = v.notice || {};
-      if (n.status === 'posted') return hubMark('info', 'On every phone', [], 'Posted');
+      if (n.status === 'posted') return hubMark('info', 'On every phone', [], 'Pinned');
       return hubMark('info', n.has ? 'Not on anyone’s phone yet' : 'Nothing written yet', [], 'Draft');
     }
     case 'restore': {
@@ -970,7 +970,6 @@ function hubOpen(key) {
     if (typeof openPushDrawer === 'function') openPushDrawer();
     return;
   }
-  if (o.drawer === 'members') { if (typeof openMembers === 'function') openMembers(); return; }
   if (o.screen === 'people') peopleUi.from = ''; // from the hub, Back is the hub
   if (o.screen === 'backups') { setupGo('backups'); refreshRestoreIndex(); return; }
   setupGo(o.screen);
@@ -10282,8 +10281,8 @@ function nbsModel() {
   const rest = ids.filter((id) => listed.indexOf(id) === -1);
   const zones = listed.concat(rest).map((id, i) => ({ key: 'z-' + id, id, zone: on(zoneOf(id)) ? zoneOf(id) : null, first: i === 0 }));
   const copy = {
-    empty: ['Nothing written yet', 'Write it here, then put it on every phone when it’s ready.'],
-    draft: ['A draft only directors see', 'Counselors see nothing until you put it on every phone. Edit it as long as you like.'],
+    empty: ['Nothing written yet', 'Write it here, then pin it when it’s ready.'],
+    draft: ['A draft only directors see', 'Counselors see nothing until you pin it. Edit it as long as you like.'],
     posted: ['On every phone', 'It’s at the top of Now for everyone. Changes show there as you make them.'],
     hollow: ['Nothing to show', 'It’s pinned, but phones show nothing until something is written here.'],
   }[state_];
@@ -10521,7 +10520,7 @@ function renderNoticeScreen() {
   const post = setupEl('nbs-post');
   if (post) {
     nbsSetAttr(post, 'aria-disabled', m.state === 'empty' ? 'true' : 'false');
-    setTextIfChanged(setupEl('nbs-post-label'), m.state === 'empty' ? 'Write the notice first' : 'Put it on every phone');
+    setTextIfChanged(setupEl('nbs-post-label'), m.state === 'empty' ? 'Write the notice first' : 'Pin the notice');
   }
 }
 
@@ -10673,9 +10672,9 @@ async function nbsPost() {
   if (!canEdit()) return;
   if (!noticeHasWords(noticeBoard())) { nbsFocusHeading(); return; }
   const choice = await askDialog({
-    title: 'Put the notice on every phone now?',
+    title: 'Pin the notice now?',
     body: 'Everyone with Camp open sees it at the top of Now.',
-    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Put it on every phone', value: 'go', kind: 'gold' }],
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Pin the notice', value: 'go', kind: 'gold' }],
   });
   if (choice === 'go' && canEdit()) setNoticeStatus('posted');
 }

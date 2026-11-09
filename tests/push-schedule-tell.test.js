@@ -114,7 +114,7 @@ test('dormant, a counselor, and a failing sender never throw and never block: th
     const r = await pushScheduleTell(ptBlocks(), true);
     assert.equal(r.ok, false);
     assert.equal(r.reason, 'failed');
-    assert.ok(/saved, but the alert didn't go out/.test(pushScheduleTellWords(r)));
+    assert.ok(/saved, but the alert didn’t go out/.test(pushScheduleTellWords(r)));
     assert.equal(pushSchedAlertsOff, false, 'a network blip is not "unknown kind"');
   } finally { pushScheduleSnapshot = real; ptEnd(ctx); }
 });

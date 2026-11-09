@@ -2109,11 +2109,11 @@
              the card's own classes (.nb, .nb-zone, .nb-step, .nb-when … in the preview): those are exact class names.
              data-state on the section (the renderer's one switch; the dock reads it):
                empty   draft, nothing written   headline "Nothing written yet"
-                                                lede     "Write it here, then put it on every phone when it’s ready."
+                                                lede     "Write it here, then pin it when it’s ready."
                                                 dock     #nbs-post aria-disabled="true", #nbs-post-label "Write the notice first" (the dashed well)
                draft   draft with words         headline "A draft only directors see"
-                                                lede     "Counselors see nothing until you put it on every phone. Edit it as long as you like."
-                                                dock     #nbs-post, gold: "Put it on every phone"
+                                                lede     "Counselors see nothing until you pin it. Edit it as long as you like."
+                                                dock     #nbs-post, gold: "Pin the notice"
                posted  posted with words        headline "On every phone"
                                                 lede     "It’s at the top of Now for everyone. Changes show there as you make them."
                                                 dock     #nbs-down: "Take down" / "Keeps it here as a draft" (the verb pair is Pin the notice / Take down, as Tell everyone and Now say it)
@@ -2238,7 +2238,7 @@
                and focuses the heading). Putting it on every phone asks first ("Put the notice on every phone now?" · Put it
                on every phone / Not now); taking it down is Tell everyone's tellNoticeDown() (the 10-second Undo). -->
           <div class="setup-dock nbs-dock" id="nbs-dock">
-            <button type="button" class="btn btn-gold btn-block nbs-post" id="nbs-post"><span class="nbs-post-l"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><span id="nbs-post-label">Put it on every phone</span></span></button>
+            <button type="button" class="btn btn-gold btn-block nbs-post" id="nbs-post"><span class="nbs-post-l"><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><span id="nbs-post-label">Pin the notice</span></span></button>
             <button type="button" class="btn btn-block nbs-down" id="nbs-down"><span class="nbs-down-t">Take down</span><small class="nbs-down-s">Keeps it here as a draft</small></button>
           </div>
         </section>

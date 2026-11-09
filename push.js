@@ -1266,7 +1266,7 @@ function pushScheduleTellWords(r, many) {
       return 'The change is saved, but the alert sender needs an update before it can send schedule alerts. Tell ' + who + '.';
     }
     if (r.code === 'rate') return "The change is saved, but the alert didn’t go out yet: alerts go out at most once every 10 seconds.";
-    return "The change is saved, but the alert didn't go out. Check your signal.";
+    return "The change is saved, but the alert didn’t go out. Check your signal.";
   }
   const n = (r.sent || 0) + (r.queued || 0);
   if (n) return 'Told ' + n + ' phone' + (n === 1 ? '' : 's') + ' that follow' + (n === 1 ? 's' : '') + (many ? ' these.' : ' this.');

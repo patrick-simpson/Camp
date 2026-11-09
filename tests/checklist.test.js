@@ -204,7 +204,7 @@ test('Notice board and Restore points are information, not chores; denied restor
   assert.deepEqual([hubStatus('notice', clView()).mark, hubStatus('notice', clView()).word, hubStatus('notice', clView()).summary], ['info', 'Draft', 'Nothing written yet']);
   assert.equal(hubStatus('notice', clView({ notice: { status: 'draft', has: true } })).summary, 'Not on anyone’s phone yet');
   const posted = hubStatus('notice', clView({ notice: { status: 'posted', has: true } }));
-  assert.deepEqual([posted.word, posted.summary], ['Posted', 'On every phone']);
+  assert.deepEqual([posted.word, posted.summary], ['Pinned', 'On every phone']);
   assert.equal(hubStatus('restore', clView()).summary, 'Last saved 12 min ago');
   assert.equal(hubStatus('restore', clView({ restore: { status: 'ok', newestAt: 0, count: 0 } })).summary, 'None saved yet');
   assert.equal(hubStatus('restore', clView({ restore: { status: 'loading' } })).summary, 'Checking…');

@@ -889,7 +889,7 @@ test('no code path reads matchMedia for motion any more: JOY_REDUCED and the raw
 
 test('the line under Calm motion says what is happening right now, in plain words', () => {
   const line = calmReasonLine;
-  assert.ok(/asks for less motion.*Change it in your phone's Settings/.test(line('off', true, 'os')), 'Off on a phone that asks for calm: the phone wins, and it says where to change that');
+  assert.ok(/asks for less motion.*Change it in your phone’s Settings/.test(line('off', true, 'os')), 'Off on a phone that asks for calm: the phone wins, and it says where to change that');
   assert.ok(/asks for less motion/.test(line('auto', true, 'os')));
   assert.equal(line('on', true, 'switch-on'), 'Calm all the time, as you chose.');
   assert.equal(line('auto', true, 'battery-saver'), 'Calm right now: your phone is saving battery.');

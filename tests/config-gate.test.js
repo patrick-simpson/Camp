@@ -254,7 +254,7 @@ test('a refused config write is surfaced, not swallowed, and does not wedge the 
     assert.equal(pendingConfigWrites, 1);
     await waitQuiet();
     assert.equal(pendingConfigWrites, 0, 'settled on failure too');
-    assert.ok(toasts.some((t) => /Couldn't save the week setup/.test(t)), toasts.join(' | '));
+    assert.ok(toasts.some((t) => /Couldn’t save the week setup/.test(t)), toasts.join(' | '));
   } finally { showToast = real; console.warn = realWarn; gateTeardown(); }
 });
 

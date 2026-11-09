@@ -128,7 +128,7 @@ test('the paint: state, words and notes land in the markup, an idle repaint writ
     renderNoticeScreen();
     assert.equal(root.dataset.state, 'draft');
     assert.equal(document.getElementById('nbs-headline').textContent, 'A draft only directors see');
-    assert.equal(document.getElementById('nbs-post-label').textContent, 'Put it on every phone');
+    assert.equal(document.getElementById('nbs-post-label').textContent, 'Pin the notice');
     state.notice.status = 'posted';
     renderNoticeScreen();
     assert.equal(root.dataset.state, 'posted');
@@ -166,7 +166,7 @@ test('post asks first; take it down is Tell everyone\'s Take down; start over an
     nbAnswer = 'no';
     await nbsPost();
     assert.equal(state.notice.status, 'draft');
-    assert.equal(nbAsked[0].title, 'Put the notice on every phone now?');
+    assert.equal(nbAsked[0].title, 'Pin the notice now?');
     nbAnswer = 'go';
     await nbsPost();
     assert.equal(state.notice.status, 'posted');

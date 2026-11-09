@@ -2329,7 +2329,7 @@ function nowBlockCard(ctx, blocks, nb, held) {
       card.emoji = body.station.emoji;
       card.sub = body.station.with.length ? 'with ' + nowJoinNames(body.station.with.map((w) => w.name)) : null;
     } else if (body.mode === 'break') {
-      card.title = "You're on break";
+      card.title = "You’re on break";
       card.emoji = '☕';
     }
   } else if (kind === 'meal') {
@@ -4606,7 +4606,7 @@ function cfgSettleReread() {
 // with the next builder change — or, after a reload, with the first-snapshot merge.
 function configPushFailed(e) {
   console.warn('config push failed', e);
-  if (typeof showToast === 'function') showToast("Couldn't save the week setup — check your connection and try again.");
+  if (typeof showToast === 'function') showToast("Couldn’t save the week setup — check your connection and try again.");
 }
 
 // First upgraded client on an empty config node seeds the catalog — as a
@@ -6836,7 +6836,7 @@ function toggleNotify() {
     // Directors still hear points move; a counselor hears results (who won a
     // medal), which is all the standings secrecy lets them know.
     showToast(standingsVisible()
-      ? "🔔 You'll get an alert whenever a team's points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open."
+      ? "🔔 You’ll get an alert whenever a team’s points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open."
       : "🔔 You’ll get an alert when a game finishes, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open.");
   } else {
     state.notify = false;
@@ -12498,7 +12498,7 @@ function setTheme(choice) {
 // in synced state: a phone's battery is its own business). This is only the
 // row: the three-part control, and one line saying what is happening RIGHT NOW.
 function calmReasonLine(pref, calm, reason) {
-  if (reason === 'os') return "Your phone asks for less motion. Change it in your phone's Settings."; // two lines at 360px: the note reserves two
+  if (reason === 'os') return "Your phone asks for less motion. Change it in your phone’s Settings."; // two lines at 360px: the note reserves two
   if (reason === 'switch-on') return 'Calm all the time, as you chose.';
   if (reason === 'battery-saver') return 'Calm right now: your phone is saving battery.';
   if (reason === 'battery-low') return 'Calm right now: your battery is low.';
@@ -14452,7 +14452,7 @@ function renderTeamSheet() {
   if (CAMP.features.electives) {
     acts.push(me
       ? `<p class="ts-you">You’re ${esc(me)}</p><button type="button" class="btn btn-block" data-ts="identity">Not you? Change</button>`
-      : '<button type="button" class="btn btn-block" data-ts="identity">Which counselor are you?</button>');
+      : '<button type="button" class="btn btn-block" data-ts="identity">Pick your name</button>');
   }
   acts.push(memberTeamId
     ? '<p class="ts-note">Your team is set by your account.</p>'
@@ -14530,9 +14530,9 @@ function renderMoreTeamRow() {
   setTextIfChanged(document.getElementById('more-team-you'), team ? (me ? 'You’re ' + me : '') : 'Pick the team you are with');
   const link = row.querySelector('[data-more-team-change]');
   if (link) {
-    const label = CAMP.features.electives ? (me ? 'Not you? Change' : 'Which counselor are you?') : 'Not you? Sign out';
+    const label = CAMP.features.electives ? (me ? 'Not you? Change' : 'Pick your name') : 'Not you? Sign out';
     setTextIfChanged(link, label);
-    // "Which counselor are you?" is a counselor's question: a director with no name picked is not asked it.
+    // "Pick your name" (the link; the picker itself asks "Which counselor are you?") is a counselor's question: a director with no name picked is not asked it.
     setHiddenIfChanged(link, !team || (!CAMP.features.electives && !me) || (!me && viewRole() !== 'viewer'));
   }
 }

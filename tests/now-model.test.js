@@ -704,7 +704,7 @@ test('nowModel: electives (junior) — my station first, on break, the ask with 
   if (breakSlot !== undefined) {
     const b = at(dow, blocks[breakSlot].start + 1);
     assert.equal(b.body.mode, 'break');
-    assert.equal(b.card.title, "You're on break");
+    assert.equal(b.card.title, "You’re on break");
     assert.equal(b.card.lead.text, 'Your station');
   }
   // the rows: my station on an elective row of Up next / Later today

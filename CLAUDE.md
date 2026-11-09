@@ -5736,7 +5736,7 @@ should expire on its own.
   goes (a row per roster team, its mark, an empty place = not on the notice, Move up only; a place stops at 40 characters,
   its extra line at 60), Steps (numbered; the emoji is the Meals screen's tile opening the game sheet's grid, whose Other box
   takes only an emoji; Move up / Remove step), Closing line, then `#nbs-preview` (`noticeCardHtml(true, notice)` in Tell
-  everyone's phone outline, reached from the lede by `#nbs-see`) and the dock (`#nbs-post` gold "Put it on every phone" / the
+  everyone's phone outline, reached from the lede by `#nbs-see`) and the dock (`#nbs-post` gold "Pin the notice" / the
   dashed "Write the notice first"; `#nbs-down` "Take it down").
   Ids are `nbs-`; field classes keep the old tab's `nb-` names. No field for the stored `eyebrow` (no phone draws it; it is
   the heading's hint when the heading is empty). **Behaviour** (setup-ui.js section 18; `tests/notice-screen.test.js`): every edit
@@ -5753,7 +5753,7 @@ should expire on its own.
   place, never writes a focused field (an idle `renderAll` writes nothing) and **never moves the row holding the focus** (or the
   one Next is moving into, or whose field is committing: `nbsHeldRow`): the rows around it move instead, so typing a place for an
   unlisted team keeps the keyboard. The lists are no scroll anchor (`overflow-anchor: none`), so a move glides only the rows that
-  moved; Move up lets go of the focus first so the moved row itself travels. Put it on every phone asks (`askDialog`), Take it
+  moved; Move up lets go of the focus first so the moved row itself travels. Pin the notice asks (`askDialog`), Take it
   down is Tell everyone's `tellNoticeDown()` (10 s Undo); Start again / Clear ask, leave a draft and are undoable (Clear is not
   offered while nothing is written). The preview is `noticeCardHtml(true, notice, { team })` as a counselor on the
   director's own team (if the notice lists it, else the first listed) would see it. Tell everyone's "Write a full notice"
