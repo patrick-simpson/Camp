@@ -395,10 +395,10 @@ test('Next game: the dock says what is left, what needs another director, and wh
   boot('editor');
   const { a, b, c, d, e } = nextDay();
   const opts = { now: { dow: WED, minutes: 630 }, ms: BASE_MS };
-  // CHANGED ON PURPOSE (build session 2): a podium game with no result now has the dock's Save; a bracket or a tally keeps its own Save in the body
+  // CHANGED ON PURPOSE (build session 2): a podium game with no result now has the dock's Save; a bracket has none until its Results step; a tally docks its Save too (Step 29 finish)
   assert.equal(gamesDock(a.id, opts).tone, 'pick', 'a podium game with no result docks its Save');
   assert.equal(gamesDock(b.id, opts), null, 'a bracket has no dock until it has a result');
-  assert.equal(gamesDock(c.id, opts), null, 'a tally has no dock until it has a result');
+  assert.equal(gamesDock(c.id, opts).tone, 'tally', 'a tally docks its Save (CHANGED ON PURPOSE, Step 29 finish: it was a body button)');
   state.results[a.id] = medals(T()[1], T()[2], T()[3]);
   state.ui.gameId = a.id; state.ui.gameFrom = 'games';
   let dock = gamesDock(a.id, opts);

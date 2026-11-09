@@ -9083,6 +9083,15 @@ function gamesDock(gid, opts) {
   if (!g || !canEdit()) return null;
   if (!(state.results && state.results[g.id])) {
     if (gameIsPodium(g)) return { tone: 'pick', save: gamesPodium(g).save };
+    // Score entry: the dashed well until three different teams hold the medals, then the gold Save (and, while a team has no score
+    // yet, one small line saying how many do).
+    if (g.format === 'tally') { const t = gamesTally(g); return { tone: 'tally', save: { ready: t.ready, label: t.label, target: t.target }, note: t.note }; }
+    // The six-team bracket's Results step saves from the same gold dock button as the four-team one (before Results neither has a dock).
+    if (g.format === 'tournament' && bracketKindFor(teamIds().length) === 'six') {
+      const raw = state.brackets && state.brackets[g.id];
+      if (raw && bracketKnown(raw) && normalizeBracket(raw).phase === 'summary') return { tone: 'six' };
+      return null;
+    }
     // A four-team bracket whose four matches all agree saves from the same gold dock button as a podium (its Save was a pill in
     // the middle of the page, the one tap of the flow that looked like nothing else in the app).
     return fourReadyToSave(g) ? { tone: 'four' } : null;
@@ -9764,11 +9773,12 @@ function medalPickerHTML(picks, game) {
     ${slots.map((s) => `
       <div class="medal-slot medal-slot-${s.key}">
         <span class="medal-slot-word">${s.label}</span>
-        <jelly-select data-medal="${s.key}" placeholder="— pick team —" ${picks[s.key] ? `value="${esc(picks[s.key])}"` : ''} label="${s.key} medal team">
+        <select class="fld-input medal-pick" data-medal="${s.key}" aria-label="${s.key} medal team">
+          <option value="">Pick a team</option>
           ${state.teams.map((t) =>
-            `<jelly-option value="${esc(t.id)}">${esc(t.name)}</jelly-option>`
+            `<option value="${esc(t.id)}"${picks[s.key] === t.id ? ' selected' : ''}>${esc(t.name)}</option>`
           ).join('')}
-        </jelly-select>
+        </select>
       </div>
     `).join('')}
   </div>`;
@@ -9791,6 +9801,61 @@ function validateMedals(picks) {
 }
 
 // ── Tally format ─────────────────────────────────────────────────
+
+// The tally's medals as the screen reads them: the draft's own pick, else the team the scores put there. One function for the
+// medal selects and for the takeover dock's Save (games-ui.js), so the dock never says "ready" about a podium the form does not show.
+function tallyPicks(g) {
+  const draft = normalizeDraft(state.drafts[g.id] || { scores: {}, medals: {} });
+  const ranked = autoRank(g, draft);
+  const auto = { gold: ranked[0] ? ranked[0].id : null, silver: ranked[1] ? ranked[1].id : null, bronze: ranked[2] ? ranked[2].id : null };
+  const picks = { gold: draft.medals.gold || auto.gold, silver: draft.medals.silver || auto.silver, bronze: draft.medals.bronze || auto.bronze };
+  return { draft, ranked, auto, picks };
+}
+
+// What the dock's Save for a tally game says: the gold button once three different teams hold the medals, else the dashed well
+// naming what is missing (a tap on it goes to the score or medal that needs it). { ready, label, target, note }.
+function gamesTally(g) {
+  const { ranked, picks } = tallyPicks(g);
+  const missing = PODIUM_MEDALS.filter((m) => !picks[m]);
+  const dupMedal = !missing.length ? PODIUM_MEDALS.find((m, i) => PODIUM_MEDALS.slice(0, i).some((o) => picks[o] === picks[m])) : null;
+  const total = teamIds().length;
+  let label = 'Save result';
+  let target = null;
+  if (missing.length === 3) { label = 'Type the scores first'; target = 'scores'; }
+  else if (missing.length === 2) { label = 'Pick ' + missing[0] + ' and ' + missing[1]; target = missing[0]; }
+  else if (missing.length === 1) { label = 'Pick ' + missing[0] + ', then save'; target = missing[0]; }
+  else if (dupMedal) { label = 'Each medal needs a different team'; target = dupMedal; }
+  const ready = !missing.length && !dupMedal;
+  const note = ready && ranked.length < total ? ranked.length + ' of ' + total + ' teams have a score' : '';
+  return { ready, label, target, note };
+}
+
+// Save: the same record the old Save Result button wrote. Refused while the medals are not three different teams or a result
+// already exists (a second director's save is not overwritten by a stale form). { ok, medals } or { ok: false, problem, target? }.
+function tallySave(gid) {
+  const g = gameById(gid);
+  if (!g || !canEdit() || g.format !== 'tally' || (state.results && state.results[g.id])) return { ok: false, problem: 'unavailable' };
+  const { draft, picks } = tallyPicks(g);
+  const err = validateMedals(picks);
+  if (err) return { ok: false, problem: 'incomplete', message: err, target: gamesTally(g).target };
+  const scores = {};
+  state.teams.forEach((t) => {
+    const v = parseScoreInput(g, draft.scores[t.id] || '');
+    if (v !== null) scores[t.id] = v;
+  });
+  state.results[g.id] = { medals: { gold: picks.gold, silver: picks.silver, bronze: picks.bronze }, scores, savedAt: new Date().toISOString() };
+  delete state.drafts[g.id];
+  touchData();
+  saveState();
+  renderAll();
+  celebrate(picks.gold);
+  return { ok: true, medals: state.results[g.id].medals };
+}
+
+// The dock follows the typing: the score boxes and medal picks save without a render, so the dock is asked directly.
+function tallyDockRefresh(g) {
+  if (typeof renderGameDock === 'function') renderGameDock(g);
+}
 
 function renderTally(container, g) {
   if (!state.drafts[g.id]) state.drafts[g.id] = { scores: {}, medals: {} };
@@ -9842,8 +9907,7 @@ function renderTally(container, g) {
     </div>
     ${g.liveRankings ? '<button id="reset-scores-btn" class="link-btn danger-link reset-scores-btn">Reset all scores</button>' : ''}
     <div id="tally-medals"></div>
-    <p id="entry-error" class="entry-error" role="alert" hidden></p>
-    <jelly-button id="save-result-btn" class="primary-btn" block>Save result</jelly-button>
+    ${typeof gamesDockHtml === 'function' ? '' : '<p id="entry-error" class="entry-error" role="alert" hidden></p><jelly-button id="save-result-btn" class="primary-btn" block>Save result</jelly-button>'}
   `, [g]);
   if (!fresh) {
     // The picks aren't part of the form's markup (another editor may have
@@ -9913,28 +9977,15 @@ function renderTally(container, g) {
     });
   }
 
-  document.getElementById('save-result-btn').addEventListener('click', () => {
-    const picks = readMedalPicks(document.getElementById('tally-medals'));
-    const err = validateMedals(picks);
-    const errEl = document.getElementById('entry-error');
-    if (err) {
-      errEl.textContent = err;
-      errEl.hidden = false;
-      return;
-    }
-    const live = liveDraft();
-    const scores = {};
-    state.teams.forEach((t) => {
-      const v = parseScoreInput(g, live.scores[t.id] || '');
-      if (v !== null) scores[t.id] = v;
+  // Without games-ui.js there is no dock, so the old button stays and saves through the same function the dock's does.
+  const fallbackSave = document.getElementById('save-result-btn');
+  if (fallbackSave) {
+    fallbackSave.addEventListener('click', () => {
+      const r = tallySave(g.id);
+      const errEl = document.getElementById('entry-error');
+      if (!r.ok && errEl) { errEl.textContent = r.message || 'Pick a team for every medal.'; errEl.hidden = false; }
     });
-    state.results[g.id] = { medals: picks, scores, savedAt: new Date().toISOString() };
-    delete state.drafts[g.id];
-    touchData();
-    saveState();
-    renderAll();
-    celebrate(picks.gold);
-  });
+  }
 }
 
 function autoRank(g, draft) {
@@ -9948,6 +9999,11 @@ function autoRank(g, draft) {
 }
 
 function updateTallyMedals(g) {
+  updateTallyMedalsBody(g);
+  tallyDockRefresh(g);
+}
+
+function updateTallyMedalsBody(g) {
   const draft = state.drafts[g.id];
   const wrap = document.getElementById('tally-medals');
   if (!wrap) return;
@@ -10012,6 +10068,7 @@ function updateTallyMedals(g) {
       if (!d) return;
       normalizeDraft(d).medals[sel.dataset.medal] = sel.value || null;
       saveState();
+      tallyDockRefresh(g);
     });
   });
 }
@@ -11931,13 +11988,21 @@ function bracketSummaryHtml(g, b) {
     ? gamesResultHtml(Object.assign(gamesResultModel(g, { medals: { gold: goldId, silver: silverId, bronze: bronzeId } }), { saved: null, scores: null, change: false }))
     : `<div class="medal-summary">${[goldId, silverId, bronzeId].map((id, i) => `<p class="medal-row">${i + 1}. <strong>${esc(teamName(id))}</strong>${medalWorthChip(MEDAL_POINTS[PODIUM_MEDALS[i]] * mult)}</p>`).join('')}</div>`;
   return `
-    <h3>Game results</h3>
+    <h3>Ready to save</h3>
     <p class="four-meta">Check the winners, then save the result for everyone.</p>
     ${list}
     <p class="four-meta">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
-    <jelly-button id="save-bracket-btn" class="primary-btn" block>Save result</jelly-button>
+    ${typeof gamesDockHtml === 'function' ? '' : '<jelly-button id="save-bracket-btn" class="primary-btn" block>Save result</jelly-button>'}
     ${sixUndoHtml('undo-final-btn', 'Undo the final', [b.championship.a, b.championship.b])}
   `;
+}
+
+// The podium comes from the bracket as it is when the button is tapped, never from the screen that was drawn.
+function sixSaveResult(g) {
+  const live = sixLive(g, 'summary');
+  if (!live) return { ok: false };
+  finishBracket(g, 'six', sixMedals(live));
+  return { ok: true };
 }
 
 function renderBracketSummary(body, g, b) {
@@ -11946,12 +12011,9 @@ function renderBracketSummary(body, g, b) {
 }
 
 function wireBracketSummary(body, g) {
-  document.getElementById('save-bracket-btn').addEventListener('click', () => {
-    // The podium comes from the bracket as it is when the button is tapped, never from the screen that was drawn.
-    const live = sixLive(g, 'summary');
-    if (!live) return;
-    finishBracket(g, 'six', sixMedals(live));
-  });
+  // The Save is the takeover dock's (games-ui.js gamesSixSaveTap); this button exists only where that script never loaded.
+  const fallbackSave = document.getElementById('save-bracket-btn');
+  if (fallbackSave) fallbackSave.addEventListener('click', () => sixSaveResult(g));
 
   const undoBtn = document.getElementById('undo-final-btn');
   if (undoBtn) {

@@ -62,7 +62,7 @@ test('the six-team summary: a second render with nothing changed writes nothing;
   const c = countingContainer();
   renderTournament(c, g);
   assert.equal(c.writes(), 1, 'the first render writes the summary');
-  assert.ok(/Game results/.test(c.innerHTML) && /id="bracket-body"/.test(c.innerHTML));
+  assert.ok(/Ready to save/.test(c.innerHTML) && /id="bracket-body"/.test(c.innerHTML));
   renderTournament(c, g);
   renderTournament(c, g);
   assert.equal(c.writes(), 1, 'an idle snapshot renders the summary again and writes nothing');

@@ -8741,14 +8741,12 @@ body.builder-open .sync-status-footer {
 .medal-slot-silver { background: var(--color-silver-bg); color: var(--color-silver); }
 .medal-slot-bronze { background: var(--color-bronze-bg); color: var(--color-bronze); }
 
-/* Medal picks are jelly-select hosts (fixed 240px by default — let the row
-   size them instead). */
-.medal-slot jelly-select {
+/* Medal picks are native selects (select.fld-input.medal-pick): the phone's own wheel, full width under the medal's word. */
+.medal-slot select.medal-pick {
   flex: 1;
   max-width: 60%;
   width: auto;
-  height: 46px;
-  --jelly-select-font-size: 0.95rem;
+  min-height: var(--target);
 }
 
 .entry-error {

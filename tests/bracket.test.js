@@ -16,7 +16,7 @@
 
 // ── the driver: the real wizard, with stub buttons ──────────────────────────────────────────────────────────────
 
-const BTN_IDS = ['cancel-bracket-btn', 'undo-match-btn', 'undo-to-round1-btn', 'save-bracket-btn', 'start-bracket-btn'];
+const BTN_IDS = ['cancel-bracket-btn', 'undo-match-btn', 'undo-to-round1-btn', 'start-bracket-btn'];
 
 function wizard(g) {
   const bodyEl = document.getElementById('bracket-body');
@@ -69,6 +69,8 @@ function wizard(g) {
   w.winner = (team) => { bracketTapReset(); const h = w.live.winner[team]; assert.ok(h, 'a winner button for ' + team + ' in: ' + bodyEl.innerHTML); h(); return w.render(); };
   w.chip = (team) => { const h = w.live.chip[team]; assert.ok(h, 'a team chip for ' + team); h(); return w.render(); };
   w.bye = (team) => { bracketTapReset(); const h = w.live.tie[team]; assert.ok(h, 'a bye chip for ' + team); h(); return w.render(); };
+  // The dock's Save (games-ui.js gamesSixSaveTap calls this): the podium is read from the bracket as it is at the tap.
+  w.save = () => { bracketTapReset(); assert.equal(gamesDock(g.id).tone, 'six', 'the dock offers the six-team Save'); sixSaveResult(g); return w.render(); };
   w.suggest = () => { assert.ok(w.live.suggest, 'a suggestion button'); w.live.suggest(); return w.render(); };
   w.winners = () => Object.keys(w.live.winner);
   w.b = () => state.brackets[g.id];
@@ -410,7 +412,8 @@ test('the final: the winner and loser are recorded and the bracket reaches its s
     assert.deepEqual(w.b().championship, { a: 't2', b: 't1', winner: 't2', loser: 't1' });
     assert.equal(w.b().phase, 'summary');
     assert.equal(currentMatchupOf(g, w.b()), null, 'nothing waits on a winner at the summary');
-    assert.ok(/Game results/.test(w.html()) && w.has('save-bracket-btn'));
+    // CHANGED ON PURPOSE (Step 29 finish): the summary's Save is the takeover dock's gold button (gamesDock tone 'six'), not a body button.
+    assert.ok(/Ready to save/.test(w.html()) && !w.has('save-bracket-btn') && gamesDock(g.id).tone === 'six');
     assert.ok(/Eliminated in Round 1:/.test(w.html()));
     ['t3', 't4', 't5'].forEach((id) => assert.ok(w.html().indexOf(teamName(id)) !== -1, id + ' is listed as eliminated'));
   });
@@ -427,7 +430,7 @@ test('Save Result: the exact result record, the bracket and tally gone, standing
     w.winner('t2');
     const before = medalCounts();
     assert.equal(before.t2.points, 0);
-    w.press('save-bracket-btn');
+    w.save();
     const r = state.results[g.id];
     assert.deepEqual(Object.keys(r).sort(), ['medals', 'savedAt'], 'exactly these two fields');
     assert.deepEqual(r.medals, { gold: 't2', silver: 't1', bronze: 't0' });
@@ -454,7 +457,7 @@ test('a messtival game pays double, in the summary chips and in medalCounts', ()
     assert.ok(new RegExp('\\(\\+' + MEDAL_POINTS.bronze * 2 + ' pts\\)').test(w.html()), 'the bronze note doubles');
     w.winner('t2');
     assert.ok(w.html().indexOf('gres-pts">+' + MEDAL_POINTS.gold * 2 + '<') !== -1, 'the summary list doubles');
-    w.press('save-bracket-btn');
+    w.save();
     const c = medalCounts();
     assert.equal(c.t2.points, MEDAL_POINTS.gold * 2);
     assert.equal(c.t1.points, MEDAL_POINTS.silver * 2);
@@ -506,7 +509,7 @@ test('Clear result takes the points off and brings back no bracket (asked first,
   state.brackets[g.id] = freshBracket();
   withWizard(g, (w) => {
     toSemifinal(w, g);
-    w.winner('t1'); w.winner('t2'); w.press('save-bracket-btn');
+    w.winner('t1'); w.winner('t2'); w.save();
   });
   assert.ok(state.results[g.id]);
   assert.equal(medalCounts().t2.points, MEDAL_POINTS.gold);
@@ -716,7 +719,7 @@ test('fuzz: a random walk of taps, undos and back-steps never breaks the six-tea
           w.winner(w.winners()[Math.floor(rnd() * 2)]);
         } else {
           assert.equal(b.phase, 'summary');
-          w.press('save-bracket-btn');
+          w.save();
         }
       }
       assert.ok(guard < 200, 'seed ' + seed + ': the walk ends');
@@ -909,7 +912,7 @@ test('a stale tap is ignored, said and repainted: the screen was drawn before an
     state.brackets[g.id] = freshBracket();
     withWizard(g, (w) => {
       toSemifinal(w, g); w.winner('t1'); w.winner('t2');
-      const press = realGet2('save-bracket-btn').__click;
+      const press = () => sixSaveResult(g);
       state.results[g.id] = { medals: { gold: 't5', silver: 't4', bronze: 't3' }, savedAt: 'other phone' };
       press();
       assert.equal(state.results[g.id].savedAt, 'other phone', 'the saved result is not replaced');

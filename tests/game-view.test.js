@@ -62,10 +62,11 @@ function fakeArea(parse) {
 
 function parseMedals(html) {
   const medals = [];
-  const re = /<jelly-select data-medal="([^"]+)"([^>]*)>/g;
+  // CHANGED ON PURPOSE (Step 29 finish): the tally's medal picks are native selects, the picked team's option carries `selected`.
+  const re = /<select class="fld-input medal-pick" data-medal="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g;
   let m;
   while ((m = re.exec(html))) {
-    const v = / value="([^"]*)"/.exec(m[2]);
+    const v = /<option value="([^"]*)" selected>/.exec(m[2]);
     medals.push(fireable({ dataset: { medal: m[1] }, value: v ? v[1] : '' }));
   }
   return { '[data-medal]': medals };
@@ -177,7 +178,7 @@ test('a +N tap on a kept form lands in the live draft, not an orphaned one', () 
   });
 });
 
-test('Save on a kept form saves what is in the live draft', () => {
+test('the dock\'s Save on a kept form saves what is in the live draft', () => {
   const g = tallyGame({ t0: '9', t1: '8', t2: '7' }, 'axe-throwing');
   const { el, inputs } = fakeForm();
   const realCelebrate = celebrate;
@@ -190,7 +191,8 @@ test('Save on a kept form saves what is in the live draft', () => {
       const t3 = inputs.all.find((i) => i.dataset.teamId === 't3');
       t3.value = '6';
       t3.fire('input');
-      dom.save.fire('click');
+      // CHANGED ON PURPOSE (Step 29 finish): Save lives in the takeover dock (gamesDock tone 'tally'), which calls tallySave.
+      assert.ok(tallySave(g.id).ok, 'the dock\'s Save saves');
       assert.ok(state.results[g.id], 'the result was saved');
       assert.equal(state.results[g.id].scores.t3, 6, 'including the score typed after the snapshot');
       assert.equal(state.results[g.id].scores.t0, 9);

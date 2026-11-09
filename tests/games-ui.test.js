@@ -382,7 +382,9 @@ test('the dock under a saved game: drawn for a director, hidden for a counselor,
   const tally = Object.assign({}, g, { id: 'dk-tally', format: 'tally' });
   state.config.games.push(tally);
   renderGameDock(tally);
-  assert.equal(dock.hidden, true, 'a tally with no result: no dock yet (its Save is in the body)');
+  // CHANGED ON PURPOSE (Step 29 finish): score entry's Save moved into the dock (the dashed well until the scores are typed).
+  assert.equal(dock.hidden, false, 'a tally with no result: the dock holds its Save');
+  assert.ok(/id="game-save" data-tone="tally" aria-disabled="true">Type the scores first</.test(dock.innerHTML), 'the dashed well names what is missing');
   renderGameDock(g);
   assert.equal(dock.hidden, false);
   assert.ok(/id="game-save"[^>]*aria-disabled="true">Pick gold, silver and bronze</.test(dock.innerHTML), 'a podium game with no result: the dashed Save well');

@@ -2720,11 +2720,15 @@
            a tally game's scores under it: <h3 class="gv-h">Scores · pins</h3>
              <ol class="gres-scores"><li class="gres-s" data-team="t3" style="…">teamMarkHtml 22<span class="gres-s-nm">Pumpkins</span><b class="gres-s-v">48</b></li></ol>
            <button type="button" class="btn gres-change" id="game-change">Change the result</button>   (directors)
-         ▸ THE DOCK (#takeover-game-dock, directors; hidden for a counselor and for a bracket or tally with no result yet):
+         ▸ THE DOCK (#takeover-game-dock, directors; hidden for a counselor and for a bracket before its Results step):
            pick  <button type="button" class="btn btn-big btn-block gd-save" id="game-save" aria-disabled="true">Pick bronze, then save</button>
                  ("Pick gold, silver and bronze" · "Pick silver, then save"); a tap on the
                  well scrolls to the row still to pick. Complete: class btn-gold, no
                  aria-disabled, "Save result", data-joy.
+           tally same button with data-tone="tally": "Type the scores first" · "Pick silver and bronze" ·
+                 "Each medal needs a different team"; ready, with a team still unscored, a line
+                 <p class="gd-left" id="game-save-note">4 of 6 teams have a score</p> above the gold Save.
+           bracket at Results: gold <button id="save-bracket-btn" data-kind="six|four">Save result</button>.
            next  <p class="gd-left" id="game-left">2 games left today that you can score</p>
                  <div class="gd-next">
                    <button type="button" class="btn btn-big gd-back" id="game-dock-back" data-game-back>‹ Back to Now</button>

@@ -123,7 +123,14 @@ function gamesDockHtml(d) {
   // While a podium is being picked: ONE button. The dashed well names what is still to pick (a tap on it goes there); complete,
   // it is the gold Save.
   // A four-team bracket ready to save: the same gold button (its id is the bracket's own Save, fourSaveResult behind it).
-  if (d.tone === 'four') return '<button type="button" class="btn btn-big btn-block btn-gold gd-save" id="save-bracket-btn" data-joy>Save result</button>';
+  if (d.tone === 'four') return '<button type="button" class="btn btn-big btn-block btn-gold gd-save" id="save-bracket-btn" data-kind="four" data-joy>Save result</button>';
+  if (d.tone === 'six') return '<button type="button" class="btn btn-big btn-block btn-gold gd-save" id="save-bracket-btn" data-kind="six" data-joy>Save result</button>';
+  // Score entry: the dashed well naming what is missing, or (a small line, then) the gold Save.
+  if (d.tone === 'tally') {
+    return d.save.ready
+      ? (d.note ? `<p class="gd-left" id="game-save-note">${esc(d.note)}</p>` : '') + '<button type="button" class="btn btn-big btn-block btn-gold gd-save" id="game-save" data-tone="tally" data-joy>Save result</button>'
+      : `<button type="button" class="btn btn-big btn-block gd-save" id="game-save" data-tone="tally" aria-disabled="true">${esc(d.save.label)}</button>`;
+  }
   if (d.tone === 'pick') {
     return d.save.ready ? '<button type="button" class="btn btn-big btn-block btn-gold gd-save" id="game-save" data-joy>Save result</button>'
       : `<button type="button" class="btn btn-big btn-block gd-save" id="game-save" aria-disabled="true">${esc(d.save.label)}</button>`;
@@ -601,6 +608,48 @@ function gamesFourSaveTap(btn) {
   return r;
 }
 
+// The six-team bracket's Save: the same landing as the four-team one; a stale screen (the bracket moved on, a result is already
+// saved) is said by sixLive and repainted.
+function gamesSixSaveTap(btn) {
+  const gid = state.ui && state.ui.gameId;
+  const g = gid ? gameById(gid) : null;
+  if (!g || typeof sixSaveResult !== 'function' || !canEdit()) return null;
+  const had = focusWas(btn);
+  const r = sixSaveResult(g);
+  if (!r.ok) return r;
+  const body = gamesEl('takeover-game-body');
+  if (body) body.scrollTop = 0;
+  if (had) focusBack(true, gamesEl('game-next') || gamesEl('game-dock-back'));
+  gamesSavedArrive(body);
+  return r;
+}
+
+// Score entry's Save (the dock's gold button): then the takeover is the saved result and Next game is what the thumb is there for.
+function gamesTallySaveTap(btn) {
+  const gid = state.ui && state.ui.gameId;
+  if (!gid) return null;
+  const had = focusWas(btn);
+  const r = tallySave(gid);
+  if (!r.ok) { if (r.problem === 'incomplete') gamesTallyGoto(r.target); return r; }
+  const body = gamesEl('takeover-game-body');
+  if (body) body.scrollTop = 0;
+  if (had) focusBack(true, gamesEl('game-next') || gamesEl('game-dock-back'));
+  gamesSavedArrive(body);
+  return r;
+}
+
+// The dashed well's tap: to the score box (nothing typed yet) or the medal pick that needs a team, and focus it.
+function gamesTallyGoto(target) {
+  const entry = gamesEl('entry-area');
+  if (!entry || !entry.querySelector) return;
+  const el = target === 'scores'
+    ? (entry.querySelector('.score-input-row input:not([disabled])'))
+    : entry.querySelector('select[data-medal="' + target + '"]');
+  if (!el) return;
+  try { el.scrollIntoView({ block: 'center', behavior: calmMotion() ? 'auto' : 'smooth' }); } catch (e) { /* fine */ }
+  if (typeof el.focus === 'function') { try { el.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+}
+
 // The save just landed (podiumSave rendered the result synchronously): the winners drop in bronze → silver → gold, 120 ms apart,
 // landing with a wobble's squash at their foot (Now's medals, §9.5), and the Next game dock arrives from below. Started by THIS
 // tap, never by a render, so a re-render or a snapshot never replays it. Calm: they fade.
@@ -726,12 +775,14 @@ function gamesEntryTap(t) {
 // A tap inside the dock: the Save (the dashed well goes to what is missing, the gold one saves), Next game, Back.
 function gamesDockTap(t) {
   let b;
-  if ((b = t.closest('#save-bracket-btn'))) { gamesFourSaveTap(b); return true; }
+  if ((b = t.closest('#save-bracket-btn'))) { if (b.dataset && b.dataset.kind === 'six') gamesSixSaveTap(b); else gamesFourSaveTap(b); return true; }
   if ((b = t.closest('#game-save'))) {
+    const tally = b.dataset && b.dataset.tone === 'tally';
     if (b.getAttribute('aria-disabled') === 'true') {
       const d = gamesDock(state.ui && state.ui.gameId);
-      if (d && d.save && d.save.target) gamesPodiumGoto(d.save.target);
-    } else gamesSaveTap(b);
+      if (d && d.save && d.save.target) { if (tally) gamesTallyGoto(d.save.target); else gamesPodiumGoto(d.save.target); }
+    } else if (tally) gamesTallySaveTap(b);
+    else gamesSaveTap(b);
     return true;
   }
   if (t.closest('[data-next-game]')) { openNextGame(); return true; }
@@ -748,7 +799,7 @@ function renderGameDock(g) {
   const html = gamesDockHtml(d);
   const wrote = setHtmlIfChanged(dock, html);
   setHiddenIfChanged(dock, !d);
-  const pick = !!d && d.tone === 'pick';
+  const pick = !!d && (d.tone === 'pick' || d.tone === 'tally');
   const ready = pick && d.save.ready;
   // The dashed well turning into the gold Save: it lands (a first paint, and a dock that was not picking, are plain writes).
   if (wrote && ready && dock.__saveReady === false && typeof JellyMotion !== 'undefined' && dock.querySelector) {
@@ -758,7 +809,7 @@ function renderGameDock(g) {
   dock.__saveReady = pick ? ready : undefined;
   // A four-team bracket's last winner was just recorded: its Save comes up from the foot of the screen (§9.5 "panel appears";
   // calm: a fade). A first paint of the takeover is a plain write.
-  const four = !!d && d.tone === 'four';
+  const four = !!d && (d.tone === 'four' || d.tone === 'six');
   const sameGame = !!g && dock.__fourGid === g.id;
   if (wrote && four && sameGame && !dock.__four && typeof JellyMotion !== 'undefined' && dock.querySelector) {
     const b = dock.querySelector('#save-bracket-btn');
