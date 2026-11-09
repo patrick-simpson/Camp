@@ -1002,6 +1002,15 @@
                   "c": {
                     ".validate": "newData.isNumber() && newData.val() >= -9999 && newData.val() <= 99999"
                   },
+                  "em": {
+                    ".validate": "newData.isString() && newData.val().length <= 16 && newData.val().length >= 1 && !newData.val().contains('<') && !newData.val().contains('>') && !newData.val().contains('&') && !newData.val().contains('\"') && !newData.val().contains(\"'\")"
+                  },
+                  "pl": {
+                    ".validate": "newData.isBoolean() && newData.val() === true"
+                  },
+                  "ph": {
+                    ".validate": "newData.isString() && newData.val().length <= 20000 && newData.val().matches(/^data:image\\/(png|jpeg);base64,[A-Za-z0-9+\\/]+={0,2}$/) && ($g === 'g0' || !newData.parent().parent().parent().parent().child('g0').child('e').child($tid).exists()) && ($g === 'g1' || !newData.parent().parent().parent().parent().child('g1').child('e').child($tid).exists()) && ($g === 'g2' || !newData.parent().parent().parent().parent().child('g2').child('e').child($tid).exists()) && ($g === 'g3' || !newData.parent().parent().parent().parent().child('g3').child('e').child($tid).exists()) && ($g === 'g4' || !newData.parent().parent().parent().parent().child('g4').child('e').child($tid).exists()) && ($g === 'g5' || !newData.parent().parent().parent().parent().child('g5').child('e').child($tid).exists())"
+                  },
                   "$other": {
                     ".validate": false
                   }
@@ -2091,6 +2100,15 @@
                   },
                   "c": {
                     ".validate": "newData.isNumber() && newData.val() >= -9999 && newData.val() <= 99999"
+                  },
+                  "em": {
+                    ".validate": "newData.isString() && newData.val().length <= 16 && newData.val().length >= 1 && !newData.val().contains('<') && !newData.val().contains('>') && !newData.val().contains('&') && !newData.val().contains('\"') && !newData.val().contains(\"'\")"
+                  },
+                  "pl": {
+                    ".validate": "newData.isBoolean() && newData.val() === true"
+                  },
+                  "ph": {
+                    ".validate": "newData.isString() && newData.val().length <= 20000 && newData.val().matches(/^data:image\\/(png|jpeg);base64,[A-Za-z0-9+\\/]+={0,2}$/) && ($g === 'g0' || !newData.parent().parent().parent().parent().child('g0').child('e').child($tid).exists()) && ($g === 'g1' || !newData.parent().parent().parent().parent().child('g1').child('e').child($tid).exists()) && ($g === 'g2' || !newData.parent().parent().parent().parent().child('g2').child('e').child($tid).exists()) && ($g === 'g3' || !newData.parent().parent().parent().parent().child('g3').child('e').child($tid).exists()) && ($g === 'g4' || !newData.parent().parent().parent().parent().child('g4').child('e').child($tid).exists()) && ($g === 'g5' || !newData.parent().parent().parent().parent().child('g5').child('e').child($tid).exists())"
                   },
                   "$other": {
                     ".validate": false

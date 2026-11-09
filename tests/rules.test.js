@@ -817,6 +817,43 @@ test('the public reveal is bounded: group g0-g5, team t0-t5, names <= 30, number
   });
 });
 
+// ── R2: a team's own look inside a SHOWN place's entry (decisions item 7) ──────
+test('R2: the public entry carries em / pl / ph and nothing else new; revealFull never carries a look', () => {
+  ROOTS.forEach((root) => {
+    const e = RULES[root].revealPublic.$mode.pub.$g.e.$tid;
+    assert.deepEqual(Object.keys(e).filter((k) => !k.startsWith('.') && k !== '$other').sort(),
+      ['b', 'c', 'em', 'g', 'k', 'm', 'nm', 'p', 'pl', 'ph', 's', 'v'].sort(), `${root}: the public entry's fields`);
+    assert.equal(Object.keys(e).pop(), '$other', `${root}: $other stays last`);
+    assert.equal(e.$other['.validate'], false);
+    const full = RULES[root].revealFull.$mode.g.$g.e.$tid;
+    ['em', 'pl', 'ph'].forEach((f) => assert.equal(full[f], undefined, `${root}: revealFull has no ${f}`));
+    // the one shared shape the entry always had
+    assert.equal(RULES[root].revealPublic.$mode.pub.$g.e.$tid['.validate'], full['.validate']);
+    // em: the team emoji rule plus no apostrophe
+    assert.equal(e.em['.validate'], SRC.macros(root).EMOJI + ' && !newData.val().contains("\'")', `${root}: em is the team emoji rule`);
+    assert.equal(e.em['.validate'], e.em['.validate'].replace(/\s+/g, ' '));
+    assert.ok(/length <= 16/.test(e.em['.validate']) && /length >= 1/.test(e.em['.validate']));
+    // pl: only ever true
+    assert.equal(e.pl['.validate'], 'newData.isBoolean() && newData.val() === true');
+    // ph: a bounded inline png / jpeg, and a team's photo may sit in ONE group of a child
+    const ph = e.ph['.validate'];
+    assert.ok(ph.includes(`newData.val().length <= ${SRC.REVEAL_PHOTO_MAX}`), `${root}: ph is capped`);
+    assert.ok(ph.includes('matches(/^data:image\\/(png|jpeg);base64,[A-Za-z0-9+\\/]+={0,2}$/)'), `${root}: ph is a full-match data image`);
+    for (let i = 0; i < 6; i++) {
+      assert.ok(ph.includes(`($g === 'g${i}' || !newData.parent().parent().parent().parent().child('g${i}').child('e').child($tid).exists())`), `${root}: g${i} uniqueness clause`);
+    }
+    assert.equal((ph.match(/\.exists\(\)/g) || []).length, 6, `${root}: exactly six uniqueness clauses`);
+  });
+  assert.equal(SRC.REVEAL_PHOTO_MAX, 20000, 'the cap is the one the design measured');
+});
+
+test('R2: the photo cap in the rules and in reveal-core are the same number', () => {
+  const core = readFixture('../reveal-core.js');
+  const m = /const REVEAL_PHOTO_MAX = (\d+);/.exec(core);
+  assert.ok(m, 'reveal-core.js declares REVEAL_PHOTO_MAX');
+  assert.equal(Number(m[1]), SRC.REVEAL_PHOTO_MAX);
+});
+
 test('the reveal ctl enforces compare-and-set, one place at a time, a fresh Start, and a guarded delete', () => {
   ROOTS.forEach((root) => {
     const v = RULES[root].revealPublic.$mode.ctl['.validate'];

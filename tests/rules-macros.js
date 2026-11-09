@@ -16,6 +16,9 @@
 // Junior and senior come out of the same functions, so they are identical modulo the
 // root name by construction (rules.test.js still asserts it on the file).
 //
+// R2 (big-screen branding, decisions item 7) extends ONLY the public reveal group's entry (em / pl / ph below);
+// tests/emulator/r1.rules.json is the frozen R1 file that was live before it.
+//
 // A rules edit is therefore: change this file, run it, run `node tests/run.js`, run the
 // emulator suites (tests/emulator/README.md), then publish by the runbook.
 
@@ -95,27 +98,48 @@ function blockShape(m, kind) {
   return out;
 }
 
+// ── R2: a team's own look inside a SHOWN place's entry (decisions item 7) ────
+// em: the team record's own emoji (state/teams/$i/emoji's rule); pl: the cleared team's marker, only ever
+// true; ph: a small JPEG/PNG thumbnail the director's phone made when it showed the place. The cap is what
+// an anonymous reader may be made to download: ≤ 20,000 characters, and a team's photo may sit in ONE group
+// of a child, so a child holds at most six (the rules-bounded worst case per read is in CLAUDE.md).
+// reveal-core.js's REVEAL_PHOTO_MAX is the same number (rules.test.js pins that they agree).
+const REVEAL_PHOTO_MAX = 20000;
+function brandShape(m) {
+  const { EMOJI } = m;
+  const E = 'newData.parent().parent().parent().parent()';
+  const once = [0, 1, 2, 3, 4, 5].map((i) => `($g === 'g${i}' || !${E}.child('g${i}').child('e').child($tid).exists())`).join(' && ');
+  return {
+    em: { '.validate': `${EMOJI} && !newData.val().contains("'")` },
+    pl: { '.validate': 'newData.isBoolean() && newData.val() === true' },
+    ph: { '.validate': `newData.isString() && newData.val().length <= ${REVEAL_PHOTO_MAX} && newData.val().matches(/^data:image\\/(png|jpeg);base64,[A-Za-z0-9+\\/]+={0,2}$/) && ${once}` },
+  };
+}
+
 // ── the reveal's group (revealPublic pub/$g and revealFull g/$g share it) ────
-function groupShape(m, extra) {
+// `brand` is true only for the PUBLIC group; revealFull's group never carries a look.
+function groupShape(m, extra, brand) {
   const { INT, NESTR } = m;
+  const tid = {
+    '.validate': "$tid.matches(/^t[0-5]$/) && newData.hasChildren(['nm', 'p', 'g', 's', 'b'])",
+    nm: { '.validate': NESTR(30) },
+    k: { '.validate': "newData.isString() && newData.val().matches(/^[a-z]{2,12}$/)" },
+    p: { '.validate': INT(-9999, 99999) },
+    g: { '.validate': INT(0, 99) },
+    s: { '.validate': INT(0, 99) },
+    b: { '.validate': INT(0, 99) },
+    v: { '.validate': INT(-9999, 99999) },
+    m: { '.validate': INT(-9999, 99999) },
+    c: { '.validate': INT(-9999, 99999) },
+  };
+  if (brand) Object.assign(tid, brandShape(m));
+  tid.$other = { '.validate': false };
   return {
     '.validate': `$g.matches(/^g[0-5]$/) && newData.hasChildren(['place', 'e'])${extra || ''}`,
     place: { '.validate': INT(1, 6) },
     e: {
       '.validate': 'newData.hasChildren()',
-      $tid: {
-        '.validate': "$tid.matches(/^t[0-5]$/) && newData.hasChildren(['nm', 'p', 'g', 's', 'b'])",
-        nm: { '.validate': NESTR(30) },
-        k: { '.validate': "newData.isString() && newData.val().matches(/^[a-z]{2,12}$/)" },
-        p: { '.validate': INT(-9999, 99999) },
-        g: { '.validate': INT(0, 99) },
-        s: { '.validate': INT(0, 99) },
-        b: { '.validate': INT(0, 99) },
-        v: { '.validate': INT(-9999, 99999) },
-        m: { '.validate': INT(-9999, 99999) },
-        c: { '.validate': INT(-9999, 99999) },
-        $other: { '.validate': false },
-      },
+      $tid: tid,
     },
     $other: { '.validate': false },
   };
@@ -375,7 +399,7 @@ function newBlocks(R) {
         $other: v(false), // no startedBy, no by, no member key of any kind
       },
       pub: { '.validate': BRANCH, $g: groupShape(m, " && (!data.exists() || newData.parent().parent().child('ctl').child('id').val() !== data.parent().parent().child('ctl').child('id').val())"
-        + ` && (${place('g0', 1)} || ${place('g1', 2)} || ${place('g2', 3)} || ${place('g3', 4)} || ${place('g4', 5)} || ${place('g5', 6)})`) },
+        + ` && (${place('g0', 1)} || ${place('g1', 2)} || ${place('g2', 3)} || ${place('g3', 4)} || ${place('g4', 5)} || ${place('g5', 6)})`, true) },
       $other: v(false),
     },
   };
@@ -444,7 +468,7 @@ function applyR1(rulesFile) {
   return out;
 }
 
-module.exports = { OWNER_KEY, macros, newBlocks, amendments, applyR1, blockShape, groupShape };
+module.exports = { REVEAL_PHOTO_MAX, OWNER_KEY, macros, newBlocks, amendments, applyR1, blockShape, groupShape };
 
 if (require.main === module) {
   const fs = require('fs');

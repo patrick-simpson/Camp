@@ -36,6 +36,14 @@ const REVEAL_ID_RE = /^r[a-z0-9]{6,12}-[a-z0-9]{4}$/;
 const REVEAL_GROUP_KEY_RE = /^g([0-5])$/;
 const REVEAL_TEAM_KEY_RE = /^t[0-5]$/;
 const REVEAL_COLOR_KEY_RE = /^[a-z]{2,12}$/;
+// R2 (big-screen branding): the most characters of a team photo's thumbnail in the PUBLIC node. It is the same
+// number as REVEAL_PHOTO_MAX in tests/rules-macros.js (rules.test.js pins that they agree): an anonymous reader
+// can be made to download six of these, so it is small on purpose (the TV draws a photo at most ~540 px wide).
+const REVEAL_PHOTO_MAX = 20000;
+const REVEAL_EMOJI_MAX = 16;
+const REVEAL_KEYCAP_RE = /^[0-9]\uFE0F?\u20E3$/;
+const REVEAL_FLAG_SHAPES = ['plain', 'swallow', 'stripe', 'chevron']; // mirrors app.js's TEAM_FLAG_SHAPES — keep in sync
+const REVEAL_FLAG_COLORS = ['red', 'blue', 'green', 'gold'];          // mirrors app.js's TEAM_FLAG_COLORS — keep in sync
 const REVEAL_EPOCH_RE = /^[A-Za-z0-9_-]{1,24}$/;
 
 function revealInt(v, lo, hi) {
@@ -169,7 +177,13 @@ function normalizeRevealPub(raw) {
       const v = revealInt(e.v, -99999, 99999), mm = revealInt(e.m, -99999, 99999), c = revealInt(e.c, -99999, 99999);
       if (!nm || p === null || g === null || s === null || b === null || v === null || mm === null || c === null) return;
       const row = { id: tid, nm, p, g, s, b, v, m: mm, c };
-      if (typeof e.k === 'string' && REVEAL_COLOR_KEY_RE.test(e.k)) row.k = e.k;
+      // A team's own look (R2), each part laundered and dropped, never repaired, when it is not exactly the shape: a
+      // colour only as one of the twelve palette ids, an emoji through safeEmoji (no markup, 16 characters), the
+      // cleared-team marker only as the boolean true, a photo only as a small inline png / jpeg (never an address).
+      if (typeof e.k === 'string' && REVEAL_COLOR_KEY_RE.test(e.k) && Object.prototype.hasOwnProperty.call(CAMP_TEAM_PALETTE, e.k)) row.k = e.k;
+      if (typeof e.em === 'string' && e.em.length <= REVEAL_EMOJI_MAX) { const em = safeEmoji(e.em, ''); if (em && em === e.em) row.em = em; }
+      if (e.pl === true) row.pl = true;
+      if (typeof e.ph === 'string' && e.ph.length <= REVEAL_PHOTO_MAX && CAMP_CREST_DATA_RE.test(e.ph)) row.ph = e.ph;
       entries.push(row);
     });
     if (!entries.length) return;
@@ -178,6 +192,56 @@ function normalizeRevealPub(raw) {
   });
   out.sort((a, b) => a.idx - b.idx);
   return out;
+}
+
+// ── A team's mark on a public screen (R2) ────────────────────────────
+// What the big screen and the remote's mini TV draw for one team in a SHOWN place: the phones' own order
+// (teamMarkSpec) over the laundered entry (`brand` = { k, em, pl, ph } as normalizeRevealPub returns them, or
+// null for the camp's printed look, which is what Waiting and the intro always show). Pure: `camp` is the
+// profile (teamCrest, teamFlag, teamEmoji, teamAccent), nothing is read from the page.
+//   1. a photo; 2. not cleared and the camp ships a shield; 3. not cleared and the camp has a flag (a picked
+//   colour fills it); 4. a tile: its content the team's own emoji (a keycap is drawn as its digit in type),
+//   else for a cleared team the slot's number, else the camp's printed mascot; its edge the picked colour,
+//   else the camp's own accent (not cleared), else none.
+function revealMarkSpec(camp, id, brand) {
+  const b = brand || {};
+  const c = camp || {};
+  const pl = b.pl === true;
+  const k = typeof b.k === 'string' && Object.prototype.hasOwnProperty.call(CAMP_TEAM_PALETTE, b.k) ? b.k : '';
+  const light = k ? CAMP_TEAM_PALETTE[k].l : '';
+  if (typeof b.ph === 'string' && b.ph.length <= REVEAL_PHOTO_MAX && CAMP_CREST_DATA_RE.test(b.ph)) return { kind: 'photo', src: b.ph };
+  const slot = parseInt(String(id).slice(1), 10) || 0;
+  if (!pl) {
+    const src = safeCrestSrc(c.teamCrest && c.teamCrest[id]);
+    if (src) return { kind: 'shield', src };
+    const color = c.teamFlag && c.teamFlag[id];
+    if (REVEAL_FLAG_COLORS.indexOf(color) >= 0) {
+      const spec = { kind: 'flag', color, shape: REVEAL_FLAG_SHAPES[slot % REVEAL_FLAG_SHAPES.length] };
+      if (light) spec.fill = light;
+      return spec;
+    }
+  }
+  const em = safeEmoji(b.em, '');
+  const tile = { kind: 'tile', num: '', emoji: '', edge: light };
+  if (em && REVEAL_KEYCAP_RE.test(em)) tile.num = em.charAt(0);
+  else if (em) tile.emoji = em;
+  else if (pl) tile.num = String(slot + 1);
+  else tile.emoji = safeEmoji(c.teamEmoji && c.teamEmoji[id], '🏕️');
+  if (!tile.edge && !pl) {
+    const a = c.teamAccent && c.teamAccent[id];
+    if (typeof a === 'string' && /^#[0-9a-fA-F]{6}$/.test(a)) tile.edge = a;
+  }
+  return tile;
+}
+
+// The emoji that flies as confetti for a team: its own (not a keycap, which is a box, not a mascot), nothing of
+// the team's for a cleared team (the caller uses the party set), else the camp's printed mascot.
+function revealMascot(camp, id, brand) {
+  const b = brand || {};
+  const em = safeEmoji(b.em, '');
+  if (em && !REVEAL_KEYCAP_RE.test(em)) return em;
+  if (b.pl === true || em) return '';
+  return safeEmoji(camp && camp.teamEmoji && camp.teamEmoji[id], '');
 }
 
 // ── Reading a reveal ─────────────────────────────────────────────────
