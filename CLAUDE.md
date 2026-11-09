@@ -132,6 +132,10 @@ Files:
   `takenGameIds`, `pruneOrphanedGameData`), `makeId`, `configLocked` (the guard every catalog writer
   asks), `startQuickGame`, `backupJSON` and `tryImport` (the path a backup, picked as a file or pasted as text, takes
   through Restore points; its refusals are said in plain words through `opts.say`).
+  The three abilities Step 30 removed came back in the new screens' language (owner, Nov 9, 2026): renaming a games day, moving
+  it to another weekday and deleting it (the Games screen's day sheet), Copy the backup and Restore from pasted text (Restore
+  points). **Restore default games & days stays gone, on purpose (owner's call): build no equivalent.** A manual reorder of
+  days was not rebuilt either: every reader lists days in week order, so it would change nothing anyone sees.
   Every commit to `state.config` or the roster goes through `configEdit` / `stateEdit` (an Undo entry;
   see "Undo core"), looking its record up by id when it runs. The strip of what the config engine
   set aside (`configNotesHtml`: Put it back / Use mine, see "The week config is a field-op engine")
@@ -756,7 +760,7 @@ never rebuilds a segmented control under a finger.
   Round 1"), Match order a hairline list with marks and the ink "Now" tag, the summary the saved result's `.gres` list;
   a counselor's live game is the four-team view's language ("Live now · 3 of 6 teams in" over Now's own board, `.lb`, in
   roster order; "Live now · Final" over the Big Board; no gold box, no "updates automatically" note); the Big Board
-  rings the followed team's column (`data-mine`, the team's colour for the theme, ink without one). The sign-in's logo
+  rings the followed team's column (`data-mine`, the team's colour for the theme, ink without one). A column's name is two spans, `.board-name-full` and `.board-name-short` (`nowTeamWord`, aria-hidden): the full name wraps by words, and under about 18em of the board's own text the short one shows, so no name is ever cut at 200% text. The sign-in's logo
   is the big screen's camp mark; its words are `.lock-logo-name` ("Senior camp" on senior). Score entry's and the six-team summary's Save are in the takeover's dock (see "The dock and the saved result").
 
 ## The Now tab (Step 17 — `nowModel()` in app.js, painted by now-ui.js)
@@ -1927,8 +1931,8 @@ into it from app.js / settings.js is typeof-guarded.
   `#rp-manage`. The **Backups** group also has **Copy the backup** (`rpCopyBackup`: `backupJSON()` on the clipboard, "Copied" in its own title, never a camper name) and **Restore from pasted text** (`#sheet-backup-paste`, `backupPasteUi`: memory only, holds the deploy reload while it has text, asks "Throw away the pasted backup?" before closing; its refusals are one sentence in `#bp-why`). A backup picked as a FILE or pasted runs ONE function, `rpRestoreText`: a v3 file of this camp opens the same sheet
   (you pick what to put back); another camp's asks once to copy its schedule, games and teams
   (`tryImport(text, { copyFromOtherCamp, confirmed, say })`); an older flat file asks once, then
-  `tryImport`. `tryImport`'s new `opts.say` takes its complaints (default: a plain toast) and
-  `opts.confirmed` skips its native confirm.
+  `tryImport`. `tryImport`'s `opts.say` takes its complaints (default: a plain toast) and
+  `opts.confirmed` skips its native confirm; a pre-import restore point is written first.
 
 ## Camp week, Schedule, the rain plan (Step 15 — markup and visual system)
 

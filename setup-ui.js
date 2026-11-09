@@ -6180,7 +6180,7 @@ function wireTeamsScreen() {
 //   - the forms are written once per open and the INPUTS are the draft (a repaint never takes a typed word away);
 //   - a sheet with unsaved edits asks before it closes, by every route (setupSheetGuardClose), and holds the deploy's auto-reload;
 //   - "Needs a connection": every action refuses offline in words (peopleWhy) — a decision about access never queues behind a dead signal;
-//   - your own role and the owner row are read-only here ("Another director has to change your access" / "Owner · only the owner can change this row").
+//   - your own role and the owner row are read-only here ("Another director has to change your access" / "Owner · only the owner's first name can change this row").
 
 const peopleUi = {
   person: null,    // the open person sheet: { key, origin, role, fresh, error, busy }
@@ -6210,7 +6210,7 @@ function peopleRowsNow() { return peopleRows(memberDirectory, peopleMyKey()); }
 
 function peopleRowOf(key) { return peopleRowsNow().find((r) => r.key === key) || null; }
 
-// "Signed in · Counselor", "No sign-in yet · Director", "Owner · only the owner can change this row": words, never a mark alone.
+// "Signed in · Counselor", "No sign-in yet · Director", "Owner · only <the owner's first name> can change this row": words, never a mark alone.
 function peopleStatusWords(r) {
   if (r.owner) return 'Owner · only ' + (typeof ownerName === 'function' ? ownerName() : 'the owner') + ' can change this row'; // a name another director knows
   return (r.pending ? 'No sign-in yet' : 'Signed in') + ' · ' + peopleRoleWord(r.role);

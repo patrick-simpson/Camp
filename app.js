@@ -581,7 +581,7 @@ function identityFromKey(key) {
 // The owner's member key, the lockout anchor. The security rules refuse EVERY
 // write to this key in both camps' member lists (`$memberKey != '…'`), so the
 // People screen must not offer controls that can only fail: its row shows
-// "Owner · only the owner can change this row" and nothing else, for the owner
+// "Owner · only <owner's first name> can change this row" and nothing else, for the owner
 // themselves and for every other editor. The same literal is in
 // database.rules.json (tests/owner-row.test.js pins that they agree). Any bulk
 // member write must skip this key and be per-row and best-effort, never folded
