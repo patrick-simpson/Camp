@@ -1332,7 +1332,7 @@
                      built-in names, so the row sits here under Keep | Clear and
                      not with the schedule and games ("App's own"). -->
                 <div class="wk-day nyw-item" data-nyw-item="teams" data-choice="keep">
-                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Each team becomes Team&nbsp;1, Team&nbsp;2 and so on. The short names, emoji and colours you picked go too.</span></span>
+                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Each team becomes Team&nbsp;1, Team&nbsp;2 and so on, with the camp’s original short name, emoji and colour until you change them on the Teams screen.</span></span>
                   <div class="wk-ticks" role="radiogroup" aria-label="Team names, emoji and colours"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
                 </div>
                 <div class="wk-day nyw-item" data-nyw-item="counselors" data-choice="clear">
@@ -4087,7 +4087,7 @@
            relabelled; #si-save is then hidden);
          - anything else (the typical day itself, a one-off, an own day): the
            single #si-save "Save".
-       #si-tell (☐ Tell people who follow Supper, #si-tell-label; "Tell people
+       #si-tell (☐ Tell people who follow “Supper”, #si-tell-label; "Tell people
        who get all reminders" for a new item) is ONE compact 44px row
        above the save, shown only for a change the alert sender would tell: a
        moved start, a new name or a new item, with a time still to come today
@@ -5390,23 +5390,28 @@
   <jelly-dialog id="ask-dialog" class="ask" label="">
     <h2 class="ask-title" id="ask-title"></h2>
     <div class="ask-body" id="ask-body"></div>
-    <!-- The tick a question may carry (askDialog's `tick` option; today only
+    <!-- .ask-foot is sticky at the dialog's foot, so a long question (Fill
+         evenly's table, 200% text) scrolls under the buttons and the tick above them.
+         The tick a question may carry (askDialog's `tick` option; today only
          the schedule item sheet's Remove…): the item sheet's own "Tell people
-         who follow Supper" row (.sheet-tell, the restore sheet's ink tick),
-         between the question and its buttons, behind a hairline, so the choice
-         is made before the button that acts on it. UNTICKED every time it opens.
-         #ask-tell-label is the label, #ask-tell-note the one line of caveat
-         under it; with no signal #ask-tell-off takes the box's place (and the
-         note hides). Hidden unless a question asks for it; the native-confirm
-         fallback has no tick, which is the unticked answer. -->
-    <div class="ask-tell" id="ask-tell" hidden>
-      <div class="sheet-tell">
-        <jelly-checkbox class="rp-check" id="ask-tell-check"><span class="gl-title" id="ask-tell-label">Tell people who follow this item</span></jelly-checkbox>
-        <p class="sheet-tell-off" id="ask-tell-off" hidden>No signal: the alert can’t go out. Tell people in person.</p>
+         who follow “Supper”" row (.sheet-tell, the restore sheet's ink tick),
+         riding directly above the buttons, behind a hairline, so the choice is
+         in view and made before the button that acts on it, at every text size.
+         UNTICKED every time it opens. #ask-tell-label is the label,
+         #ask-tell-note the one line of caveat under it; with no signal
+         #ask-tell-off takes the box's place (and the note hides). Hidden unless
+         a question asks for it; the native-confirm fallback has no tick, which
+         is the unticked answer. -->
+    <div class="ask-foot">
+      <div class="ask-tell" id="ask-tell" hidden>
+        <div class="sheet-tell">
+          <jelly-checkbox class="rp-check" id="ask-tell-check"><span class="gl-title" id="ask-tell-label">Tell people who follow this item</span></jelly-checkbox>
+          <p class="sheet-tell-off" id="ask-tell-off" hidden>No signal: the alert can’t go out. Tell people in person.</p>
+        </div>
+        <p class="ask-tell-note" id="ask-tell-note">Only they get an alert, so tell everyone else in person.</p>
       </div>
-      <p class="ask-tell-note" id="ask-tell-note">Only they get an alert, so tell everyone else in person.</p>
+      <div class="ask-actions" id="ask-actions"></div>
     </div>
-    <div class="ask-actions" id="ask-actions"></div>
   </jelly-dialog>
 
   <!-- ── TOASTS (point-change / matchup alerts) ──────────────────── -->

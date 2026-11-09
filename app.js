@@ -49,17 +49,17 @@ const CHANGES = [
   { id: 'score-from-games', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['games'], text: 'Score each game from its row on the Games tab.', show: { to: 'games', where: 'the Games tab' } },
   { id: 'games-tab-results', at: WHATS_NEW_SHIPPED_AT, for: 'counselors', needs: ['games'], text: 'Every game and its winners are on the Games tab.', show: { to: 'games', where: 'the Games tab' } },
   { id: 'reveal-remote', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['reveal'], text: 'Run the reveal from More. Your phone is the remote.', show: { to: 'reveal', where: 'the reveal remote' } },
-  { id: 'chat-tab', at: WHATS_NEW_SHIPPED_AT, for: 'counselors', needs: ['chat'], text: 'Chat has its own tab now, next to Games.', show: { to: 'chat', where: 'the Chat tab' } },
-  { id: 'tell-everyone', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['tell'], text: 'Tell everyone, in More, sends a banner, a buzz or a notice.', show: { to: 'tell', where: 'Tell everyone' } },
+  { id: 'chat-tab', at: WHATS_NEW_SHIPPED_AT, for: 'everyone', needs: ['chat'], text: 'Tap the bell in Chat to hear about every message.', show: { to: 'chat', where: 'the Chat tab' } },
+  { id: 'tell-everyone', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['tell'], text: 'Send a banner, a buzz or the notice from Tell everyone.', show: { to: 'tell', where: 'Tell everyone' } },
   { id: 'phone-alerts', at: WHATS_NEW_SHIPPED_AT, for: 'everyone', needs: ['alerts'], text: 'Alerts in More can buzz your phone when Camp is closed.', show: { to: 'alerts', where: 'Alerts' } },
   { id: 'award-points', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['award'], text: 'Give verse, cleanup and quick points in Award points.', show: { to: 'award', where: 'Award points' } },
   { id: 'reveal-on-now', at: WHATS_NEW_SHIPPED_AT, for: 'counselors', needs: ['reveal'], text: 'When the directors reveal the standings, they show here.' },
   { id: 'set-up-the-week', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['setup'], text: 'Change the schedule, games and teams in Set up the week.', show: { to: 'setup', where: 'Set up the week' } },
   { id: 'preview-counselor', at: WHATS_NEW_SHIPPED_AT, for: 'directors', text: 'Preview Camp as a counselor from What counselors see.', show: { to: 'counselors', where: 'What counselors see' } },
-  { id: 'days-and-backup', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['setup'], text: 'You can rename games days and copy the backup again.', show: { to: 'setup', where: 'Set up the week' } },
-  { id: 'new-year-setup', at: WHATS_NEW_SHIPPED_AT, for: 'owner', needs: ['setup'], text: 'The new-year setup is in Set up the week’s menu.', show: { to: 'setup', where: 'Set up the week' } },
+  { id: 'days-and-backup', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['setup'], text: 'Set up the week can rename games days and copy the backup.', show: { to: 'setup', where: 'Set up the week' } },
+  { id: 'new-year-setup', at: WHATS_NEW_SHIPPED_AT, for: 'owner', needs: ['setup'], text: 'The new-year setup is in Set up the week’s menu.', show: { to: 'setup-menu', where: 'Set up the week’s menu' } },
   // Written for this deploy's Remove… tick (build session 2). It releases only during camp week, when the tick can appear.
-  { id: 'remove-tells-followers', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['schedule-alerts'], text: 'Removing a schedule item can now tell its followers.' },
+  { id: 'remove-tells-followers', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['schedule-alerts'], text: 'You can now tell people who follow an item you remove.' },
 ];
 
 // ── Sign-in & roles (Firebase Authentication) ────────────────────
@@ -12724,6 +12724,11 @@ const WHATS_NEW_SHOW = {
   tell: { ok: () => toolMayOpen('tell'), go: () => openTool('tell', { from: 'now' }) },
   award: { ok: () => toolMayOpen('award'), go: () => openTool('award', { from: 'now' }) },
   setup: { ok: () => WHATS_NEW_NEEDS.setup(), go: () => openBuilder() },
+  // The hub's ⋯ menu itself (the owner's new-year row lives there): the builder first, then its sheet over it.
+  'setup-menu': {
+    ok: () => WHATS_NEW_NEEDS.setup() && typeof setupSheet === 'function',
+    go: () => { openBuilder(); if (builderOpen() && shellSheetAllowed('setup-menu')) setupSheet('setup-menu'); },
+  },
   counselors: { ok: () => canEdit() && shellSheetAllowed('counselors'), go: () => shellSheetOpen('counselors') },
 };
 
@@ -12754,9 +12759,20 @@ function whatsNewHtml(n) {
 // The strip's note, as markup ('' = none). `items` are the strip's other messages (markup): the note rides LAST and only when
 // the strip has room for it as well. Never in a counselor preview (a note is this phone's own reading list, not camp content),
 // never while a reveal is live, never before the role is confirmed. A release is written to memory BEFORE it is drawn.
+let whatsNewReleased = false; // set by the paint that released a note (renderAnnouncements reads it to unfold it in place)
+// The moments a note gives way to (it neither shows nor comes out): the send-off notice that IS the Now card, a cleanup or verse
+// moment, a block running over or a director's "Still on this" question — the strip's least important line must not push the most
+// important card of the hour down.
+function whatsNewGivesWay() {
+  const m = nowLast;
+  if (!m || !m.card) return false;
+  return m.card.kind === 'notice' || !!m.moment || !!m.card.over || !!m.card.hold;
+}
 function whatsNewItem(items, mayRelease) {
-  if (!CHANGES.length || counselorPreviewOn || !memberRoleConfirmed) return '';
+  // A role painted by a fallback (the SDK never loaded: a director's phone reads as a viewer) is not a role to spend the hour on.
+  if (!CHANGES.length || counselorPreviewOn || !memberRoleConfirmed || sdkLoadFailed) return '';
   if (typeof revealLiveView === 'function' && revealLiveView()) return '';
+  if (whatsNewGivesWay()) return '';
   const mem = whatsNewRead();
   if (!mem) return '';
   const now = Date.now();
@@ -12768,11 +12784,12 @@ function whatsNewItem(items, mayRelease) {
   const pick = plan.release || plan.current;
   if (!pick) return '';
   const html = whatsNewHtml(pick);
-  if (annStripRoom(items.concat([html])) < items.length + 1) return '';
+  if (annStripRoom(items.concat([html]), true) < items.length + 1) return '';
   if (plan.release) {
     mem.n[pick.id] = Object.assign({}, mem.n[pick.id], { s: now });
     mem.last = now;
     if (!whatsNewWrite(mem)) return '';
+    whatsNewReleased = true;
   }
   return html;
 }
@@ -12945,9 +12962,12 @@ function annStripCap() {
 // team line, iOS large text, which never changes the root font size): trailing messages go behind "N more messages" until the
 // notice plus the messages shown fit in a third of the window. The messages are measured at the strip's own width in a hidden
 // copy that is added and removed at once, and only when the messages or the width changed (`annFit`), so an idle render writes
-// nothing. With no layout (the test harness, Now not on screen) the count stands. With no notice the newest message always shows.
-let annFit = { sig: '', ext: [] };
-function annStripRoom(items) {
+// nothing. With no layout (the test harness, Now not on screen) the count stands. With no notice the newest message always shows,
+// except under `strict` (a What's new note asks with itself added: it is the lowest thing in the strip, so it waits for room rather
+// than take more than a third of the screen at large text). The last few measurements are kept by their key (`annFit`): a strip with a
+// note measures twice per paint (with and without it), and one remembered key would re-measure, i.e. write the page, on every paint.
+let annFit = [];
+function annStripRoom(items, strict) {
   const cap = Math.min(items.length, annStripCap());
   const tab = document.getElementById('tab-now');
   if (!cap || !tab || typeof tab.getBoundingClientRect !== 'function' || typeof window === 'undefined') return cap;
@@ -12958,7 +12978,8 @@ function annStripRoom(items) {
   try { cs = getComputedStyle(tab); } catch (e) { return cap; }
   const w = Math.round(box.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0));
   const sig = w + '|' + items.join('\u0001');
-  if (annFit.sig !== sig) {
+  let fit = annFit.find((f) => f.sig === sig);
+  if (!fit) {
     const m = document.createElement('div');
     m.className = 'announcements';
     m.setAttribute('aria-hidden', 'true');
@@ -12966,16 +12987,17 @@ function annStripRoom(items) {
     m.innerHTML = items.join('');
     tab.appendChild(m);
     const top = m.getBoundingClientRect().top;
-    annFit = { sig, ext: Array.prototype.map.call(m.children, (c) => c.getBoundingClientRect().bottom - top) };
+    fit = { sig, ext: Array.prototype.map.call(m.children, (c) => c.getBoundingClientRect().bottom - top) };
     m.remove();
+    annFit = [fit].concat(annFit).slice(0, 4);
   }
-  if (!(annFit.ext[0] > 0)) return cap;
+  if (!(fit.ext[0] > 0)) return cap;
   const notice = document.getElementById('now-notice');
   const nh = notice && !notice.hidden ? notice.getBoundingClientRect().height : 0;
   const budget = vh / 3 - (nh > 0 ? nh + (parseFloat(cs.rowGap) || 0) : 0);
   let k = 0;
-  while (k < cap && annFit.ext[k] <= budget) k++;
-  return nh > 0 ? k : Math.max(1, k);
+  while (k < cap && fit.ext[k] <= budget) k++;
+  return nh > 0 || strict ? k : Math.max(1, k);
 }
 // What the strip had no room for, as markup (#sheet-messages' body) and a count (#now-msgs-more).
 let annOverflow = { n: 0, html: '' };
@@ -12990,15 +13012,24 @@ function renderAnnouncements() {
   const joinHtml = joinBarHtml();
   const items = (joinHtml ? [joinHtml] : []).concat(active.map((a) => messageHtml(a, { editor })));
   const room = annStripRoom(items);
-  const onScreen = activeTab() === 'now' && shell.dirty.now === false && !shellTakeoverOpen() && !builderOpen();
-  // A What's new note rides LAST, only when everything above it fits too (never behind "N more", never in the messages sheet).
+  // `shown`: the strip is Now's and nothing covers it. `onScreen` adds that Now was already on screen at the last paint
+  // (`shell.dirty.now` is still true on the paint that brings Now into view: its whole panel arrives then, so that paint moves nothing).
+  const shown = activeTab() === 'now' && !shellTakeoverOpen() && !builderOpen();
+  const onScreen = shown && shell.dirty.now === false;
+  // A What's new note rides LAST, only when everything above it fits too (never behind "N more", never in the messages sheet). It
+  // may come out on the paint that brings Now into view (`shell.arriving`: it is then part of the panel's arrival, so nothing moves
+  // under a reader a tick later) and on any later paint with nothing over the strip.
+  whatsNewReleased = false;
+  const inView = onScreen || (shown && shell.arriving === 'now');
   const note = items.length <= room
-    ? whatsNewItem(items, onScreen && shell.sheets.length === 0 && (typeof document.visibilityState !== 'string' || document.visibilityState !== 'hidden')) : '';
+    ? whatsNewItem(items, inView && shell.sheets.length === 0 && (typeof document.visibilityState !== 'string' || document.visibilityState !== 'hidden')) : '';
   const html = items.slice(0, room).join('') + note;
   const count = Math.min(items.length, room) + (note ? 1 : 0);
   annOverflow = { n: items.length - Math.min(items.length, room), html: items.slice(Math.min(items.length, room)).join('') };
-  const moving = onScreen && wrap.__annLive === true && typeof wrap.animate === 'function' && typeof JellyMotion !== 'undefined';
-  wrap.__annLive = onScreen && remoteReady;
+  // A note released while Now was already on screen (an hour mark, the member record answering after boot) always unfolds behind
+  // whenHandsOff, never a plain write that pushes the card down under the reader, even before the first server snapshot.
+  const moving = onScreen && (wrap.__annLive === true || whatsNewReleased) && typeof wrap.animate === 'function' && typeof JellyMotion !== 'undefined';
+  wrap.__annLive = shown && remoteReady;
   if (!moving) {
     wrap.__keyedWant = html;
     setHiddenIfChanged(wrap, !count);
@@ -14232,7 +14263,10 @@ const SHELL_ALWAYS = [
 
 function renderTab(tab) {
   const p = SHELL_PANELS[tab];
-  if (p) p.render();
+  // The paint that brings a tab into view (it was dirty): a renderer may draw something new as part of the panel's own arrival
+  // (Now's What's new note) rather than move it in under the reader a tick later.
+  shell.arriving = shell.dirty[tab] !== false ? tab : null;
+  try { if (p) p.render(); } finally { shell.arriving = null; }
   shell.dirty[tab] = false;
 }
 

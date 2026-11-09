@@ -2121,8 +2121,9 @@ jelly-dialog.ask {
   margin-top: 6px;
 }
 /* A long question (Fill evenly's table, at 200% text) keeps its buttons in
-   reach: the row sticks to the dialog's foot while the rest scrolls under it. */
-.ask-actions:not(:empty) {
+   reach: the foot (the tick, when asked for, then the buttons) sticks to the
+   dialog's foot while the rest scrolls under it. */
+.ask-foot {
   position: sticky;
   bottom: -18px; /* the dialog's bottom padding */
   z-index: 1;
@@ -2154,10 +2155,14 @@ jelly-dialog.ask {
 .ask-sub-s {
   font: 600 0.8125rem/1.3 var(--font-ui);
 }
-/* A question's tick (#ask-tell: the schedule item sheet's Remove…, "Tell people who follow Supper"): the item sheet's
-   own .sheet-tell row behind a hairline, between the question and its buttons, with one line of caveat under it. */
+/* A question's tick (#ask-tell: the schedule item sheet's Remove…, "Tell people who follow “Supper”"): the item sheet's
+   own .sheet-tell row behind a hairline, the first thing in the sticky foot (directly above the buttons that act on it), with
+   one line of caveat under it. */
+.ask-foot .ask-actions {
+  margin-top: 0;
+}
 .ask-tell {
-  margin: var(--s-2) 0 0;
+  margin: -6px 0 var(--s-2);
   padding-top: 4px;
   border-top: 1px solid var(--line);
 }
@@ -5973,7 +5978,7 @@ button.cb-row:active {
 #sheet-sched-item .sheet[data-flow] > .sheet-body {
   overflow: visible;
 }
-/* "Tell people who follow Supper" (the item sheet's dock, the rain plan's dock
+/* "Tell people who follow “Supper”" (the item sheet's dock, the rain plan's dock
    above Done): ONE compact row, the restore sheet's ink tick and a short label,
    44px tall. Its caveat is a bell note in the sheet's body, never here: the dock
    is pinned, and a three-line block in it pushed Save below the fold. With no
@@ -11195,6 +11200,48 @@ div.sec-st-name {
   background: var(--sheet);
   color: var(--ink-2);
   box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+/* …and quieter words: a note is regular weight in ink where a banner is bold, and its Show me is 600 (it keeps 16px, the size
+   link ink needs on the dark tint), so a director's banner and its Take down always read louder than a note about the app. */
+.msg[data-kind="new"] .msg-text {
+  font-weight: 500;
+}
+.msg[data-kind="new"] .msg-show {
+  font-weight: 600;
+}
+/* Large text (130%+ at 360 and 390): a note is its words and one link at most. The "What’s new" word steps aside visually (the
+   signpost already says it; a screen reader still reads it), Show me rides the end of the words' last line and the words stop
+   growing at 24px (the strip's quietest line, like the preview bar's ceiling), so a note fits the strip's third of the screen
+   (app.js measures it strictly) instead of waiting for room it never gets. Keyed in rem against the strip's own width. */
+.announcements {
+  container: annstrip / inline-size;
+}
+@container annstrip (max-width: 18rem) {
+  .msg[data-kind="new"] .msg-text,
+  .msg[data-kind="new"] .msg-meta {
+    display: inline;
+  }
+  .msg[data-kind="new"] .msg-text {
+    font-size: min(0.96875rem, 24px);
+  }
+  .msg[data-kind="new"] .msg-text::after {
+    content: " ";
+  }
+  .msg[data-kind="new"] .msg-meta > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .msg[data-kind="new"] .msg-show {
+    vertical-align: baseline;
+    margin-inline: -6px 0;
+    padding: 0 6px;
+    font-size: min(1rem, 22px);
+  }
 }
 
 /* ── Tell everyone (#takeover-tell) ─────────────────────────────
@@ -17631,6 +17678,7 @@ html.calm-motion .sg-day-dows .daypick-btn[data-refused] {
   overflow-wrap: break-word;
 }
 .nyw-t-sub {
+  text-wrap: balance; /* a short tally line never leaves one word ("4") alone on its last line */
   display: block;
   margin-top: 1px;
   font: 550 0.84375rem/1.32 var(--font-ui);

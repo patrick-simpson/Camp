@@ -2959,7 +2959,7 @@ function renderSchedItemSheet() {
   setTextIfChanged(setupEl('si-wait-text'), wait ? wait.text : '');
   setHiddenIfChanged(setupEl('si-scope'), !dayScoped || !!wait);
   setHiddenIfChanged(setupEl('si-save'), dayScoped || !!wait);
-  // "Tell people who follow Supper": ONE 44px row above the save, only for a change the alert sender would tell
+  // "Tell people who follow “Supper”": ONE 44px row above the save, only for a change the alert sender would tell
   // (schedItemTell); with no signal a plain line in its place. Its state follows the change until the director
   // touches the box (it.tellChose), so a name fix that came after a time move doesn't keep the old default.
   setupTellPaint('si-tell', tell.show && !wait, it, it.tellPainted);
@@ -3065,7 +3065,7 @@ function schedItemTell(it, m) {
   const starts = [item.start].concat(it.rec ? [it.rec.start] : []);
   if (!dks.some((dk) => starts.some((st) => pushScheduleTimeTellable(SETUP_DK.indexOf(dk), st)))) return none;
   const name = setupHeadLabel(it.label0 || item.label);
-  const label = kind === 'new' ? 'Tell people who get all reminders' : 'Tell people who follow ' + (name && name.length <= 22 ? name : 'this item');
+  const label = kind === 'new' ? 'Tell people who get all reminders' : 'Tell people who follow ' + schedTellWho(name);
   return { show: true, kind, def: kind === 'move' && it.dayKey !== 'typical', label, offline: setupNoSignal() };
 }
 
@@ -3284,7 +3284,12 @@ function schedRemoveTell(it, name, fromTypical) {
   const typicalDays = SETUP_DK.filter((dk) => setupMapOf(setupMapOf(setupTree.days)[dk]).typical === true);
   const dks = it.dayKey === 'typical' ? typicalDays : (fromTypical ? [it.dayKey].concat(typicalDays) : [it.dayKey]);
   if (!dks.some((dk) => pushScheduleTimeTellable(SETUP_DK.indexOf(dk), item.start))) return null;
-  return { label: 'Tell people who follow ' + (name && name.length <= 22 ? name : 'this item'), note: 'Only they get an alert, so tell everyone else in person.', off: setupNoSignal() };
+  return { label: 'Tell people who follow ' + schedTellWho(name), note: 'Only they get an alert, so tell everyone else in person.', off: setupNoSignal() };
+}
+// The item a tick names, quoted and kept on one line ("Tell people who follow “Wake up”": a bare name read as a verb and broke
+// across lines); a long name is "this item". The item sheet's tick and Remove…'s say it the same way.
+function schedTellWho(name) {
+  return name && name.length <= 22 ? '“' + name.replace(/ /g, '\u00a0') + '”' : 'this item';
 }
 
 // ── the day's menu (⋯ on a day) and the other actions of the screen ──
@@ -9984,7 +9989,9 @@ async function nywLoadMembers() {
   nywUi.membersAsked = true;
   const r = await wizardMembersPreflight();
   nywUi.members = r.ok ? r : null;
-  if (!r.ok) nywUi.membersAsked = false;
+  // A failed read is asked again by a LATER paint, never by the one it sets off: that retried at once, in a loop without end
+  // (no SDK on the phone, a refused read) and hung the page on step 4.
+  if (!r.ok) setTimeout(() => { nywUi.membersAsked = false; }, 5000);
   if (setupScreen() === 'wizard') renderNywScreen();
 }
 
@@ -10320,7 +10327,7 @@ function paintNywStep5(out, next) {
   if (nywUi.a1Ran) add('a1', 'Editing turned on for the schedule', '');
   add('saved', (out || 'Last year') + ' saved', 'In Restore points, under Past years');
   add('cleared', 'Scoreboard cleared', '');
-  if (d ? d.teams : dd.teams) add('teams', 'Teams renamed Team 1 to Team ' + CAMP.teamCount, '');
+  if (d ? d.teams : dd.teams) add('teams', 'Teams renamed Team\u00a01 to Team\u00a0' + CAMP.teamCount, ''); // no break: the count never ends a line alone
   if (cleared) add('members', cleared + ' ' + nywWord(cleared, 'counselor taken off their team', 'counselors taken off their teams'), '');
   setHtmlIfChanged(setupEl('nyw-done-list'), rows);
   const failed = d ? d.members.failed.concat(d.members.incomplete.filter((p) => !d.members.failed.some((f) => f.key === p.key))) : [];

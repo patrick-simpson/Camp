@@ -159,7 +159,8 @@ const INSTALL = (camp) => {
       setupTree.meta.wizard = { step, byKey: OWNER_MEMBER_KEY, at: Date.now() - 60000, fromEpoch: 'legacy', answers: JSON.stringify({ dev: wizardDeviceId(), weekStart: '2027-07-18', double: 'same', carry: carry || {} }) }; setupRev++;
       const d = wizardDraftRead(); d.answers = wizardNormAnswers({ weekStart: '2027-07-18', double: 'same', carry: carry || {} });
       if (done) d.done = { epoch: 'w20270718', at: Date.now(), archiveId: 'x', counts: {}, teams: true, cleared: 0, failed: 0 };
-      state.ui.builderScreen = 'wizard'; openBuilder(); renderAll();
+      // openBuilder() with no screen lands on the hub (setupOnOpen), so name the wizard screen itself.
+      openBuilder(undefined, 'wizard'); renderAll();
     },
   };
 };

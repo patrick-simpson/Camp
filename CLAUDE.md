@@ -289,17 +289,24 @@ the 15-minute queue) are gone; the legacy `campScoreboardDismissedChanges` key s
    owner`; `camp` `junior | senior` (absent: both); `needs` gate names (5); `text` plain, at most 60 characters (two lines at 360px), sentence case, curly apostrophes, no emoji, no `!`, never "update", "feature" or "version", saying what changed and
    where to find it, never a point or a place; `show` `{ to, where }` (6). Written by the agent who ships the change; no jokes.
 2. **One at a time, the strip's last**: the note rides `#announcements` after the join bar and every banner, only while the
-   strip has room for it (it never counts in "N more messages" and never goes to `#sheet-messages`), never under a live reveal,
-   never in a counselor preview (a note is this phone's own reading list, not camp content). nowModel stays pure: it is
-   `renderAnnouncements`' own item, not in `nowMessages`.
+   strip has room for it, MEASURED strictly (`annStripRoom(items, true)`: the note and everything above it within a third of the
+   window, with no "the newest always shows" exception; it never counts in "N more messages" and never goes to `#sheet-messages`),
+   never under a live reveal, never in a counselor preview (a note is this phone's own reading list, not camp content), and it
+   GIVES WAY (neither shows nor comes out, `whatsNewGivesWay`) while Now's card is the send-off notice, a cleanup / verse moment
+   is up, or a block is running over or holding a director's "Still on this" question. nowModel stays pure: it is
+   `renderAnnouncements`' own item, not in `nowMessages`. Large text (the strip under 18rem across, `container: annstrip`): the
+   "What’s new" word is visually hidden, Show me rides the words' last line and the words stop at 24px, so a note fits.
 3. **Pacing is per phone.** A note is DUE when `at` ≤ now, it passes (4)–(5) and this phone has no record of it. One is
-   RELEASED only while Now is on screen with nothing over it, the page visible, inside waking hours (`isAwakeHours`, 7 AM–9 PM
+   RELEASED only while Now is on screen with nothing over it — including the paint that brings Now into view (`shell.arriving`,
+   set by `renderTab` while a dirty tab renders), so it arrives with the panel instead of pushing the card down a tick later; a
+   bare `renderAnnouncements()` while Now is still dirty releases nothing —, the page visible, inside waking hours (`isAwakeHours`, 7 AM–9 PM
    camp time, all year), no live reveal, the strip has room, and 60 minutes or more since this phone's last release: the oldest
    due note (by `at`, then list order). The CURRENT note is the newest released one, not dismissed, under 4 awake hours old
    (`awakeElapsedMs`); the next release supersedes it and it never comes back. × or Show me ends it on this phone.
 4. **Stale and capped**: never released once `now − at` > 365 days, or this phone's camp week has ended (`campWeek().phase ===
    'after'`) and `at` is before that week's end; when more than 10 are due at once the oldest beyond 10 are skipped for good.
-5. **Who reads it** (render time, nothing stored): only with a confirmed role (`memberRoleConfirmed`); `everyone` any role,
+5. **Who reads it** (render time, nothing stored): only with a confirmed role (`memberRoleConfirmed`) and never while the SDK
+   failed to load (`sdkLoadFailed`: a director's phone then reads as a viewer, and a counselor note would spend its hour); `everyone` any role,
    `counselors` `viewRole() === 'viewer'`, `directors` `viewRole() === 'editor'`, `owner` `isOwner()`; `camp` = `CAMP.id`;
    every `needs` gate passes (`WHATS_NEW_NEEDS`: `games` / `verse` / `cleanup` = not in `nowHiddenSections()`, `chat` = chat.js
    loaded and `!chatHiddenFromMe()`, `alerts` = `pushConfigured()`, `electives` = `CAMP.features.electives`, `reveal` = reveal-ui.js
@@ -307,18 +314,22 @@ the 15-minute queue) are gone; the legacy `campScoreboardDismissedChanges` key s
    setup-ui.js loaded, `schedule-alerts` = `pushScheduleAlertOffered()`).
 6. **Show me** (`WHATS_NEW_SHOW`, each `{ ok(), go() }`, drawn only while `ok()`): `games` / `chat` → `showTab`; `alerts` →
    `openPushDrawer()`; `reveal` → `openReveal({from: 'now'})`; `tell` / `award` → `openTool(id, {from: 'now'})`; `setup` →
-   `openBuilder()`; `counselors` → `shellSheetOpen('counselors')`. A tap ends the note, then opens the place. Its spoken name is
+   `openBuilder()`; `setup-menu` → `openBuilder()` then the hub's ⋯ sheet (`setupSheet('setup-menu')`, the owner's new-year
+   row); `counselors` → `shellSheetOpen('counselors')`. A tap ends the note, then opens the place. Its spoken name is
    "Show me " + `where`.
 7. **Memory**: `localStorage.campScoreboardWhatsNew` (device-wide, no camp suffix, never synced, not camp data, never in a
    backup) `{ v: 1, last, n: { id: { s?, d?, k? } } }` (released, dismissed, skipped), read lazily (never at load), every access
    in try/catch (a blocked store shows nothing and loops nothing). Sign-out KEEPS it (a wiped list would bring every note back
    after each sign-in). Ids no longer in `CHANGES` are dropped on write.
-8. **Motion**: a release seen on screen UNFOLDS in place (`glide`, scaleY .6 → 1 from its top, no drop: a note is never as loud
-   as a banner) and the sections under the strip glide (`annGlideBelow`); × squashes it out (`playRowOut`) and the rest glide up;
-   calm: fades; the first paint and a paint under a takeover move nothing (`wnUnfold`).
+8. **Motion**: a release on a paint while Now was ALREADY on screen (an hour mark, the member record answering after boot)
+   always UNFOLDS in place behind `whenHandsOff` (`glide`, scaleY .6 → 1 from its top, no drop: a note is never as loud as a
+   banner) and the sections under the strip glide (`annGlideBelow`), even before the first server snapshot (`whatsNewReleased`
+   forces `annPaintMoving`); a release on the arrival paint is part of the panel's own arrival (a plain write, and that paint
+   marks the strip live so the next change moves); × squashes it out (`playRowOut`) and the rest glide up; calm: fades
+   (`wnUnfold`). A note is quieter than a banner in words too: regular weight (500) where a banner is bold, Show me 600.
 9. **The model is `whatsNewDue(notes, mem, nowMs, who, {mayRelease})`** (pure: `{ current, release, skip }`); `whatsNewItem(items, mayRelease)`
    is the strip's one call (it writes the release to memory BEFORE drawing it, and draws nothing when the write fails). The
-   catch-up set is 14 notes (counselors 5, directors 8 and one more in camp week, the owner those plus one); a preview's fidelity
+   catch-up set is 14 notes (counselors 5, directors 9 and one more in camp week, the owner those plus one); a preview's fidelity
    tests seed both phones' memory as read, since a note is a phone's own reading list.
 
 **Auto-reload on deploy.** Open phones refresh themselves when a newer
@@ -889,8 +900,9 @@ score, Bible study with a team not given verse points, then people asking to joi
 **Messages.** The posted notice (title, sub, my team's line; `canTakeDown`), the join bar, then banners newest first (synced announcements not dismissed,
 and Announcements-channel chat messages of the last 15 minutes). The model is the whole list; the strip caps at three messages (the notice counts as one,
 one fewer at 130 % root text) and is then MEASURED (`annStripRoom`): trailing messages go behind "N more messages" until the notice plus the messages fit in
-`innerHeight / 3` (a hidden copy at the strip's width, made only when the messages or the width change: `annFit`; the newest message shows when there is
-no notice; with no layout the count stands). The notice strip's first line is clamped to one line (See all opens the whole). `annOverflow` rides
+`innerHeight / 3` (a hidden copy at the strip's width, made only when the messages or the width change: `annFit` keeps the last four measurements by key,
+because a strip with a What's new note asks twice per paint, with and without it; the newest message shows when there is
+no notice, except for the note, which is measured strictly; with no layout the count stands). The notice strip's first line is clamped to one line (See all opens the whole). `annOverflow` rides
 `#sheet-messages`. `annStripClick` is the
 strip's one delegated handler, shared with the sheet. Take down is Tell everyone's `tellNoticeDown()` (the 10 s Undo); the strip squashes out first.
 
@@ -2212,7 +2224,7 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
   of a copied day) — never the seed's slug id (`setupMintId`, seed only), which two directors
   adding the same name at once would mint twice and which a collision suffix could push past
   the 40 characters `pushSchedule` allows once published as `<dk>-<id>`. "Tell people who
-  follow Supper" (`#si-tell`): see "The published schedule".
+  follow “Supper”" (`#si-tell`): see "The published schedule".
 - **Day operations** are shared by Camp week and Schedule: give a day its own schedule (same
   ids, `typical:false`, patches gone, one commit), follow again / clear (confirm, a
   `pre-delete` restore point first — a device with no sync has nowhere to keep one and goes
@@ -4068,8 +4080,9 @@ constant itself. Both camps run all of it.
   again** (the sender gave the claim back, so the same ids find the change); a 10-second-rate refusal is retried once by
   itself. **Undoing a told change tells the same phones** (`setupTellLog`, in memory: `setupUndoRun` sends `alert:true`
   for the undo's ids — "Undone. Told 23 phones it's back as it was." — and so does its Redo). **Remove…'s question carries the same tick** (`schedRemoveTell`, `askWithTick`: skip just this day / remove from every day / delete a one-off): offered only while `pushScheduleAlertOffered()`
-  and one of the occurrences it takes away is one the sender would tell (`pushScheduleTimeTellable`; for a typical item every day that follows it), UNTICKED every time the question opens (`#ask-tell`, the
-  native-confirm fallback has no tick), named to the sender quietly when unticked (so its baseline keeps up), told with `setupTellAfter` when ticked (pill: "Supper skipped · told 3 phones", and its Undo re-tells). `campSetupAlertIntent` (the old kept intent) is gone; its key is
+  and one of the occurrences it takes away is one the sender would tell (`pushScheduleTimeTellable`; for a typical item every day that follows it), UNTICKED every time the question opens (`#ask-tell`, the first thing in askDialog's sticky foot `.ask-foot`, directly above the
+  buttons that act on it, so it is in view at every text size; the native-confirm fallback has no tick), named to the sender quietly when unticked (so its baseline keeps up), told with `setupTellAfter` when ticked (pill: "Supper skipped · told 3 phones", and its Undo re-tells). Both ticks name the item
+  quoted and unbroken (`schedTellWho`: "Tell people who follow “Wake up”", "this item" past 22 characters). `campSetupAlertIntent` (the old kept intent) is gone; its key is
   only wiped on sign-out. Tests: `push-schedule-tell.test.js` (+ senior), `schedule-screen.test.js`, `rain-plan.test.js`.
 - **The whole-week calendar file** (app.js next to `buildDayIcs`, P2 §12.4):
   `buildWeekIcs({dows, fromDow, now})` is null with no camp dates (`campWeek().start`); else
@@ -4898,7 +4911,11 @@ owner acts: with no claim and no epoch every other engine is untouched.
   an edited one) and checks that the clear takes `setup/meta/finaleDow` (last year's finale day; Undo brings it back). The archive's label is
   "2026 camp week · Junior Camp", its year the same `campWeek().start` year the screens say (`wizardOutgoingYear`). Team names' Clear (step 2)
   renames each team plain "Team 1" … "Team N" (N = `CAMP.teamCount`; owner's answer of Nov 9) and drops its short name, emoji and colour; the done record carries `teams` so step 5 says
-  "Teams renamed Team 1 to Team N". The 2026 roster migration stays legacy-week only, so it never swaps "Team N" back once the epoch is stamped (`wizard.test.js` pins it).
+  "Teams renamed Team 1 to Team N". **Known gap, for an engine session:** with the short name dropped, `teamShort` falls back to the
+  slot's printed one, so a cleared team reads "Team 2" with the short name "Turkey" (the header's "Sam · Turkey", chat mentions,
+  the notice and the rota, the Teams screen's weak-colour sentence); writing `short: 'Team ' + (i + 1)` in `wizardClearUpdate`
+  (7 characters, valid under the published rules) fixes it with a `wizard.test.js` pin. Until then step 2's Clear line says what
+  stays: "with the camp’s original short name, emoji and colour until you change them on the Teams screen". The 2026 roster migration stays legacy-week only, so it never swaps "Team N" back once the epoch is stamped (`wizard.test.js` pins it).
   **Recorded, an owner question:** a cleared team's shield (junior), built-in emoji and flag colour still come back from its slot, because "no mark at all" needs a rules change. No rules change belongs to this step.
 
 ## The new-year wizard: the screens (setup-ui.js §17 — Step 28, session 2)
@@ -4929,7 +4946,8 @@ sheets are `isOwner()` in `setupSheetReady`; every other director reads the hub 
   3 arrival runs `wizardArchive` (saved and READ BACK) by itself, with Try again / Download a copy; Next stays the well until it
   verified. 4 the clear's tally (counts of nothing are no row; camper names ALWAYS said — the count once the screen holds the
   list, `CAMPERS_SCREENS` has `wizard`, counts only, else "Every camper name" — with "Not saved anywhere · Undo can't bring them
-  back", and the members row with "Undo doesn't put teams back"; members from `wizardMembersPreflight`, incomplete ones named), the
+  back", and the members row with "Undo doesn't put teams back"; members from `wizardMembersPreflight` — a failed read is asked again by a later paint, 5 s on, never by the paint it sets off,
+  which looped and hung the page with no SDK —, incomplete ones named), the
   hold (`wireHold`) with the two-tap alternative, then `wizardClear`: `ask-camp-week` / `camp-week` become the one inline question and
   the answer re-runs the clear. 5 the done list (check marks), people the follow-up couldn't move, the numbered next list,
   when Undo runs out.

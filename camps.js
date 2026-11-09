@@ -640,7 +640,8 @@ const MEMORY_VERSES = {
 };
 
 // A worked example of the notice board, as a DRAFT (never posts itself) —
-// one zone per senior team, places TBA.
+// one zone per senior team, each area still to be set ("Area to be set": a phrase no other screen uses — "Still to come"
+// is the reveal's word for an unrevealed team).
 function seniorDefaultNotice() {
   return {
     status: 'draft',
@@ -648,10 +649,10 @@ function seniorDefaultNotice() {
     title: 'Where your team cleans',
     sub: 'Go to your team’s area and clean it before send-off.',
     zones: [
-      { teamId: 't0', place: 'Still to come', note: '' },
-      { teamId: 't1', place: 'Still to come', note: '' },
-      { teamId: 't2', place: 'Still to come', note: '' },
-      { teamId: 't3', place: 'Still to come', note: '' },
+      { teamId: 't0', place: 'Area to be set', note: '' },
+      { teamId: 't1', place: 'Area to be set', note: '' },
+      { teamId: 't2', place: 'Area to be set', note: '' },
+      { teamId: 't3', place: 'Area to be set', note: '' },
     ],
     steps: [
       { emoji: '🗑️', when: 'In your area', items: ['Empty the trash, put in fresh bags and put away the games.'] },
