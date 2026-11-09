@@ -454,7 +454,12 @@ test('Copy the backup puts backupJSON() on the clipboard, says Copied in its own
     let copied = null; let btn = null;
     copyTextToClipboard = (text, b) => { copied = text; btn = b; };
     const el = { id: 'backup-copy-btn' };
+    // a camper name held in memory (campers screen open) must never reach the clipboard
+    campersMem.tree = { t0: [{ id: 'c-abcdefgh', name: 'Zzyzx-Camper', ord: 10 }] };
+    campersMem.held = [{ tid: 't0', names: ['Zzyzx-Held'] }];
+    campersMem.loaded = true;
     rpCopyBackup(el);
+    assert.equal(/Zzyzx/.test(copied), false, 'no camper name in the copied text, held or listed');
     const strip = (t) => { const o = JSON.parse(t); delete o.at; delete o.exportedAt; if (o.config) delete o.config.updatedAt; return JSON.stringify(o); };
     assert.equal(strip(copied), strip(backupJSON()), 'the same text the file holds');
     assert.equal(btn, el, 'the button is handed over so its .copy-t title can say Copied');
@@ -463,7 +468,7 @@ test('Copy the backup puts backupJSON() on the clipboard, says Copied in its own
     setMemberRole('viewer');
     rpCopyBackup(el);
     assert.equal(copied, null, 'a counselor copies nothing');
-  } finally { copyTextToClipboard = realCopy; ruClose(); }
+  } finally { copyTextToClipboard = realCopy; campersMem.tree = {}; campersMem.held = []; ruClose(); }
   const src = readFixture('../setup-ui.js');
   assert.ok(/on\('#backup-copy-btn', 'click'/.test(src) && /on\('#backup-paste-row', 'click'/.test(src), 'both rows are wired');
 });
@@ -542,6 +547,43 @@ test('pasted junk is a sentence in the sheet (aria-invalid) and nothing changes;
     await rpRestoreText(JSON.stringify(bad), { pasted: true, say: (m) => said.push(m) });
     assert.ok(/has 2 teams/.test(said.join(' ')));
     } finally { setAttrIfChanged = realAttr; }
+  });
+  ruClose();
+});
+
+test('the paste sheet’s ✕ and backdrop, tapped, ask before closing while text is in the box; an empty box closes freely', async () => {
+  ruOpen();
+  await bpWith(async (env) => {
+    openBackupPaste();
+    backupPasteTyped('abc');
+    const tap = (sel) => { let stopped = false; backupPasteSheetTap({ target: { closest: (q) => (q === '[data-sheet-close]' && sel === 'close' ? {} : null) }, stopPropagation: () => { stopped = true; } }); return stopped; };
+    env.answer = 'keep';
+    assert.equal(tap('close'), true, 'the ✕ / backdrop tap is stopped before the shell closes the sheet');
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(env.asked.length, 1);
+    assert.equal(env.asked[0].title, 'Throw away the pasted backup?');
+    assert.equal(tap('other'), false, 'a tap on anything else is left alone');
+    backupPasteTyped('   ');
+    assert.equal(tap('close'), false, 'an empty box closes freely');
+    assert.equal(env.asked.length, 1, 'and asks nothing');
+  });
+  const src = readFixture('../setup-ui.js');
+  assert.ok(/bpSheet\.addEventListener\('click', backupPasteSheetTap, true\)/.test(src), 'wired on the sheet, capturing');
+  ruClose();
+});
+
+test('a flat backup with the wrong number of teams, pasted: the refusal sentence is in the sheet, no question is asked', async () => {
+  ruOpen();
+  await bpWith(async (env) => {
+    openBackupPaste();
+    const n = CAMP.teamCount === 6 ? 4 : 6;
+    const flat = { app: 'campScoreboardV2', config: state.config, teams: Array.from({ length: n }, (_, i) => ({ id: 't' + i, name: 'T' + i, counselor: '' })) };
+    backupPasteTyped(JSON.stringify(flat));
+    assert.equal(await backupPasteCheck(), false);
+    assert.ok(new RegExp('has ' + n + ' teams, but .* has ' + CAMP.teamCount).test(setupEl('bp-why').textContent), setupEl('bp-why').textContent);
+    assert.equal(env.asked.length, 0, 'NO question asked for a backup that can never be put back');
+    assert.equal(env.imported, null);
+    assert.equal(backupPasteUi.open, true, 'the sheet stays so it can be fixed');
   });
   ruClose();
 });

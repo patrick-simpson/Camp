@@ -2011,6 +2011,11 @@ async function backupPasteCheck() {
     return await rpRestoreText(backupPasteUi.text, { pasted: true, name: 'Pasted backup', say, beforeOpen: sheetUp });
   } finally { backupPasteUi.checking = false; }
 }
+// The sheet's own capturing tap: ✕ and the backdrop (both carry [data-sheet-close]) are stopped before the shell closes the
+// sheet while the guard is asking. A named function so a test can drive it as a tap.
+function backupPasteSheetTap(e) {
+  if (e.target && e.target.closest && e.target.closest('[data-sheet-close]') && backupPasteGuardClose()) e.stopPropagation();
+}
 function backupPasteGuardClose() {
   if (!backupPasteBusy()) return false;
   if (askIsOpen()) return true;
@@ -4418,7 +4423,7 @@ function wireSetupUi() {
   on('#bp-check', 'click', () => { backupPasteCheck(); });
   // ✕ and the backdrop ask first too (Escape and Back go through setupSheetGuardClose), as every guarded setup sheet does.
   const bpSheet = setupEl('sheet-backup-paste');
-  if (bpSheet) bpSheet.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-sheet-close]') && backupPasteGuardClose()) e.stopPropagation(); }, true);
+  if (bpSheet) bpSheet.addEventListener('click', backupPasteSheetTap, true);
   on('#backup-file-input', 'change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) rpRestoreFile(f); });
   document.querySelectorAll('[data-rp-pick]').forEach((cb) => cb.addEventListener('change', () => {
     const rs = setupUi.rsheet;
