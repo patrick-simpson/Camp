@@ -28,10 +28,11 @@ const REVEAL_CACHE_MAX_CHARS = 20000;                     // a real node is abou
 const REVEAL_RETIRE_EVERY_MS = 60 * 1000;                 // retireExpiredReveal sends at most this often
 const REVEAL_RESCAN_MS = 5 * 60 * 1000;                   // and a director re-reads revealPublic this often while the page is visible
 const REVEAL_CHAMPION_KEEP_MS = 14 * 24 * 3600 * 1000;    // the champion line never outlives this, whatever the week says
-// R2 (big-screen branding, owner's decisions item 7). Ships OFF: the commands write a team's own look into a shown
-// place's public entry only while this is true, and it is flipped by ONE line in a deploy AFTER the owner has published
-// the R2 rules and read them back (docs/build-notes/rules-r2-runbook.md). A variable (not a const) so a test can turn it on.
-let REVEAL_BRANDING_LIVE = false;
+// R2 (big-screen branding, owner's decisions items 7 and 10). ON: the commands write a team's own look into a shown
+// place's public entry only while this is true. It may be deployed only AFTER the owner has published the R2 rules and
+// read them back (docs/build-notes/rules-r2-runbook.md); a page that meets the older rules retries once without the look
+// (revealBrandRefused). A variable (not a const) so a test can turn it off.
+let REVEAL_BRANDING_LIVE = true;
 let revealBrandRefused = false;       // a branded command was refused by rules that predate R2: this page load sends plain places
 const REVEAL_THUMB_SIZES = [[240, 333], [200, 278], [173, 240]]; // the shield's 480:667 shape, smaller each step
 const REVEAL_THUMB_QUALITY = [0.72, 0.62, 0.52];

@@ -35,7 +35,7 @@ function mkPub(shown) {
 // A clean engine, a signed-in phone of the given role, and a fake database with the camp's public node on it.
 let rulesEra = 'r2';                                      // which published rules the model judges by: 'r1' (live before R2) or 'r2'
 function resetReveal() {
-  REVEAL_BRANDING_LIVE = false; revealBrandRefused = false; revealThumbs.clear(); rulesEra = 'r2';
+  REVEAL_BRANDING_LIVE = true; revealBrandRefused = false; revealThumbs.clear(); rulesEra = 'r2';
   if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
   if (revealRealRef && revealRealCb) { try { revealRealRef.off('value', revealRealCb); } catch (e) { /* ignore */ } }
   if (revealPracticeRef && revealPracticeCb) { try { revealPracticeRef.off('value', revealPracticeCb); } catch (e) { /* ignore */ } }
@@ -1605,8 +1605,9 @@ function giveLooks() {
   });
 }
 // the serialized writes of a whole reveal, with the rules model in front
-async function walkReveal() {
+async function walkReveal(o) {
   const db = await bootDirector();
+  if (o && o.off) REVEAL_BRANDING_LIVE = false;
   giveLooks();
   assert.equal((await revealStart({ quiet: true })).ok, true);
   for (let k = 0; k < N; k++) { nowT += 5000; assert.equal((await revealNext({ quiet: true })).ok, true, 'place ' + k); }
@@ -1617,11 +1618,12 @@ async function walkReveal() {
 // (the reveal id is random per Start: it is the one thing two runs may differ in)
 const serializedWrites = (db) => JSON.stringify(db.log2.filter((w) => w.verdict.ok).map((w) => w.values)).replace(/r[a-z0-9]{6,12}-[a-z0-9]{4}/g, 'RID');
 
-test('R2 switch OFF: a reveal writes exactly what it wrote before R2, whatever looks the teams have', async () => {
-  assert.equal(REVEAL_BRANDING_LIVE, false, 'ships off');
-  const withLooks = serializedWrites(await walkReveal());
+test('R2 switch OFF (the path a turned-off switch takes): a reveal writes exactly what it wrote before R2, whatever looks the teams have', async () => {
+  // the OFF path, kept as a test: a switch turned off writes what v216 wrote (the shipped switch is ON, so turn it off after boot)
+  const withLooks = serializedWrites(await walkReveal({ off: true }));
   afterDirector();
   const db2 = await bootDirector();                                  // the same reveal, teams with no look at all
+  REVEAL_BRANDING_LIVE = false;
   state.teams.forEach((t) => { delete t.color; delete t.emoji; delete t.photoV; delete t.plain; });
   assert.equal((await revealStart({ quiet: true })).ok, true);
   for (let k = 0; k < N; k++) { nowT += 5000; await revealNext({ quiet: true }); }
@@ -1785,5 +1787,5 @@ test('R2: only the builders know where a look goes: reveal.js adds em / pl / ph 
   assert.equal((src.match(/revealGroupWire\(/g) || []).length, 3, 'the definition, revealFullWire\'s call and the published group\'s call');
   assert.ok(/revealGroupWire\(grp\)/.test(src), 'revealFull\'s group is built with no brand');
   assert.ok(/revealGroupWire\(grp, o\.nameOf, o\.brandOf\)/.test(src), 'only the published group takes one');
-  assert.ok(/let REVEAL_BRANDING_LIVE = false;/.test(src), 'ships off');
+  assert.ok(/let REVEAL_BRANDING_LIVE = true;/.test(src), 'ships on (owner\'s decisions item 10; deploy only after the R2 rules are published)');
 });
