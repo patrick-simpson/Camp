@@ -523,6 +523,31 @@ test('a TV that asks for reduced motion gets no confetti, no cannons and no shie
   assert.ok(lively.hero().has('fight') && lively.cannonsShown(), 'without the setting the same frame fights and fires');
 });
 
+test('a team\'s mascot emoji is never drawn beside a name: not in the hero, not in a board row (shields and flags are the marks), in either camp', () => {
+  ['junior', 'senior'].forEach((camp) => {
+    const tv = loadTv(camp === 'senior' ? { search: '?camp=senior' } : {});
+    tv.online(0);
+    const n = camp === 'senior' ? 4 : 6;
+    const G = camp === 'senior' ? [
+      grp(4, ent('t3', NAMES4[3], 9, { g: 0, s: 1, b: 0 })), grp(3, ent('t2', NAMES4[2], 15, { g: 1, s: 0, b: 1 })),
+      grp(2, ent('t1', NAMES4[1], 20, { g: 1, s: 1, b: 1 })), grp(1, ent('t0', NAMES4[0], 33, { g: 3, s: 0, b: 0 })),
+    ] : six();
+    const mascots = Object.keys(CAMPS[camp].teamEmoji || {}).map((k) => CAMPS[camp].teamEmoji[k]).filter(Boolean);
+    assert.ok(mascots.length >= n - 1, camp + ': the camp has mascots to look for');
+    const seen = [];
+    for (let i = 0; i < n; i++) {
+      tv.feed({ real: nodeOf(tv, G, { phase: 'live', cur: i, shown: i + 1, teams: n, seq: 2 + i }) });
+      const h = tv.hero();
+      if (h) h.entries.forEach((e) => { seen.push(e.info || '', e.mark && e.mark.textContent || '', e.mark && e.mark.innerHTML || ''); });
+      tv.rows().forEach((r) => seen.push(r.name || '', r.pts === undefined ? '' : String(r.pts)));
+      seen.push(tv.board().innerHTML || '');
+      tv.advance(8200);
+    }
+    const all = seen.join(' ');
+    mascots.forEach((m) => assert.ok(all.indexOf(m) < 0, camp + ': the mascot ' + m + ' appears beside a name'));
+  });
+});
+
 test('senior: four teams, flags for marks, the same frames', () => {
   const tv = loadTv({ search: '?camp=senior' });
   tv.online(0);

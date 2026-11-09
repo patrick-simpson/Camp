@@ -288,6 +288,21 @@ test('the toaster clears the tab bar, the chat composer and a takeover\'s dock, 
     'over a takeover with a dock, clear of the dock');
 });
 
+// The reveal remote's dock is taller than a game's, so its toasts ride higher: the rule must come AFTER the generic takeover-dock
+// rule (same specificity, the later one wins while the remote is up), clear the measured dock, and sit above the plain dock's offset.
+test('the toaster over the reveal remote clears the remote\'s taller dock, and wins over the generic takeover rule', () => {
+  const css = readFixture('../styles.css');
+  const generic = css.indexOf('body:has(.takeover:not([hidden]) > .tk-dock:not([hidden])) jelly-toaster[position="bottom"]');
+  const reveal = css.indexOf('body:has(#takeover-reveal:not([hidden])) jelly-toaster[position="bottom"]');
+  const chat = css.indexOf('body:has(#app[data-tab="chat"]) jelly-toaster[position="bottom"]');
+  assert.ok(generic > -1 && reveal > -1 && chat > -1, 'all three rules are there');
+  assert.ok(reveal > generic, 'the remote\'s rule is later, so it is the one that applies when the remote is up');
+  const rule = css.slice(reveal, css.indexOf('}', reveal));
+  assert.ok(/bottom: calc\(var\(--reveal-dock-h, (\d+)px\) \+ var\(--s-3\)\)/.test(rule), 'measured dock height plus a gap: ' + rule);
+  assert.ok(Number(/--reveal-dock-h, (\d+)px/.exec(rule)[1]) > 104, 'the fallback is above a game dock\'s offset');
+  assert.ok(/--reveal-dock-h/.test(readFixture('../reveal-ui.js')), 'reveal-ui.js writes the measured height');
+});
+
 // ── Members drawer ───────────────────────────────────────────────
 
 function fakeMembersBody(fields) {

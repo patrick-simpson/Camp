@@ -436,7 +436,7 @@ test('rows 9 and 10: verse shows the verse and nothing else, cleanup shows the r
   const cleanup = document.getElementById('cleanup-body');
   asViewer(() => { renderMemoryVerse(); renderMealCleanup(); });
   assert.ok(/verse-day-card/.test(verse.innerHTML), 'the verse text is there');
-  assert.notOk(/pts-grid|pts-row|pts-btn|\+\d/.test(verse.innerHTML), 'no per-team rows or "+N": ' + verse.innerHTML.replace(/\s+/g, ' ').slice(0, 160));
+  assert.notOk(/pts-grid|pts-row|pts-btn|aw-pt|aw-row|\+\d/.test(verse.innerHTML), 'no per-team rows or "+N": ' + verse.innerHTML.replace(/\s+/g, ' ').slice(0, 160));
   assert.ok(/cleanup-meal-row/.test(cleanup.innerHTML), 'the rota is there');
   assert.notOk(/cleanup-meal-pts|bonus-ledger|bonus-item|\+\d/.test(cleanup.innerHTML), 'no "+N" badge, no ledger');
   setMemberRole('editor');
@@ -444,7 +444,8 @@ test('rows 9 and 10: verse shows the verse and nothing else, cleanup shows the r
   // Cleanup buttons sit on a rota team, so they only exist where the day has
   // one — senior's rota is all TBA until it is filled in.
   const rotaSet = ['Breakfast', 'Lunch', 'Supper'].some((m) => cleanupTeams(cleanupDay, m).length);
-  assert.ok(/pts-btn/.test(verse.innerHTML) && (!rotaSet || /pts-btn/.test(cleanup.innerHTML)), 'a director keeps the award buttons');
+  // The real keys are Award points' `.aw-pt` (the old pin matched "pts-btn" inside the wrapper's "pts-btns" and proved nothing about a key).
+  assert.ok(/class="aw-pt"/.test(verse.innerHTML) && (!rotaSet || /class="aw-pt"/.test(cleanup.innerHTML)), 'a director keeps the award buttons');
 });
 
 test('rows 11 and 12: a finished game shows its winners without "+N pts", a live tally shows no suggested medals', () => {
@@ -462,7 +463,7 @@ test('rows 11 and 12: a finished game shows its winners without "+N pts", a live
   assert.ok(/gres-pts">\+\d+</.test(entry.innerHTML), 'a director\'s result keeps what each medal is worth');
   if (live) {
     asViewer(() => { openGameAsViewer(live.id); renderGameView(); });
-    assert.ok(/lw-rank-list/.test(entry.innerHTML), 'the live scores are public');
+    assert.ok(/class="lb-r"/.test(entry.innerHTML), 'the live scores are public: the board\'s own rows, not just its wrapper');
     assert.notOk(/live-watch-suggest|Suggested|🥇/.test(entry.innerHTML), 'but no suggested winners before a director saves');
     const nowBoard = asViewer(() => nowBoardHtml(nowLiveBoard(nowCtx(), live)));
     assert.ok(/class="lb"/.test(nowBoard), 'the live row on Now carries the scores');
@@ -503,7 +504,7 @@ test('the live tally: a counselor gets the teams in roster order with no numeral
   assert.notOk(/data-ranked|lb-pl/.test(viewer), 'no places for a counselor');
   assert.ok(/team order/.test(viewer), 'and the caption says it is not a ranking');
   const takeover = asViewer(() => { openGameAsViewer(live.id); renderGameView(); return document.getElementById('entry-area').innerHTML; });
-  assert.ok(/lw-rank-list/.test(takeover), 'the game takeover still shows the live scores');
+  assert.ok((takeover.match(/class="lb-r"/g) || []).length === state.teams.length, 'the game takeover still shows the live scores, a row per team');
   assert.notOk(/lw-podium|lw-rank">\s*\d/.test(takeover), 'and no places, numerals or podium');
   assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: viewer }, { kind: 'innerHTML', text: takeover }]), []);
   const n = state.teams.length; // 6 junior, 4 senior (this file also runs as senior)
