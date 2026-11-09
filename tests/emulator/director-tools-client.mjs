@@ -218,7 +218,7 @@ for (const R of ROOTS) {
            setVersePoints(${JSON.stringify(t0)}, 3, 4); setCleanupPoints(${JSON.stringify(t0)}, 3, 'Lunch', 3);
            bonusDraft.teams = [${JSON.stringify(t0)}]; bonusDraft.points = '5'; bonusDraft.category = 'custom'; bonusDraft.custom = 'Spirit'; bonusAddFromDraft({ day: 3 });
            const first = Object.keys(state.announcements || {})[0]; if (first) takeDownBanner(first);
-           deleteGame(state.config.games[state.config.games.length - 1].id);
+           gmDeleteGame(state.config.games[state.config.games.length - 1].id);
            saveState();`);
     await d.flush();
     await sleep(80);

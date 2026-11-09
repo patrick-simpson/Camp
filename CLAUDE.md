@@ -5026,8 +5026,7 @@ More sync invariants (each fixed after it bit us — don't regress these;
   - **A snapshot is REBASED, never stashed or swapped in** (`applyRemoteConfig`):
     server + my unconfirmed ops (`applyOpsSafe`), base := the server's tree. A viewer
     (or a read-only tab) has no edits, so it just adopts. Data applies AT ONCE, even
-    mid-entry; only the repaint waits for a focused field (`renderAllWhenIdle`) —
-    `pendingRemoteConfig`, `configFirstHeld` and `flushPendingRemoteConfig` are gone.
+    mid-entry; only the repaint waits for a focused field (`renderAllWhenIdle`).
     Handlers resolve their record BY ID when they commit (P10): a snapshot may have
     replaced every object since a row was drawn. `migrateState` still runs on the
     result; only a REAL version change from an editor re-pushes.
