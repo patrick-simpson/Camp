@@ -88,6 +88,16 @@ const VIEWS = [
   { n: 'wizard3', who: 'owner', now: '3-1030', go: 'S.wizard(3)', root: '#setup' },
   { n: 'wizard4', who: 'owner', now: '3-1030', go: 'S.wizard(4)', root: '#setup' },
   { n: 'wizard5', who: 'owner', now: '3-1030', go: 'S.wizard(5)', root: '#setup' },
+  // Build session 2 (Nov 9): the steps that name team names, the Remove… question with its tick, and Now with a note due.
+  { n: 'wizard2-teams', who: 'owner', now: '3-1030', go: "S.wizard(2, { teams: 'clear' })", root: '#setup' },
+  { n: 'wizard4-teams', who: 'owner', now: '3-1030', go: "S.wizard(4, { teams: 'clear' })", root: '#setup' },
+  { n: 'wizard5-teams', who: 'owner', now: '3-1030', go: "S.wizard(5, { teams: 'clear' }, true)", root: '#setup' },
+  { n: 'remove-tick', who: 'director', now: '3-1030', go: 'S.removeTick(false)', root: '#ask-dialog' },
+  { n: 'remove-tick-off', who: 'director', now: '3-1030', go: 'S.removeTick(true)', root: '#ask-dialog' },
+  { n: 'now-note-cou', who: 'counselor', now: '3-1030', go: 'S.note()' },
+  { n: 'now-note-dir', who: 'director', now: '3-1030', go: 'S.note()' },
+  { n: 'now-note-owner', who: 'owner', now: '3-1030', go: 'S.note()' },
+  { n: 'now-note-dir-banner', who: 'director', now: '3-1030', go: 'S.note(true)' },
 ];
 
 const INSTALL = (camp) => {
@@ -129,10 +139,26 @@ const INSTALL = (camp) => {
       setupReady = true; configReady = true; window.restoreOnline = () => true;
       openBuilder(); if (screen !== 'hub') setupGo(screen); renderAll();
     },
-    wizard(step) {
+    // A note due on this phone: its memory is emptied (so the first one releases at once); `banner` also posts a director's banner above it.
+    note(banner) {
+      try { localStorage.removeItem('campScoreboardWhatsNew'); } catch (e) {}
+      if (banner && typeof postBanner === 'function') { postBanner('The Tabernacle is open for the next hour.', 3600000); }
+      renderAll();
+    },
+    removeTick(offline) {
       setupReady = true; configReady = true; window.restoreOnline = () => true;
-      setupTree.meta.wizard = { step, byKey: OWNER_MEMBER_KEY, at: Date.now() - 60000, fromEpoch: 'legacy', answers: JSON.stringify({ dev: wizardDeviceId(), weekStart: '2027-07-18', double: 'same' }) }; setupRev++;
-      const d = wizardDraftRead(); d.answers = wizardNormAnswers({ weekStart: '2027-07-18', double: 'same', carry: {} });
+      pushConfigured = () => true; pushSchedAlertsOff = false;
+      campWeek = () => ({ start: '2026-11-08', phase: 'during' }); serverNow = () => etWallToEpoch('2026-11-11', 60);
+      if (offline) setupNoSignal = () => true;
+      state.ui.builderScreen = 'schedule'; state.ui.setupDay = 'wed'; openBuilder(); renderAll();
+      const b = planForDow(3).find((x) => !x.noTime && x.type !== 'games' && !x.meal && x.origin === 'typical');
+      schedOpenItem({ bid: b.id }); schedRemoveItem();
+    },
+    wizard(step, carry, done) {
+      setupReady = true; configReady = true; window.restoreOnline = () => true;
+      setupTree.meta.wizard = { step, byKey: OWNER_MEMBER_KEY, at: Date.now() - 60000, fromEpoch: 'legacy', answers: JSON.stringify({ dev: wizardDeviceId(), weekStart: '2027-07-18', double: 'same', carry: carry || {} }) }; setupRev++;
+      const d = wizardDraftRead(); d.answers = wizardNormAnswers({ weekStart: '2027-07-18', double: 'same', carry: carry || {} });
+      if (done) d.done = { epoch: 'w20270718', at: Date.now(), archiveId: 'x', counts: {}, teams: true, cleared: 0, failed: 0 };
       state.ui.builderScreen = 'wizard'; openBuilder(); renderAll();
     },
   };
