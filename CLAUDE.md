@@ -3563,14 +3563,14 @@ rules**; the client code only shapes the UI.
     phones and remotes carry on, the big screen shows Waiting. Rules can't limit
     connections (Spark allows 100 at once): the TV page holds its connection
     only while visible (built, Step 23: `goOffline()` after 60 s hidden).
-  - **R2 — a team's own look in a shown place (owner's decisions items 7, 10, 11; rules written and proven; switch ON in code).**
+  - **R2 — a team's own look in a shown place (owner's decisions items 7, 10, 11; rules PUBLISHED; switch ON and live since v218).**
     **PUBLISHED Mon Nov 9, 2026, evening ET, by the owner from Cloud Shell by `docs/build-notes/rules-r2-runbook.md`** (file hash prefix
     e0d3edd5, 163,109 bytes): block 3 printed RULES MATCH; block 4: `revealPublic` answered `null` in both camps and every other
     path, including an anonymous PUT of a branding field, answered `Permission denied`. The owner then ran the ROLLBACK block by
     mistake (R1 was live again for a few minutes), republished R2 with the same hash check and read-back, and reported that it
     passed. The switch went live in v218.
-    **Deploy it during the day, Eastern time**: its What's new note is live for one hour from the deploy and never again, so a
-    night deploy means no director reads it; say the change in plain words in the deploy report to the owner too.
+    **Live since v218, Mon Nov 9, 2026, about 8:00 PM ET** (the owner asked for it that evening, so its one-hour directors' note
+    ran 8–9 PM).
     The only change to the file: `revealPublic/$mode/pub/$g/e/$tid` gains three optional children beside `k` (a palette id,
     already live and unread): **`em`** (the team record's OWN emoji, the team-emoji rule plus no apostrophe, 1–16),
     **`pl`** (the cleared-team marker, only ever `true`) and **`ph`** (a JPEG thumbnail of the current team photo,
