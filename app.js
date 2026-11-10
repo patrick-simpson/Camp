@@ -48,7 +48,7 @@ const APP_VERSION = 217;
 // id is never reused (the lint in tests/whats-new.test.js checks both lists).
 const WHATS_NEW_SHIPPED_AT = '2026-11-09T20:05:13Z';
 const CHANGES = [
-  { id: 'big-screen-logos', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['reveal'], text: 'Revealed teams show their logo and colour on the big screen.' },
+  { id: 'big-screen-logos', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['reveal', 'setup'], text: 'Each team’s photo and colour now show on the big screen.', show: { to: 'teams', where: 'the Teams screen' } },
 ];
 const WHATS_NEW_RETIRED = Object.freeze([
   'four-tabs', 'score-from-games', 'games-tab-results', 'reveal-remote', 'chat-tab', 'tell-everyone', 'phone-alerts',
@@ -12693,6 +12693,8 @@ const WHATS_NEW_SHOW = {
   tell: { ok: () => toolMayOpen('tell'), go: () => openTool('tell', { from: 'now' }) },
   award: { ok: () => toolMayOpen('award'), go: () => openTool('award', { from: 'now' }) },
   setup: { ok: () => WHATS_NEW_NEEDS.setup(), go: () => openBuilder() },
+  // Set up the week's Teams screen, where a director picks a team's photo and colour (Back goes to the hub, then home).
+  teams: { ok: () => WHATS_NEW_NEEDS.setup(), go: () => openBuilder(undefined, 'teams') },
   // The hub's ⋯ menu itself (the owner's new-year row lives there): the builder first, then its sheet over it.
   'setup-menu': {
     ok: () => WHATS_NEW_NEEDS.setup() && typeof setupSheet === 'function',

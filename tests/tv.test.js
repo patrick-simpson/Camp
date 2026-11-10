@@ -643,6 +643,25 @@ test('a tie is one place with two teams side by side; a two-way tie fights in th
   assert.ok(/\.hero\.many \.hero-break \.words \{ white-space: nowrap;/.test(css), 'a breakdown line is one line');
 });
 
+test('three or more on one place get the opening cannon but no light stream: their outer columns sit in the confetti\'s edge lanes', () => {
+  // The stream is queued on the hero in the name beat (__stream) and handed to the light stream at the score beat.
+  const streamOf = (groups, teams, seq) => {
+    const tv = loadTv({});
+    tv.online(0);
+    tv.feed({ real: nodeOf(tv, groups, { cur: 0, shown: 1, teams, seq }) });
+    const h = tv.hero();
+    return { queued: h.el.__stream, cannon: tv.cannonsShown(), many: h.has('many') };
+  };
+  const one = streamOf([grp(2, ent('t1', 'Turkeys', 30)), grp(1, ent('t0', 'Foxes', 44))], 2, 2);
+  assert.ok(one.cannon && Array.isArray(one.queued) && one.queued.length, 'one team: the cannon, then the stream');
+  const two = streamOf([grp(2, ent('t3', 'Pumpkins', 30), ent('t1', 'Turkeys', 30)), grp(1, ent('t0', 'Foxes', 44))], 3, 2);
+  assert.ok(two.cannon && Array.isArray(two.queued), 'a two-way tie keeps its stream');
+  const three = streamOf([grp(2, ent('t3', 'A', 30), ent('t2', 'B', 30), ent('t1', 'C', 30)), grp(1, ent('t0', 'Foxes', 44))], 4, 2);
+  assert.ok(three.many && three.cannon && three.queued === null, 'three on one place: the cannon only');
+  const six = streamOf([grp(1, ent('t0', 'A', 0), ent('t1', 'B', 0), ent('t2', 'C', 0), ent('t3', 'D', 0), ent('t4', 'E', 0), ent('t5', 'F', 0))], 6, 2);
+  assert.ok(six.many && six.cannon && six.queued === null, 'a Practice\'s six-way tie: the cannon only');
+});
+
 test('a TV that asks for reduced motion gets no confetti, no cannons and no shield fight (it has no Calm switch, so it honours the OS setting itself)', () => {
   const tie2 = [grp(2, ent('t3', 'Pumpkins', 30, { g: 2 }), ent('t1', 'Turkeys', 30, { g: 1 })), grp(1, ent('t0', 'Foxes', 44))];
   const calm = loadTv({ reducedMotion: true });

@@ -5798,7 +5798,7 @@ function renderTeamEditSheet() {
   setTextIfChanged(setupEl('team-photo-add-text'), hasPhoto ? 'Replace photo' : 'Add a photo');
   setHiddenIfChanged(setupEl('team-photo-remove'), !hasPhoto);
   const offline = !teamOnline();
-  setTextIfChanged(setupEl('team-photo-note'), offline ? 'Photos need a connection. Try again when you are back online.' : 'We’ll fit it to the shield’s shape.' + (typeof REVEAL_BRANDING_LIVE !== 'undefined' && REVEAL_BRANDING_LIVE ? ' It shows on the big screen when this team’s place is revealed. Anyone can open the big screen.' : ''));
+  setTextIfChanged(setupEl('team-photo-note'), offline ? 'Photos need a connection. Try again when you are back online.' : 'We’ll crop it to fit.' + (typeof REVEAL_BRANDING_LIVE !== 'undefined' && REVEAL_BRANDING_LIVE ? ' It shows on the big screen when this team’s place is revealed. Anyone can open the big screen.' : ''));
   secSetDisabled(setupEl('team-photo-add'), e.busy);
   // Errors, each under its own field (aria-invalid on the field, the words under it).
   const probs = Object.assign({}, teamFormProblems(f), e.error || {});

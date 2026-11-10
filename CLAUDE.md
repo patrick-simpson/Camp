@@ -311,7 +311,8 @@ legacy `campScoreboardDismissedChanges` key stays only in `clearLocalData`'s wip
    a cleanup / verse moment is up, or a block is running over or holding a director's "Still on this" question.
 4. **Show me** (`WHATS_NEW_SHOW`, each `{ ok(), go() }`, drawn only while `ok()`): `games` / `chat` → `showTab`; `alerts` →
    `openPushDrawer()`; `reveal` → `openReveal({from: 'now'})`; `tell` / `award` → `openTool(id, {from: 'now'})`; `setup` →
-   `openBuilder()`; `setup-menu` → `openBuilder()` then the hub's ⋯ sheet (`setupSheet('setup-menu')`); `counselors` →
+   `openBuilder()`; `teams` → `openBuilder(undefined, 'teams')` (the Teams screen); `setup-menu` → `openBuilder()` then the hub's ⋯
+   sheet (`setupSheet('setup-menu')`); `counselors` →
    `shellSheetOpen('counselors')`. A tap ends the note, then opens the place. Its spoken name is "Show me " + `where`.
 5. **The strip**: the notes ride `#announcements` after the join bar and every banner, MEASURED strictly
    (`annStripRoom(items, true, noteCount)`: all the notes count as ONE message against the count cap, like the notice, and the
@@ -3564,6 +3565,8 @@ rules**; the client code only shapes the UI.
     only while visible (built, Step 23: `goOffline()` after 60 s hidden).
   - **R2 — a team's own look in a shown place (owner's decisions items 7, 10, 11; rules written and proven; switch ON in code).**
     **TODO for the deploy agent: the owner publishes `database.rules.json` (hash prefix e0d3edd5) by `docs/build-notes/rules-r2-runbook.md` (Cloud Shell); fill in here the publish date and the results of the owner's block 3 (read-back) and block 4 (probes), and deploy this code only after "R2 is published and read back".**
+    **Deploy it during the day, Eastern time**: its What's new note is live for one hour from the deploy and never again, so a
+    night deploy means no director reads it; say the change in plain words in the deploy report to the owner too.
     The only change to the file: `revealPublic/$mode/pub/$g/e/$tid` gains three optional children beside `k` (a palette id,
     already live and unread): **`em`** (the team record's OWN emoji, the team-emoji rule plus no apostrophe, 1–16),
     **`pl`** (the cleared-team marker, only ever `true`) and **`ph`** (a JPEG thumbnail of the current team photo,
@@ -3578,7 +3581,7 @@ rules**; the client code only shapes the UI.
     a script reading once a second all night with six photos would use about 5 GB of Spark's 10 GB a month, so the kill
     switch is the remedy. **The client (reveal.js) ships with `REVEAL_BRANDING_LIVE = true`** (a `let`, so a test can turn it off), which may be
     deployed only AFTER the owner has published and read back the rules; the director's What's new note `big-screen-logos`
-    ("Revealed teams show their logo and colour on the big screen.") ships with it. With it ON: the published group of the place being shown carries `revealBrandOf(id)` for ITS teams only (read
+    ("Each team’s photo and colour now show on the big screen.", Show me the Teams screen) ships with it. With it ON: the published group of the place being shown carries `revealBrandOf(id)` for ITS teams only (read
     through the SEAM accessors `teamColorId`, `teamEmojiRecord`, `teamPlain`, `teamPhotoVersion`; a thumbnail of the
     current `photoV` made in memory on the director's phone while the remote is open, `revealThumbsPrepare`, sizes
     240×333 / 200×278 / 173×240, JPEG quality 0.72 / 0.62 / 0.52 on the TV's paper, never awaited by a command, dropped when
@@ -4587,7 +4590,7 @@ field, to the camp's own constant while the record doesn't carry it.
   tile — dashed means unavailable in this app — the picked one the solid ink ring and a drawn check; with none picked
   "Now: the original colour ●" says what the team wears; a colour another team uses stays pickable; the head
   mark previews a picked colour on a flag or tile before Save, `teamMarkPreviewHtml`), **Shield or flag photo**
-  ("We'll fit it to the shield's shape."), **Counselor names to show (only if nobody on this team signs in)**
+  ("We'll crop it to fit."; with the big-screen switch on it adds that the photo shows on the big screen when the team's place is revealed and that anyone can open the big screen), **Counselor names to show (only if nobody on this team signs in)**
   (the typed fallback text; the line under it says whether it is shown now). Dimmed emoji are named in one line
   under the grid ("Dimmed ones are taken: 🦊 Foxes"). The crop pane arrives from the side (`setupPaneArrive`, the
   rain sheet's pane motion; calm: a fade). The fields show what the team shows now (its own value, else the
@@ -5811,7 +5814,10 @@ directors…" (mockup 11).
   is where the Practice tag (sized for the back of the room) and the chips sit, so
   "Reconnecting…" never covers 1st place. The confetti canvas is UNDER every frame,
   each particle's drift is held to the outer eighth of the width (`EDGE_DRIFT`), and a
-  place's stream starts at the score beat, never while the room reads the name. The
+  place's stream starts at the score beat, never while the room reads the name; three or
+  more teams on one place fill the width into those lanes, so they get the opening cannon
+  and no stream. The intro's title is `9vw` (about 77% of the width: inside a TV's
+  title-safe 90% and clear of the confetti lanes). The
   motion tokens are styles.css's `--jm-*` (pasted, keep equal); the page does not
   load jelly-motion.js (its frames are CSS keyframes on those tokens). Names come
   from the node through `normalizeRevealPub` (control characters spaced out, cut to

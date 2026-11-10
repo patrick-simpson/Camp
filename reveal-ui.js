@@ -577,7 +577,7 @@ function revealUiTvWords(frame, m) {
   else if (frame.mode === 'board') w = 'The standings so far on the big screen';
   else if (frame.mode === 'table') w = 'The final table on the big screen';
   else if (frame.mode === 'champion') w = 'The champions on the big screen';
-  else w = 'Waiting for the directors…';
+  else w = 'Nothing on the big screen yet'; // the picture itself says "Waiting for the directors…": the caption says what it shows
   return m.practice && frame.mode !== 'waiting' ? 'Practice · ' + w : w;
 }
 

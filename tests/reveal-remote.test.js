@@ -338,7 +338,7 @@ test('the mini TV is tvFrame: waiting, intro, a place\'s hero (the name alone, t
   await bootDirector();
   await openRemote();
   assert.equal(data('reveal-tv', 'frame'), 'waiting');
-  assert.equal(text('reveal-tv-now'), 'Waiting for the directors…');
+  assert.equal(text('reveal-tv-now'), 'Nothing on the big screen yet', 'the caption says what the picture shows, not its words again');
   await setNode({ phase: 'intro', cur: -1, shown: 0, at: T0 - 1000 }, 0); renderRevealRemote();
   assert.equal(data('reveal-tv', 'frame'), 'intro');
   await setNode({ at: T0 - 1000, sa: T0 - 1000 }, 2); renderRevealRemote();

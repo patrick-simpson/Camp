@@ -624,10 +624,12 @@
     streamEmojis = null;
     if (f.fresh) {
       // confetti: the team mascot(s) up the edges as the place arrives; the light stream waits for the score beat
-      // (setBeat), so nothing moves around the name while the room reads it.
+      // (setBeat), so nothing moves around the name while the room reads it. Three or more on one place (a Practice
+      // before any score puts every team there) fill the width, so their outer columns sit in the confetti's edge
+      // lanes: they get the opening cannon only, and no stream runs through their names, points and counts.
       var emojis = confettiFor(g.entries);
       cannon(emojis, 8, 11 * dpr);
-      hero.__stream = reduceMotion() ? null : emojis; // fresh is the name beat: setBeat starts it at the next one
+      hero.__stream = reduceMotion() || g.entries.length > 2 ? null : emojis; // fresh is the name beat: setBeat starts it at the next one
       kick();
     }
     return hero;

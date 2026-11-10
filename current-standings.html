@@ -292,10 +292,14 @@
     }
     #intro.hide { opacity: 0; transform: scale(1.08); pointer-events: none; transition: opacity 0.5s, transform 0.5s; }
     /* Sentence case and Inter at 850 with a slightly negative track, as the
-       waiting headline says it (§8.2): never letter-spaced capitals (§8.8). */
+       waiting headline says it (§8.2): never letter-spaced capitals (§8.8).
+       9vw keeps "Current standings" to about 77% of the width: its first and
+       last letters sit inside a TV's title-safe area (90%) and clear of the
+       confetti lanes at the edges (EDGE_DRIFT, 12% each side). At 11vw it
+       spanned 93% and the poppers ran over the "C" and the last "s". */
     .intro-title {
       margin: 0; line-height: 0.95; font-weight: 850; color: var(--ink);
-      font-size: clamp(2.6rem, 11vw, 13rem); letter-spacing: -0.03em;
+      font-size: clamp(2.6rem, 9vw, 11rem); letter-spacing: -0.03em;
     }
     .intro-title .word { display: inline-block; white-space: nowrap; }
     .intro-title .word span { display: inline-block; opacity: 0; transform: translateY(40px) rotate(-6deg);

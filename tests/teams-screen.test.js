@@ -207,10 +207,11 @@ test('teams: the photo note says it shows on the big screen only while big-scree
   try {
     REVEAL_BRANDING_LIVE = false;
     renderTeamEditSheet();
-    assert.notOk(/big screen/.test(tsEl('team-photo-note').textContent), 'the switch ships off: the note says nothing about the big screen');
+    assert.equal(tsEl('team-photo-note').textContent, 'We’ll crop it to fit.', 'with the switch off the note says nothing about the big screen');
     REVEAL_BRANDING_LIVE = true;
     renderTeamEditSheet();
-    assert.ok(/It shows on the big screen when this team’s place is revealed\./.test(tsEl('team-photo-note').textContent));
+    // One crop for both camps (the 480:667 card), so no word for a shield or a flag.
+    assert.equal(tsEl('team-photo-note').textContent, 'We’ll crop it to fit. It shows on the big screen when this team’s place is revealed. Anyone can open the big screen.');
   } finally { REVEAL_BRANDING_LIVE = was; fbRef = wasRef; }
   tsClose();
 });

@@ -37,14 +37,33 @@ test('the shipped lists: every note is well formed, plain English, with a Show m
   assert.ok(!CHANGES.some((n) => WHATS_NEW_RETIRED.includes(n.id)), 'a retired id is not in CHANGES');
 });
 
-test('the big-screen note is for directors who can open the reveal, promises no emoji, and carries no Show me (the big screen cannot be opened from the app)', () => {
+test('the big-screen note is for directors who can open the reveal and Set up the week, says photo (the Teams sheet\'s own word) and colour, promises no emoji, and shows the Teams screen', () => {
   const n = CHANGES.find((x) => x.id === 'big-screen-logos');
   assert.ok(n, 'shipped with the switch');
   assert.equal(n.for, 'directors');
-  assert.deepEqual(Array.from(n.needs), ['reveal']);
+  assert.deepEqual(Array.from(n.needs), ['reveal', 'setup']);
   assert.equal(n.at, WHATS_NEW_SHIPPED_AT, 'the deploy stamps it');
-  assert.ok(/logo/.test(n.text) && /colour/.test(n.text) && !/emoji|mascot/i.test(n.text), n.text);
-  assert.equal(n.show, undefined);
+  // "photo" is the word a director meets on the Teams sheet ("Shield or flag photo"); "logo" is not on any screen. A picked
+  // emoji is never drawn beside a name on the big screen, and a cleared team's number is left out (beside "big screen" it
+  // reads like points).
+  assert.ok(/photo/.test(n.text) && /colour/.test(n.text) && !/emoji|mascot|logo|number/i.test(n.text), n.text);
+  assert.deepEqual(JSON.parse(JSON.stringify(n.show)), { to: 'teams', where: 'the Teams screen' });
+});
+
+test('Show me the Teams screen: a director lands on Set up the week\'s Teams screen; a counselor gets no Show me', () => {
+  const n = CHANGES.find((x) => x.id === 'big-screen-logos');
+  boot('editor', [n]);
+  try {
+    assert.equal(WHATS_NEW_SHOW.teams.ok(), true);
+    assert.ok(/data-wn-show="big-screen-logos"/.test(whatsNewHtml(n)) && /aria-label="Show me the Teams screen"/.test(whatsNewHtml(n)));
+    WHATS_NEW_SHOW.teams.go();
+    assert.ok(builderOpen(), 'the builder is open');
+    assert.equal(setupScreen(), 'teams', 'on the Teams screen');
+    state.ui.view = 'home';
+    setMemberRole('viewer');
+    assert.equal(WHATS_NEW_SHOW.teams.ok(), false, 'a counselor cannot open Set up the week');
+    assert.ok(!/data-wn-show/.test(whatsNewHtml(n)), 'so no Show me is drawn');
+  } finally { state.ui.view = 'home'; nowLast = null; done(); } // the builder's render left a director's Now model behind
 });
 
 test('the hour: nothing before `at`, live from `at`, still live at +59:59.999, gone at +60:00, and never again', () => {

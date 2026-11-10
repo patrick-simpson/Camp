@@ -3401,7 +3401,7 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
   text-align: center;
 }
 /* The waiting frame and the intro are the big screen's words alone, at its proportions (the headline 6.6% of the
-   width, the title 11%, "Get ready…" 3.2% under it at 2.4%), lifted a little above the middle as the big screen
+   width, the title 9%, "Get ready…" 3.2% under it at 2.4%), lifted a little above the middle as the big screen
    lifts them (3.5% of the height). */
 .mtv-wait,
 .mtv-intro {
@@ -3418,7 +3418,7 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
   gap: calc(var(--u) * 8);
 }
 .mtv-intro-title {
-  font: 850 calc(var(--u) * 34)/0.95 var(--font-ui);
+  font: 850 calc(var(--u) * 28)/0.95 var(--font-ui);
   letter-spacing: -0.025em;
 }
 /* The light theme's ink-2 as a literal (the TV is always light; see .mtv .tm-tile[data-num]). Still: the mini TV is
@@ -3426,6 +3426,14 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
 .mtv-intro-go {
   font: 800 calc(var(--u) * 11)/1.1 var(--font-ui);
   color: #373d72;
+}
+/* The 150px thumbnail (a phone under 700px tall, or nothing on the big screen yet): "Get ready…" would be a 4–5px
+   smudge under the title, so the thumbnail is the title alone, as the waiting thumbnail is. The caption beside it
+   (#reveal-tv-now) says what the big screen shows. */
+@container (max-width: 220px) {
+  .mtv-intro-go {
+    display: none;
+  }
 }
 /* A place's moment: name alone, then place and points, then the counts. */
 .mtv-hero {

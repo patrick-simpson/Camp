@@ -684,6 +684,9 @@ test('hint-paint: a counselor phone booting from a cached week with points paint
   // applyTheme dispatches an event on window; the stub window has neither
   get('globalThis.CustomEvent = function (type, init) { this.type = type; this.detail = init && init.detail; }; globalThis.dispatchEvent = function () { return true; }');
   get('setStandingsGuardThrows(true)');
+  // A fresh context has its own location: pin the clock here too (see the top of this file), or a real running-over hour
+  // ("Still on Evening competition · +10 min") reads as a signed number.
+  get("location.search = '?now=3-1000'");
   boot.sandbox.__sinkRec.on = true;
   assert.doesNotThrow(() => get('boot()'), 'the first frame of a viewer never reaches a points reader');
   boot.sandbox.__sinkRec.on = false;
@@ -705,6 +708,7 @@ test('hint-paint, editor: a stale director hint on a phone whose database cannot
   const get = (expr) => vm.runInContext(expr, boot.ctx);
   get('globalThis.CustomEvent = function (type, init) { this.type = type; this.detail = init && init.detail; }; globalThis.dispatchEvent = function () { return true; }');
   get('setStandingsGuardThrows(true)');
+  get("location.search = '?now=3-1000'"); // the fresh context's own clock pin (see the viewer case above)
   boot.sandbox.__sinkRec.on = true;
   assert.doesNotThrow(() => get('boot()'), 'the first frame of a hinted director reaches no points reader');
   boot.sandbox.__sinkRec.on = false;
