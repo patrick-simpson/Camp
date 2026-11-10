@@ -30,7 +30,7 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-11-09T22:30:31Z';
+const CODE_UPDATED_AT = '2026-11-10T00:57:38Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
 const APP_VERSION = 218;
 
@@ -46,7 +46,7 @@ const APP_VERSION = 218;
 // THE DEPLOY sets `WHATS_NEW_SHIPPED_AT` (the one `at` every note of this deploy carries) to the deploy's UTC time, the same
 // moment as CODE_UPDATED_AT, and MOVES every note whose hour is over out of CHANGES and into WHATS_NEW_RETIRED (ids only), so an
 // id is never reused (the lint in tests/whats-new.test.js checks both lists).
-const WHATS_NEW_SHIPPED_AT = '2026-11-09T20:05:13Z';
+const WHATS_NEW_SHIPPED_AT = '2026-11-10T00:57:38Z';
 const CHANGES = [
   { id: 'big-screen-logos', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['reveal', 'setup'], text: 'A team’s photo and picked colour now show on the big screen.', show: { to: 'teams', where: 'the Teams screen' } },
 ];
