@@ -48,7 +48,7 @@ const APP_VERSION = 217;
 // id is never reused (the lint in tests/whats-new.test.js checks both lists).
 const WHATS_NEW_SHIPPED_AT = '2026-11-09T20:05:13Z';
 const CHANGES = [
-  { id: 'big-screen-logos', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['reveal', 'setup'], text: 'Each team’s photo and colour now show on the big screen.', show: { to: 'teams', where: 'the Teams screen' } },
+  { id: 'big-screen-logos', at: WHATS_NEW_SHIPPED_AT, for: 'directors', needs: ['reveal', 'setup'], text: 'A team’s photo and picked colour now show on the big screen.', show: { to: 'teams', where: 'the Teams screen' } },
 ];
 const WHATS_NEW_RETIRED = Object.freeze([
   'four-tabs', 'score-from-games', 'games-tab-results', 'reveal-remote', 'chat-tab', 'tell-everyone', 'phone-alerts',

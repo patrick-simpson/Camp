@@ -382,6 +382,10 @@ test('the mini TV is a picture of the big screen: a shown place draws its own lo
   const frames = html.replace(/<!--[\s\S]*?-->/g, '').match(/<div class="mtv-f mtv-wait"[\s\S]*?<div class="mtv-f mtv-hero"/)[0];
   assert.ok(!/mtv-marks|class="tm\b|<img|<svg/.test(frames), 'the mini TV\'s waiting and intro frames are words only');
   assert.ok(!/mtv-(wait|intro)-marks/.test(readFixture('../reveal-ui.js')), 'nothing paints a mark into those frames');
+  for (const id of ['mtv-wait', 'mtv-intro', 'mtv-wait-marks', 'mtv-intro-marks']) {
+    const f = el(id);
+    assert.ok(!f || !/class="tm\b|<img|<svg/.test(String(f.innerHTML || '')), id + ' holds no mark after the intro paints');
+  }
   // a shown place: the node carries the look in its entry
   const ctl = mkCtl({ cur: 0, shown: 1, at: T0 - 1000, sa: T0 - 1000 });
   const top = groupsOf(N)[0];

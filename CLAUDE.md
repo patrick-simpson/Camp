@@ -3581,7 +3581,7 @@ rules**; the client code only shapes the UI.
     a script reading once a second all night with six photos would use about 5 GB of Spark's 10 GB a month, so the kill
     switch is the remedy. **The client (reveal.js) ships with `REVEAL_BRANDING_LIVE = true`** (a `let`, so a test can turn it off), which may be
     deployed only AFTER the owner has published and read back the rules; the director's What's new note `big-screen-logos`
-    ("Each team’s photo and colour now show on the big screen.", Show me the Teams screen) ships with it. With it ON: the published group of the place being shown carries `revealBrandOf(id)` for ITS teams only (read
+    ("A team’s photo and picked colour now show on the big screen.", Show me the Teams screen) ships with it. With it ON: the published group of the place being shown carries `revealBrandOf(id)` for ITS teams only (read
     through the SEAM accessors `teamColorId`, `teamEmojiRecord`, `teamPlain`, `teamPhotoVersion`; a thumbnail of the
     current `photoV` made in memory on the director's phone while the remote is open, `revealThumbsPrepare`, sizes
     240×333 / 200×278 / 173×240, JPEG quality 0.72 / 0.62 / 0.52 on the TV's paper, never awaited by a command, dropped when
