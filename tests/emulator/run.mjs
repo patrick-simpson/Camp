@@ -5,7 +5,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import { readFileSync } from 'fs';
 import { ref, set, get, update, remove, push, child, serverTimestamp } from 'firebase/database';
 
-const RULES = readFileSync('./database.rules.json', 'utf8');
+const RULES = readFileSync(new URL('../../database.rules.json', import.meta.url), 'utf8');
 let pass = 0, fail = 0;
 const results = [];
 async function t(name, fn) {
@@ -61,6 +61,10 @@ await t('a non-member cannot add themselves', () =>
 await t('a viewer reads state', () => assertSucceeds(get(ref(as(VIEWER), 'campScoreboard/state'))));
 await t('a viewer CANNOT write state', () => assertFails(set(ref(as(VIEWER), 'campScoreboard/state/teams'), [])));
 await t('an editor writes state', () => assertSucceeds(set(ref(as(EDITOR), 'campScoreboard/state/teams'), [{ id: 't0', name: 'F' }])));
+// S2b: team names sync per field (teams/<i>/<field>), so a single field must be writable by an editor and only by one.
+await t('an editor writes ONE team field (teams sync per field)', () => assertSucceeds(set(ref(as(EDITOR), 'campScoreboard/state/teams/0/name'), 'G')));
+await t('an editor clears ONE team field with null', () => assertSucceeds(set(ref(as(EDITOR), 'campScoreboard/state/teams/0/counselor'), null)));
+await t('a viewer CANNOT write one team field', () => assertFails(set(ref(as(VIEWER), 'campScoreboard/state/teams/0/name'), 'G')));
 await t('an UNVERIFIED email is not a member', () => assertFails(get(ref(as(EDITOR, false), 'campScoreboard/state'))));
 await t('nobody may touch the owner record', () =>
   assertFails(set(ref(as(EDITOR), `campScoreboard/members/${OWNER_KEY}/role`), 'viewer')));

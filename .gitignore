@@ -1,0 +1,15 @@
+# A Firebase console export (Realtime Database -> Data -> ... -> Export JSON) holds members' emails, phone numbers
+# and the chat. It never belongs in git. The console saves one as <project>-default-rtdb-export.json and the
+# tests/emulator README's example is camp-export.json; the patterns below cover both, and any other name with
+# "export" in it. Keep exports outside the repo anyway (tests/emulator/README.md, "Export replay").
+*-export.json
+*.export.json
+*export*.json
+exports/
+
+# tests/push-live (opt-in live alert check): browser profiles hold a signed-in session; results are per run
+tests/push-live/profiles/
+tests/push-live/results.json
+
+# Claude Code local settings (may hold secrets from approved commands)
+.claude/settings.local.json

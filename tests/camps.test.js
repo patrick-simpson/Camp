@@ -111,7 +111,16 @@ test('the senior seeded config is internally consistent', () => {
     assert.ok(cfg.sessions.includes(g.session), `${g.id} session is real`);
     assert.ok(['placement', 'tally', 'tournament'].includes(g.format), `${g.id} format known`);
     assert.ok(Array.isArray(g.rules) && g.rules.length, `${g.id} has rules sections`);
-    assert.equal(g.format, 'placement', 'placeholders are placement — the one format that works at any team count');
+    // CHANGED ON PURPOSE (Step 22): the Legacy Game is the four-team bracket. Every other placeholder stays a placement game,
+    // the one format that works at any team count.
+    if (g.id.startsWith('legacy-game-')) {
+      assert.equal(g.format, 'tournament', `${g.id} is the four-team bracket`);
+      assert.equal(g.bracketSeed, 'standings', 'its semifinals are suggested from the points');
+      assert.deepEqual(g.liveTracker, { unit: 'Points', periodLabel: 'Round', innings: 1, outs: 0 }, 'with the plain running scoreboard the Games sheet gives a bracket');
+      assert.notOk(g.roundOneMatchups, 'and no fixed pairs');
+    } else {
+      assert.equal(g.format, 'placement', `${g.id}: placeholders are placement — the one format that works at any team count`);
+    }
   });
   // Patrick's call: the big daily events are all SCORED games.
   ['legacy-game', 'hot-seat', 'lets-make-a-deal'].forEach((base) => {
@@ -236,35 +245,6 @@ test('the camp question is asked once, then the last choice is remembered', () =
 });
 
 // ── The unified Members drawer (one row per person, both camps) ───
-
-test('mergeMemberLists folds both camps into one row per person', () => {
-  const rows = mergeMemberLists({
-    junior: {
-      'pat@x,com': { role: 'editor', name: 'Pat' },
-      'jr,only@x,com': { role: 'viewer', name: 'Junior Only' },
-      'pending-brody-ab12': { role: 'viewer', name: 'Brody' },
-    },
-    senior: {
-      'pat@x,com': { role: 'viewer', name: 'Pat' },
-      'sr,only@x,com': { role: 'editor' }, // no name — shows the identity
-    },
-  });
-  assert.equal(rows.length, 4, 'Pat appears once, not twice');
-  const pat = rows.find((r) => r.key === 'pat@x,com');
-  assert.equal(pat.camps.junior.role, 'editor', 'roles stay independent per camp');
-  assert.equal(pat.camps.senior.role, 'viewer');
-  const jr = rows.find((r) => r.key === 'jr,only@x,com');
-  assert.equal(jr.camps.senior, null, 'no senior record → null, renders as None');
-  const names = rows.map((r) => (r.camps.junior && r.camps.junior.name) || (r.camps.senior && r.camps.senior.name) || identityFromKey(r.key));
-  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)), 'sorted by display name');
-});
-
-test('mergeMemberLists tolerates a missing camp list (single-camp view)', () => {
-  const rows = mergeMemberLists({ junior: { 'a@x,com': { role: 'viewer' } }, senior: null });
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].camps.senior, null);
-  assert.deepEqual(mergeMemberLists({ junior: null, senior: null }), [], 'nothing → empty');
-});
 
 test('campMembersPath writes to the right root for each camp', () => {
   assert.equal(campMembersPath('junior', 'a@x,com'), 'campScoreboard/members/a@x,com');

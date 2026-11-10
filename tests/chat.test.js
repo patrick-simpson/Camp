@@ -63,9 +63,32 @@ test('the longest label wins at the same spot', () => {
 });
 
 test('multiple distinct mentions all land, sorted by position', () => {
-  const hits = mentionScan('jovi tell the pilgrims that sofia has the cooler', T);
+  // Changed on purpose (Step 25, the capitalised-team-word rule): "Pilgrims" is capitalised here, as it must be to ping.
+  const hits = mentionScan('jovi tell the Pilgrims that sofia has the cooler', T);
   assert.deepEqual(hits.map((h) => h.label), ['Jovi', 'Pilgrims', 'Sofia']);
   assert.ok(hits[0].start < hits[1].start && hits[1].start < hits[2].start);
+});
+
+// The capitalised-team-word rule (setup-rebuild-spec S7, ux-R19; BUILD-PLAN Step 25): a one-word team ("Pilgrims", a short name like "Red")
+// is a mention only when typed with a capital or followed by "team" / "campers"; a full name of two words or more matches in any case.
+const TW = T.concat([{ label: 'Red', lower: 'red', kind: 'team', teamId: 't0' }, { label: 'Blue', lower: 'blue', kind: 'team', teamId: 't1' }]);
+test('team words: a capital or "team"/"campers" after it pings; ordinary lower-case words do not', () => {
+  const teams = (text) => mentionScan(text, TW).filter((h) => h.kind === 'team').map((h) => h.label);
+  assert.deepEqual(teams('Red meet at the waterfront'), ['Red'], 'typed with a capital');
+  assert.deepEqual(teams('RED wins it'), ['Red'], 'all capitals is a capital');
+  assert.deepEqual(teams('go red team'), ['Red'], 'followed by "team"');
+  assert.deepEqual(teams('all blue campers to the lake'), ['Blue'], 'followed by "campers"');
+  assert.deepEqual(teams('a red shirt and feeling blue'), [], 'ordinary words ping nobody');
+  assert.deepEqual(teams('the pilgrims lost'), [], 'a lower-case one-word team name is an ordinary word too');
+  assert.deepEqual(teams('the Pilgrims lost'), ['Pilgrims']);
+  assert.deepEqual(teams('red teamwork is key'), [], '"team" must be a whole word');
+  assert.deepEqual(teams('turkey dinner won'), ['Turkey Dinner'], 'a full name of two words matches in any case');
+  assert.deepEqual(teams('red  \n team'), ['Red'], 'any run of spaces before "team"');
+});
+
+test('a word that is also a team stays inert in a name and a longer word; the rule never touches people', () => {
+  assert.deepEqual(mentionScan('redhead and bluebird', TW), []);
+  assert.deepEqual(mentionScan('jovi and sofia', TW).map((h) => h.kind), ['person', 'person'], 'lower-case people still ping');
 });
 
 test('chatMentionTargets pulls from the directory, printed lists, teams, and abbrevs', () => {
@@ -173,25 +196,25 @@ test('chatPreviewOf shows text or the photo placeholder', () => {
 
 test('chat is not gated on canEdit — viewers can open it', () => {
   setMemberRole('viewer');
-  state.ui.chatOpen = false;
+  state.ui.tab = 'now';
   openChat('general');
-  assert.ok(state.ui.chatOpen, 'a viewer opened chat');
+  assert.equal(activeTab(), 'chat', 'a viewer opened the Chat tab');
   assert.equal(state.ui.chatChannel, 'general');
-  closeChat();
-  assert.notOk(state.ui.chatOpen);
+  showTab('now');
+  assert.equal(activeTab(), 'now');
   setMemberRole('editor');
 });
 
 test('hide-from-viewers is the chat kill switch', () => {
   setMemberRole('viewer');
   state.meta.hiddenCards = { chat: true };
-  state.ui.chatOpen = false;
+  state.ui.tab = 'now';
   openChat('general');
-  assert.notOk(state.ui.chatOpen, 'a viewer cannot open hidden chat');
+  assert.equal(activeTab(), 'now', 'a viewer cannot open hidden chat (their Chat tab says it is off)');
   setMemberRole('editor');
   openChat('general');
-  assert.ok(state.ui.chatOpen, 'editors always can');
-  closeChat();
+  assert.equal(activeTab(), 'chat', 'editors always can');
+  showTab('now');
   state.meta.hiddenCards = {};
 });
 

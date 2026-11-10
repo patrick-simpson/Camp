@@ -237,6 +237,29 @@ test('a phone holds the newest place back for 3 s after it is shown, and only th
   assert.equal(revealView(ctl, pub, ctl.sa + 1000, 'editor').rows.length, 1);
 });
 
+test('a phone that has never learned the server clock holds the newest place back whatever its own clock says (fails closed); the remote and the big screen never wait', () => {
+  const ctl = mkCtl({ cur: 1, shown: 2, sa: T0 + 50000, at: T0 + 50000 });
+  const pub = mkPub(2);
+  const late = ctl.sa + 60000;                                      // long past the 3 s window on the phone's own clock
+  const held = revealView(ctl, pub, late, 'viewer', { clockUnknown: true });
+  assert.equal(held.looking, true, 'held back until the clock is known');
+  assert.equal(held.rows.length, 1, 'only the newest place is withheld');
+  assert.equal(held.onScreen, null);
+  assert.equal(revealView(ctl, pub, late, 'editor', { clockUnknown: true }).rows.length, 1, 'a director\'s own phone is a phone');
+  assert.equal(revealView(ctl, pub, late, 'remote', { clockUnknown: true }).rows.length, 2, 'the remote IS the big screen');
+  assert.equal(revealView(ctl, pub, late, 'tv', { clockUnknown: true }).rows.length, 2);
+  // known (or not said): exactly the ordinary rule
+  assert.equal(revealView(ctl, pub, late, 'viewer', { clockUnknown: false }).rows.length, 2);
+  assert.equal(revealView(ctl, pub, late, 'viewer').rows.length, 2);
+  // only the literal true counts: a truthy junk value is not "unknown"
+  assert.equal(revealView(ctl, pub, late, 'viewer', { clockUnknown: 'yes' }).rows.length, 2);
+  // nothing shown yet: nothing to hold back; and 8 AM still hides everything
+  assert.equal(revealView(mkCtl({ cur: -1, shown: 0 }), null, late, 'viewer', { clockUnknown: true }).rows.length, 0);
+  const over = revealView(Object.assign({}, ctl, { phase: 'ended' }), pub, ctl.until + 1, 'viewer', { clockUnknown: true });
+  assert.equal(over.expired, true);
+  assert.deepEqual(over.rows, []);
+});
+
 test('the lag keys off sa: Back, the table, End and a reload never re-hide a place already shown', () => {
   const sa = T0 + 50000;
   const pub = mkPub(3);
@@ -353,4 +376,59 @@ test('reveal-core is pure: declarations only, no DOM, storage, network or clock 
   assert.notOk(/\b(Date\.now|new Date\(\)|setTimeout|setInterval|Math\.random)\b/.test(code),
     'time comes in as an argument, never read here (an 8 AM hide must not depend on a cached clock)');
   assert.notOk(/^(?!\s*(\/\/|const |let |function |\}|\s))\S/m.test(src.replace(/\/\*[\s\S]*?\*\//g, '')), 'only top-level declarations and comments');
+});
+
+// ── R2: a team's own look in a shown place's entry ───────────────────
+
+const PNG_OK = 'data:image/png;base64,' + 'A'.repeat(100);
+
+test('normalizeRevealPub keeps a team look only in exactly the shape: palette k, clean em, pl === true, small inline ph', () => {
+  const look = { k: 'teal', em: '🦊', pl: true, ph: PNG_OK };
+  const row = (extra) => normalizeRevealPub({ g0: { place: 1, e: { t0: ent('t0', 5, extra) } } })[0].entries[0];
+  const r = row(look);
+  assert.equal(r.k, 'teal'); assert.equal(r.em, '🦊'); assert.equal(r.pl, true); assert.equal(r.ph, PNG_OK);
+  // anything else is dropped, never repaired
+  assert.notOk('k' in row({ k: 'chartreuse' }), 'a colour that is not one of the twelve');
+  assert.notOk('k' in row({ k: 'Teal' }));
+  assert.notOk('em' in row({ em: '<b>x</b>' }), 'markup in an emoji');
+  assert.notOk('em' in row({ em: "a'b" }), 'an apostrophe');
+  assert.notOk('em' in row({ em: 'x'.repeat(17) }), '17 characters');
+  assert.notOk('pl' in row({ pl: false }), 'pl is only ever true');
+  assert.notOk('pl' in row({ pl: 'true' }));
+  assert.notOk('ph' in row({ ph: 'https://evil.example/x.png' }), 'an address is not a photo');
+  assert.notOk('ph' in row({ ph: 'images/team-shields/t0.png' }), 'not even a shipped path');
+  assert.notOk('ph' in row({ ph: 'data:image/svg+xml;base64,AAAA' }));
+  assert.notOk('ph' in row({ ph: 'data:image/png;base64,AA"onerror=x' }), 'a quote breakout');
+  assert.notOk('ph' in row({ ph: 'data:image/png;base64,' + 'A'.repeat(REVEAL_PHOTO_MAX) }), 'over the cap');
+  assert.ok('ph' in row({ ph: 'data:image/png;base64,' + 'A'.repeat(REVEAL_PHOTO_MAX - 22) }), 'exactly at the cap is kept');
+  assert.notOk('x' in row({ x: 1 }), 'unknown fields are dropped');
+});
+
+test('revealMarkSpec: the phones\' order — photo, shield, flag, tile — and what a cleared team never falls back to', () => {
+  const id = 't1';
+  const camp = { teamCrest: { t1: 'images/team-shields/t1.png' }, teamFlag: { t1: 'red' }, teamEmoji: { t1: '🦊' }, teamAccent: { t1: '#aa0000' } };
+  assert.deepEqual(revealMarkSpec(camp, id, { ph: PNG_OK, pl: true }), { kind: 'photo', src: PNG_OK }, 'a photo beats everything, even the cleared marker');
+  assert.equal(revealMarkSpec(camp, id, null).kind, 'shield');
+  assert.equal(revealMarkSpec(camp, id, { k: 'teal' }).kind, 'shield', 'a picked colour does not hide the shield');
+  assert.equal(revealMarkSpec(camp, id, { pl: true }).kind, 'tile', 'a cleared team never falls back to the shipped shield');
+  const noShield = { teamFlag: { t1: 'red' }, teamEmoji: { t1: '🦊' }, teamAccent: { t1: '#aa0000' } };
+  const f = revealMarkSpec(noShield, id, { k: 'teal' });
+  assert.equal(f.kind, 'flag'); assert.equal(f.shape, 'swallow'); assert.equal(f.fill, CAMP_TEAM_PALETTE.teal.l);
+  assert.notOk('fill' in revealMarkSpec(noShield, id, null), 'no colour picked: the flag keeps its printed colour');
+  assert.equal(revealMarkSpec(noShield, id, { pl: true }).kind, 'tile', 'a cleared team never falls back to the printed flag');
+  // tiles
+  assert.deepEqual(revealMarkSpec(camp, id, { pl: true }), { kind: 'tile', num: '2', emoji: '', edge: '' }, 'the slot numeral, no printed edge');
+  assert.deepEqual(revealMarkSpec(camp, id, { pl: true, em: '2️⃣' }), { kind: 'tile', num: '2', emoji: '', edge: '' }, 'a keycap is drawn as its digit');
+  assert.deepEqual(revealMarkSpec(camp, id, { pl: true, em: '🦉', k: 'gold' }), { kind: 'tile', num: '', emoji: '🦉', edge: CAMP_TEAM_PALETTE.gold.l });
+  assert.deepEqual(revealMarkSpec({ teamEmoji: { t1: '🦊' }, teamAccent: { t1: '#aa0000' } }, id, null), { kind: 'tile', num: '', emoji: '🦊', edge: '#aa0000' }, 'a printed tile keeps the camp\'s own emoji and accent');
+  assert.equal(revealMarkSpec({}, id, { ph: 'https://x/y.png' }).kind, 'tile', 'a hostile ph is not a photo');
+});
+
+test('revealMascot: own emoji, nothing for a cleared team or a keycap, else the printed one', () => {
+  const camp = { teamEmoji: { t1: '🦊' } };
+  assert.equal(revealMascot(camp, 't1', null), '🦊');
+  assert.equal(revealMascot(camp, 't1', { em: '🦉' }), '🦉');
+  assert.equal(revealMascot(camp, 't1', { pl: true }), '');
+  assert.equal(revealMascot(camp, 't1', { pl: true, em: '2️⃣' }), '');
+  assert.equal(revealMascot(camp, 't1', { em: '2️⃣' }), '');
 });

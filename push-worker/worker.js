@@ -8,7 +8,8 @@
 //
 // What it does:
 //   • POST /notify  — a signed-in member's phone asks it to fan a chat message,
-//                     a director alert, or a test out to everyone it concerns.
+//                     a director alert, a test, or a schedule-change digest
+//                     (a director's phone only) out to everyone it concerns.
 //   • every minute  — the Cron Trigger sends "Supper starts in 10 min"
 //                     schedule alerts and retries anything that didn't go.
 //   • POST /drain, /resubscribe, GET /vapid-key, /health, / — plumbing.
@@ -43,7 +44,7 @@
 
 // Bump when the Worker changes, so /health and the status page say which copy
 // is pasted into Cloudflare.
-const VERSION = '2026-10-26.2';
+const VERSION = '2026-11-04.1';
 
 // Camp id → Firebase root. Hardcoded on purpose (camps.js is browser code the
 // Worker can't load); the two roots are a contract with database.rules.json.
@@ -125,7 +126,8 @@ const NEG_CACHE_MS = MINUTE;        // how long an isolate remembers that Google
 const MAX_MENTION_KEYS = 10;        // people one chat message can buzz as "mentioned"
 const MAX_MENTION_TEAMS = 3;
 const MIN_MENTION_CHARS = 2;        // a one-letter "name" would match half the alphabet
-const MIN_TEAM_WORD_CHARS = 4;      // a team can be named by a long-enough word of its name ("Maples")
+const MIN_TEAM_LABEL_CHARS = 3;     // a team label (its name or short name) shorter than this names nobody (chat.js add(): clean.length < 3)
+const TEAM_SHORT_MAX = 20;          // camp-core.js CAMP_SHORT_MAX: the longest short name the app keeps
 // The only push services a subscription may point at. A device record's
 // endpoint is client-written (the rules check only `https://`), so without
 // this the Worker would POST — signed with our VAPID key — to any address a
@@ -1668,29 +1670,79 @@ function memberNamedIn(name, text) {
   return mentionedAsWord(text, capped) || mentionedAsWord(text, capped.split(' ')[0]);
 }
 
-// A team is mentioned if its whole name is, or any word of it that is long
-// enough to be distinctive ("Maples" for "Methodic Mediocre Maples"). The one
-// word that is never distinctive is "team" itself: the senior camp's teams are
-// "Red Team", "Blue Team"… and a message saying "team competitions at 3" would
-// otherwise vouch for any team claim at all, which is the very forgery this
-// check exists to stop. (The whole name, "Red Team", still counts.)
-function teamNamedIn(name, text) {
-  const n = cleanText(name);
-  if (!n) return false;
-  if (mentionedAsWord(text, n)) return true;
-  return n.split(/[^\p{L}\p{N}]+/u).some((w) => Array.from(w).length >= MIN_TEAM_WORD_CHARS
-    && w.toLowerCase() !== 'team' && mentionedAsWord(text, w));
+// Each camp's printed team short names (camps.js TEAM_ABBREV, which the chat
+// dictionary falls back to for a team whose record has no `short` of its own).
+// The Worker can't load camps.js, so they are pasted here — the way CAMPS pastes
+// the database roots — and tests/push-worker.test.js pins them to camps.js so a
+// change there can't leave the sender behind.
+const TEAM_SHORT_DEFAULTS = {
+  junior: { t0: 'Foxes', t1: 'Turkey', t2: 'Maples', t3: 'Pumpkins', t4: 'Pilgrims', t5: 'John Deersz' },
+  senior: { t0: 'Red', t1: 'Blue', t2: 'Green', t3: 'Gold' },
+};
+
+// A short name as camp-core.js safeShort keeps it: control characters to
+// spaces, runs of whitespace to one, trimmed, cut to 20 (never mid-emoji).
+// '' when there is nothing usable.
+function cleanShort(v) {
+  if (typeof v !== 'string') return '';
+  let s = v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (s.length > TEAM_SHORT_MAX) {
+    s = s.slice(0, TEAM_SHORT_MAX);
+    if (/[\ud800-\udbff]$/.test(s)) s = s.slice(0, -1);
+    s = s.trim();
+  }
+  return s;
 }
 
-// The camp's teams ({id, name}), read only when a request actually claimed a
-// team mention — most messages claim none, and every read is a subrequest
-// out of the 45. Teams live in the synced state (state/teams: an array, or an
-// object if RTDB turned it into one).
+// One-word team labels ("Red", "Pilgrims") are ordinary English words too, so
+// they only count when typed the way a person addresses a team: with a capital
+// first letter ("Red meet at the dock", "RED wins"), or followed by "team" (or
+// the one other word chat accepts there: "go red team"). This is chat.js
+// chatTeamWordOk — the page decides what it claims with that rule, the Worker
+// re-checks the claim with the same one, so an alert pings exactly where chat
+// does.
+function teamWordNamedIn(text, label) {
+  let re;
+  try { re = new RegExp('(?<![A-Za-z0-9])' + reEscape(label) + '(?![A-Za-z0-9])', 'giu'); } catch (e) { return false; }
+  for (const m of text.matchAll(re)) {
+    const c = m[0][0];
+    if (c !== c.toLowerCase()) return true;
+    if (/^\s+(?:team|campers)(?![a-z0-9])/i.test(text.slice(m.index + m[0].length))) return true;
+  }
+  return false;
+}
+
+// A team is mentioned if its full name or its short name is — the two labels
+// chat.js's mention dictionary holds for a team. A label of two words or more
+// ("Turkey Dinner", "Red Team") matches in any case; a one-word label follows
+// the capitalised-team-word rule above. A label under three characters names
+// nobody, and neither does "team" itself: the senior camp's teams are "Red
+// Team", "Blue Team"… and a message saying "team competitions at 3" would
+// otherwise vouch for any team claim at all, which is the very forgery this
+// check exists to stop. `short` is the record's own short name, else the camp's
+// printed one (campTeams resolves which).
+function teamNamedIn(name, text, short) {
+  const t = String(text == null ? '' : text);
+  for (const label of [cleanText(name), cleanShort(short)]) {
+    if (Array.from(label).length < MIN_TEAM_LABEL_CHARS || label.toLowerCase() === 'team') continue;
+    if (/\s/.test(label)) { if (mentionedAsWord(t, label)) return true; }
+    else if (teamWordNamedIn(t, label)) return true;
+  }
+  return false;
+}
+
+// The camp's teams ({id, name, short}), read only when a request actually
+// claimed a team mention — most messages claim none, and every read is a
+// subrequest out of the 45. Teams live in the synced state (state/teams: an
+// array, or an object if RTDB turned it into one). `short` is the record's own
+// short name (what the Teams screen sets) or, when it has none, the camp's
+// printed one — the fallback the chat dictionary makes (app.js teamShort).
 async function campTeams(ictx, camp) {
   if (!hasOwn(ictx.memo.teams, camp)) {
     const v = await dbGet(ictx, `${CAMPS[camp]}/state/teams`);
     const list = Array.isArray(v) ? v : isObj(v) ? Object.values(v) : [];
-    ictx.memo.teams[camp] = list.filter((t) => isObj(t) && typeof t.id === 'string' && TEAM_RE.test(t.id) && typeof t.name === 'string');
+    ictx.memo.teams[camp] = list.filter((t) => isObj(t) && typeof t.id === 'string' && TEAM_RE.test(t.id) && typeof t.name === 'string')
+      .map((t) => ({ id: t.id, name: t.name, short: cleanShort(t.short) || (TEAM_SHORT_DEFAULTS[camp] || {})[t.id] || '' }));
   }
   return ictx.memo.teams[camp];
 }
@@ -1715,7 +1767,7 @@ async function verifiedMentions(ictx, camp, members, text, body) {
   for (const id of claimedTeams) {
     if (out.teams.length >= MAX_MENTION_TEAMS) break;
     const team = teams.find((t) => t.id === id);
-    if (team && teamNamedIn(team.name, msgText)) out.teams.push(id);
+    if (team && teamNamedIn(team.name, msgText, team.short)) out.teams.push(id);
   }
   return out;
 }
@@ -1845,12 +1897,380 @@ async function notifyTest(ictx, caller, camp, body) {
   }], { keep: 0 }));
 }
 
+// ── Schedule-change alerts (kind 'schedule') ──────────────────────────────
+// A director who changed the week's schedule can tell the phones that follow
+// the changed blocks. The page publishes the new schedule first (pushSchedule),
+// then asks here: `{camp, kind: 'schedule', alert, ids: [published block ids it
+// touched]}` or `{alert: false, ids: ['*']}` to reset the baseline.
+//
+// The Worker never takes words from the request. It compares what the schedule
+// says NOW (pushSchedule, written by editors under the rules) with a private
+// per-block baseline — pushServer/schedSeen/<camp> — "what followers were last
+// told about this block", and writes every word of the digest itself. The
+// baseline moves only for the ids a request names, whether or not it alerts, so
+// one director's quiet save can never swallow another director's alert about
+// different blocks.
+//
+//   pushServer/schedSeen/<camp> = { weekStart, blocks: { '<id>': { dow, start, label, emoji, key } } }
+//
+// Replies (all 200 unless noted): the usual tally plus `devices` (phones told),
+// `items` (changes told) and, when nothing went out, a plain `reason`:
+//   'baseline'        the baseline was (re)made from the published schedule; nothing to compare yet
+//   'no-schedule'     nothing is published (or its week date is junk)
+//   'quiet'           alert was false: the baseline moved, nobody was told
+//   'no-change'       the named blocks are what followers were last told
+//   'not-camp-week'   outside [week start − 1 day, + 8 days]: the baseline moved, nobody was told
+//   'nothing-to-tell' changes exist, but none touches a time between now and the end of tomorrow that hasn't started
+//   'no-followers'    there are such changes, but no phone follows those blocks
+// A schedule alert is one per camp per 10 s (429, 'rate'); two requests racing
+// for the same change send once (the baseline is claimed with an ETag first).
+
+const SCHED_IDS_MAX = 200;           // block ids one request may name
+const RATE_SCHED_MS = 10 * 1000;     // one schedule alert per camp per 10 s
+const SCHED_LINES = 3;               // changes a digest spells out; the rest are "+N more"
+const SCHED_CLAIM_TRIES = 3;         // baseline claims lost to a racing request before giving up
+const TTL_SCHED_MIN = 60;
+const TTL_SCHED_MAX = 36 * 3600;
+const BUILTIN_BLOCK_ID_RE = /^d[0-6]-\d{1,4}-\d{1,3}$/; // ids the built-in schedule publishes (d<dow>-<start>-<position>)
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// A published block as the baseline keeps it: the five fields the rules allow,
+// cleaned (the page's own words are never trusted into a notification).
+function slimBlock(id, b) {
+  if (!validBlock(id, b)) return null;
+  return { dow: b.dow, start: b.start, label: clip(b.label, 120) || 'Schedule block', emoji: clip(b.emoji, 16), key: b.key };
+}
+
+function slimBlocks(raw) {
+  const out = {};
+  if (!isObj(raw)) return out;
+  for (const id of Object.keys(raw)) {
+    const s = slimBlock(id, raw[id]);
+    if (s) out[id] = s;
+  }
+  return out;
+}
+
+// An own entry or undefined — block ids are plain lower-case words ("constructor" is one), so a bare lookup could hit a built-in.
+function blockAt(blocks, id) { return hasOwn(blocks, id) ? blocks[id] : undefined; }
+
+function sameSlim(a, b) {
+  if (!a || !b) return !a && !b;
+  return a.dow === b.dow && a.start === b.start && a.label === b.label && a.emoji === b.emoji && a.key === b.key;
+}
+
+// 'built-in' (d<dow>-<start>-<position> ids), 'setup' (<day>-<block id> ids), or
+// '' for no blocks. A baseline in one style against a schedule in the other means
+// the schedule switch moved and every id changed: nothing is a "move" then, the
+// baseline is simply made again (the page asks for that too; this is the belt).
+function blockIdStyle(blocks) {
+  const ids = Object.keys(blocks);
+  if (!ids.length) return '';
+  return ids.every((id) => BUILTIN_BLOCK_ID_RE.test(id)) ? 'built-in' : 'setup';
+}
+
+// The head of a block's label — before " — " or " (" — which is where a rendered
+// label keeps its team list ("Morning meeting — 🦃 Turkey, 🍁 Maples"). Mirrors
+// push.js pushHeadLabel.
+function headLabel(label) {
+  const s = String(label == null ? '' : label);
+  const cuts = [s.indexOf(' — '), s.indexOf(' (')].filter((i) => i >= 0);
+  return (cuts.length ? s.slice(0, Math.min(...cuts)) : s).trim();
+}
+
+// Minutes after midnight → "1:15 PM".
+function clockMin(mins) {
+  const h = Math.floor(mins / 60) % 24;
+  return `${((h + 11) % 12) + 1}:${String(mins % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+function etYmd(ms) {
+  const p = etParts(ms);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+}
+
+// What changed between the baseline (`was`) and the published schedule (`cur`),
+// among the ids a request named. A moved (day or start) or renamed block is one
+// item; a block that is gone and a block that is new with the same alert key
+// are ONE move (the built-in schedule's ids carry the start time, so moving a
+// block changes its id): paired on the same day first, then in order. Items
+// carry `was` / `now` (either may be null) and are sorted so every phone and
+// every retry sees the same list.
+function scheduleChanges(was, cur, ids) {
+  const items = [];
+  const gone = [], fresh = [];
+  for (const id of ids) {
+    const a = blockAt(was, id) || null;
+    const b = blockAt(cur, id) || null;
+    if (!a && !b) continue;
+    if (a && !b) gone.push({ id, a });
+    else if (!a && b) fresh.push({ id, b });
+    else if (a.dow !== b.dow || a.start !== b.start) items.push({ kind: 'moved', id, was: a, now: b });
+    else if (a.label !== b.label) items.push({ kind: 'renamed', id, was: a, now: b });
+  }
+  const order = (x, y) => (x.dow - y.dow) || (x.start - y.start) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
+  gone.sort((x, y) => order(Object.assign({ id: x.id }, x.a), Object.assign({ id: y.id }, y.a)));
+  fresh.sort((x, y) => order(Object.assign({ id: x.id }, x.b), Object.assign({ id: y.id }, y.b)));
+  // Same day first for EVERY gone block, then any day for what is left, so a Monday block never steals a Tuesday partner.
+  const pairedFresh = new Set(), pairedGone = new Set();
+  for (const sameDayOnly of [true, false]) {
+    for (const g of gone) {
+      if (pairedGone.has(g)) continue;
+      const f = fresh.find((x) => !pairedFresh.has(x) && x.b.key === g.a.key && (!sameDayOnly || x.b.dow === g.a.dow));
+      if (!f) continue;
+      pairedGone.add(g);
+      pairedFresh.add(f);
+      items.push({ kind: 'moved', id: f.id, was: g.a, now: f.b });
+    }
+  }
+  for (const g of gone) if (!pairedGone.has(g)) items.push({ kind: 'cancelled', id: g.id, was: g.a, now: null });
+  for (const f of fresh) if (!pairedFresh.has(f)) items.push({ kind: 'new', id: f.id, was: null, now: f.b });
+  return items;
+}
+
+// The epoch ms of a block's occurrence this camp week if it falls strictly
+// between `from` and `to`, else NaN. A cheap UTC test (the wall time read as UTC
+// is 4–5 h before the true instant; an hour of slack either side) keeps the
+// Intl-based exact answer — the expensive part of a 10 ms CPU budget — for the
+// handful of blocks near today and tomorrow.
+function occurrenceIn(weekStart, wsT, b, from, to) {
+  const guess = wsT + b.dow * DAY + b.start * MINUTE;
+  if (guess + 6 * HOUR <= from || guess + 3 * HOUR >= to) return NaN;
+  const ms = etWallToEpoch(addDaysYmd(weekStart, b.dow), b.start);
+  return ms > from && ms < to ? ms : NaN;
+}
+
+// Keep the items a phone could still act on: an old or new occurrence between
+// now and the end of tomorrow (Eastern) that hasn't started. Each kept item
+// gains `oldMs` / `newMs` (NaN where that side is absent or out of the window)
+// and `endMs`, the end of the latest camp day it touches (when a digest about it
+// goes stale; a block's camp day is just weekStart + its dow).
+function windowScheduleItems(items, weekStart, now) {
+  const ws = parseYmd(weekStart);
+  if (!ws) return [];
+  const to = etWallToEpoch(addDaysYmd(etYmd(now), 2), 0);
+  const dayEnds = {};
+  const endOf = (dow) => (hasOwn(dayEnds, dow) ? dayEnds[dow] : (dayEnds[dow] = etWallToEpoch(addDaysYmd(weekStart, dow + 1), 0)));
+  const out = [];
+  for (const it of items) {
+    const oldMs = it.was ? occurrenceIn(weekStart, ws.t, it.was, now, to) : NaN;
+    const newMs = it.now ? occurrenceIn(weekStart, ws.t, it.now, now, to) : NaN;
+    if (!Number.isFinite(oldMs) && !Number.isFinite(newMs)) continue;
+    const endMs = Math.max(Number.isFinite(oldMs) ? endOf(it.was.dow) : 0, Number.isFinite(newMs) ? endOf(it.now.dow) : 0);
+    out.push(Object.assign({}, it, { oldMs, newMs, endMs }));
+  }
+  const first = (it) => Math.min(Number.isFinite(it.oldMs) ? it.oldMs : Infinity, Number.isFinite(it.newMs) ? it.newMs : Infinity);
+  return out.sort((x, y) => first(x) - first(y) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+}
+
+// Does a device's preferences follow this change? blocksAll, or the alert key of
+// the block as it was or as it is. (`lead` is about reminders and plays no part;
+// neither does the "director alerts" switch — they chose these blocks.)
+function followsChange(prefs, item) {
+  if (prefs.blocksAll) return true;
+  return [item.was && item.was.key, item.now && item.now.key].some((k) => k && prefs.blocks[k] === true);
+}
+
+// The words for one change, in the order a person reads them. `today` and
+// `tomorrow` are Eastern calendar dates; `weekStart` places a block's day.
+function scheduleLine(item, weekStart, today, tomorrow) {
+  const b = item.now || item.was;
+  const pre = b.emoji ? b.emoji + ' ' : '';
+  const dateOf = (blk) => addDaysYmd(weekStart, blk.dow);
+  const dayWord = (blk) => { const d = dateOf(blk); return d === today ? 'today' : d === tomorrow ? 'tomorrow' : DAY_NAMES[blk.dow]; };
+  if (item.kind === 'moved') {
+    const label = headLabel(item.now.label) || 'Schedule block';
+    if (item.was.dow === item.now.dow) return `${pre}${label} → ${clockMin(item.now.start)} (was ${clockMin(item.was.start)})`;
+    return `${pre}${label} moved to ${DAY_SHORT[item.now.dow]} ${clockMin(item.now.start)}`;
+  }
+  if (item.kind === 'renamed') {
+    const was = headLabel(item.was.label), now = headLabel(item.now.label) || 'Schedule block';
+    return was && was !== now ? `${pre}${was} is now ${now}` : `${pre}${now} details changed`;
+  }
+  if (item.kind === 'cancelled') return `${pre}${headLabel(item.was.label) || 'Schedule block'} cancelled ${dayWord(item.was)}`;
+  const d = dateOf(item.now);
+  const when = d === today ? `at ${clockMin(item.now.start)}` : d === tomorrow ? `tomorrow at ${clockMin(item.now.start)}` : `${DAY_SHORT[item.now.dow]} ${clockMin(item.now.start)}`;
+  return `${pre}${headLabel(item.now.label) || 'Schedule block'} added ${when}`;
+}
+
+// One phone's digest: a title naming the day when the changes share one, up to
+// SCHED_LINES lines, then "+N more". `ttl` runs to the end of the latest
+// affected camp day — a change for tonight is stale tomorrow morning. `today`
+// is the Eastern date of `now`, worked out once per request (Intl is the
+// expensive part of a 10 ms CPU budget, and a digest is made per group of phones).
+function scheduleDigest({ camp, items, weekStart, rev, now, today }) {
+  today = today || etYmd(now);
+  const tomorrow = addDaysYmd(today, 1);
+  const lines = items.map((it) => scheduleLine(it, weekStart, today, tomorrow));
+  const dates = new Set();
+  let latestEnd = now;
+  for (const it of items) {
+    for (const [ms, blk] of [[it.newMs, it.now], [it.oldMs, it.was]]) if (Number.isFinite(ms)) dates.add(addDaysYmd(weekStart, blk.dow));
+    if (Number.isFinite(it.endMs) && it.endMs > latestEnd) latestEnd = it.endMs;
+  }
+  let title = 'The schedule changed';
+  if (dates.size === 1) {
+    const d = [...dates][0];
+    const dow = items.map((it) => [it.now, it.was]).flat().find((blk) => blk && addDaysYmd(weekStart, blk.dow) === d).dow;
+    title = d === today ? "Today's schedule changed" : `${DAY_NAMES[dow]}'s schedule changed`;
+  }
+  const body = lines.slice(0, SCHED_LINES).join('\n') + (lines.length > SCHED_LINES ? `\n+${lines.length - SCHED_LINES} more` : '');
+  const ttl = Math.min(TTL_SCHED_MAX, Math.max(TTL_SCHED_MIN, Math.ceil((latestEnd - now) / 1000)));
+  const payload = makePayload({
+    camp, kind: 'block', title: `📅 ${title}`, body, keepLines: true,
+    tag: `sched-${camp}-${Number.isFinite(rev) ? rev : Math.floor(now / MINUTE)}`, ts: now, open: 'schedule', urgent: false,
+  });
+  return { payload, ttl };
+}
+
+// Who gets which digest: every usable phone (the four-newest cap, one delivery
+// per browser however many people it is registered under) whose preferences
+// follow at least one change, grouped by exactly which changes — a phone only
+// ever hears about blocks it follows.
+function scheduleRecipients({ items, members, push, cfg }) {
+  const byEndpoint = new Map(); // endpoint -> { target, follows: Set(item index) }
+  eachDevice(push, members, (memberKey, member, rec, target) => {
+    const prefs = normalizePrefs(rec.prefs);
+    items.forEach((it, i) => {
+      if (!followsChange(prefs, it)) return;
+      let e = byEndpoint.get(target.e);
+      if (!e) { e = { target, follows: new Set() }; byEndpoint.set(target.e, e); }
+      e.follows.add(i);
+    });
+  }, cfg);
+  const groups = new Map(); // "0,2" -> { idx: [0, 2], targets: [...] }
+  for (const { target, follows } of byEndpoint.values()) {
+    const idx = [...follows].sort((a, b) => a - b);
+    const k = idx.join(',');
+    if (!groups.has(k)) groups.set(k, { idx, targets: [] });
+    groups.get(k).targets.push(target);
+  }
+  return [...groups.values()];
+}
+
+// Claim the baseline: replace the node only if nobody changed it since we read
+// it. True if WE wrote it.
+async function claimSchedSeen(ictx, camp, node, etag) {
+  const r = await dbPut(ictx, `pushServer/schedSeen/${camp}`, node, etag);
+  return !r.conflict;
+}
+
+// Best effort: a claim whose alert never went out (nothing sent, nothing queued)
+// is given back, so the director's retry still finds the change. Only the named
+// ids go back, to what they were; a miss just leaves the alert unsent, which is
+// what the old behaviour of a quiet save would have been.
+async function releaseSchedSeen(ictx, camp, ids, was) {
+  const patch = {};
+  for (const id of ids) patch[`blocks/${id}`] = blockAt(was, id) || null;
+  try { await dbPatch(ictx, `pushServer/schedSeen/${camp}`, patch); } catch (e) {
+    if (!(e instanceof BudgetError)) console.warn('camp-alerts: could not give the schedule baseline back', e && e.message);
+  }
+}
+
+function parseScheduleIds(ids, alert) {
+  if (!Array.isArray(ids) || ids.length > SCHED_IDS_MAX) throw new HttpError(400, 'bad-ids', 'Say which schedule items changed (up to 200).');
+  const clean = [...new Set(ids)];
+  if (clean.some((id) => typeof id !== 'string' || !(id === '*' || BLOCK_ID_RE.test(id)))) throw new HttpError(400, 'bad-ids', 'Unknown schedule item.');
+  if (clean.includes('*')) {
+    if (clean.length !== 1) throw new HttpError(400, 'bad-ids', 'A reset names every item and nothing else.');
+    if (alert) throw new HttpError(400, 'bad-ids', "A reset of the baseline can't send an alert.");
+  }
+  return clean;
+}
+
+async function notifySchedule(ictx, caller, camp, body) {
+  if (caller.member.role !== 'editor') throw new HttpError(403, 'not-editor', 'Only directors can send schedule alerts.');
+  const alert = body.alert === true;
+  const ids = parseScheduleIds(body.ids, alert);
+  const reset = ids[0] === '*';
+  const root = CAMPS[camp];
+  const none = (reason, extra) => tallyBody(newTally(), Object.assign({ reason, devices: 0, items: 0 }, extra || {}));
+  if (!ids.length) return none('no-change');
+
+  let rateTaken = false;
+  for (let attempt = 0; ; attempt++) {
+    if (attempt >= SCHED_CLAIM_TRIES) throw new HttpError(503, 'busy', "Another schedule alert is going out right now. Try again in a few seconds.");
+    const [sched, seenTagged] = await Promise.all([dbGet(ictx, `${root}/pushSchedule`), dbGetTagged(ictx, `pushServer/schedSeen/${camp}`)]);
+    const weekStart = isObj(sched) && isValidWeekStart(sched.weekStart) ? sched.weekStart : '';
+    if (!weekStart) return none('no-schedule');
+    const published = slimBlocks(sched.blocks);
+    const seenNode = isObj(seenTagged.value) ? seenTagged.value : null;
+    const was = seenNode && seenNode.weekStart === weekStart ? slimBlocks(seenNode.blocks) : null;
+    const now = ictx.now();
+
+    // Nothing to compare with — never told anyone, a new week, the schedule
+    // switch moved, or the page said so: make the baseline from what is
+    // published now. This is also what the very first call for a camp does.
+    const styleWas = was ? blockIdStyle(was) : '';
+    const styleNow = blockIdStyle(published);
+    if (reset || !was || (styleWas && styleNow && styleWas !== styleNow)) {
+      if (!(await claimSchedSeen(ictx, camp, { weekStart, blocks: published }, seenTagged.etag))) continue;
+      return none('baseline');
+    }
+
+    const named = ids.filter((id) => !sameSlim(blockAt(was, id), blockAt(published, id)));
+    if (!named.length) return none('no-change');
+    const ws = etWallToEpoch(weekStart, 0);
+    const inWeek = now >= ws - DAY && now <= ws + 8 * DAY;
+    const changes = scheduleChanges(was, published, named);
+    const items = alert && inWeek ? windowScheduleItems(changes, weekStart, now) : [];
+    let groups = [];
+    if (items.length) {
+      const push = await campPush(ictx, camp);
+      groups = scheduleRecipients({ items, members: caller.members, push, cfg: ictx.cfg });
+      // Past the point of no return only once the slot is ours: a 429 here leaves the baseline alone.
+      if (groups.length && !rateTaken) {
+        await takeRateSlot(ictx, camp, 'sched', RATE_SCHED_MS, 'Please wait a few seconds before sending another schedule alert.');
+        rateTaken = true;
+      }
+    }
+
+    // Claim the change: the baseline for the named ids moves to what is published, only if nobody else moved
+    // it first. Whoever wins the claim tells the phones; a racing request finds nothing left to tell.
+    const next = Object.assign({}, was);
+    for (const id of named) { if (hasOwn(published, id)) next[id] = published[id]; else delete next[id]; }
+    if (!(await claimSchedSeen(ictx, camp, { weekStart, blocks: next }, seenTagged.etag))) continue;
+
+    if (!alert) return none('quiet');
+    if (!inWeek) return none('not-camp-week');
+    if (!items.length) return none('nothing-to-tell');
+    if (!groups.length) return none('no-followers', { items: items.length });
+
+    // From here the claim stands only if something goes out or is lined up to.
+    const tally = newTally();
+    try {
+      const alertId = timeKey(now) + randomChars(12);
+      const name = memberName(caller.members, caller.key);
+      const today = etYmd(now), tomorrow = addDaysYmd(today, 1);
+      const jobs = groups.map((g) => {
+        const d = scheduleDigest({ camp, items: g.idx.map((i) => items[i]), weekStart, rev: Number(sched.rev), now, today });
+        return { payload: d.payload, ttl: d.ttl, urgency: 'high', created: now, attempts: 0, alert: alertId, targets: g.targets };
+      });
+      const lines = items.map((it) => scheduleLine(it, weekStart, today, tomorrow));
+      // The audit record goes in BEFORE anything is sent, as for a director alert.
+      await dbPut(ictx, `${root}/pushAlerts/${alertId}`, {
+        at: now, byKey: caller.key, byName: name, kind: 'schedule', audience: 'followers', urgent: false, sent: 0, failed: 0,
+        text: clip('📅 Schedule changed: ' + lines.join(' · '), 300, true),
+      });
+      await deliverJobs(ictx, camp, jobs, { keep: 1, tally });
+      await bumpAlertCounts(ictx, camp, alertId, tally);
+      if (!tally.sent && !tally.queued) await releaseSchedSeen(ictx, camp, named, was);
+      return tallyBody(tally, { alertId, devices: groups.reduce((n, g) => n + g.targets.length, 0), items: items.length });
+    } catch (e) {
+      if (!tally.sent && !tally.queued) await releaseSchedSeen(ictx, camp, named, was);
+      throw e;
+    }
+  }
+}
+
 async function routeNotify(ictx, request, body) {
   const camp = campFrom(body);
-  if (!['chat', 'alert', 'test'].includes(body.kind)) throw new HttpError(400, 'bad-kind', 'Unknown kind of alert.');
+  if (!['chat', 'alert', 'test', 'schedule'].includes(body.kind)) throw new HttpError(400, 'bad-kind', 'Unknown kind of alert.');
   const caller = await authenticate(ictx, request, camp);
   if (body.kind === 'chat') return notifyChat(ictx, caller, camp, body);
   if (body.kind === 'alert') return notifyAlert(ictx, caller, camp, body);
+  if (body.kind === 'schedule') return notifySchedule(ictx, caller, camp, body);
   return notifyTest(ictx, caller, camp, body);
 }
 
@@ -2188,6 +2608,24 @@ async function cronMaintenance(ictx) {
     if (isObj(rate)) for (const k of Object.keys(rate)) if (!(Number(rate[k]) > now - RATE_KEEP_MS)) oldRate[k] = null;
     if (Object.keys(oldRate).length) await dbPatch(ictx, `pushServer/rate/${camp}`, oldRate);
 
+    // The schedule-change baseline (see notifySchedule) is only ever read inside
+    // the camp window, so one whose week is more than 8 days gone is dead weight.
+    const seenWeek = await dbGet(ictx, `pushServer/schedSeen/${camp}/weekStart`);
+    if (isValidWeekStart(seenWeek) && now > etWallToEpoch(seenWeek, 0) + 8 * DAY) await dbDelete(ictx, `pushServer/schedSeen/${camp}`);
+
+    // Make the schedule-change baseline before the first alert needs it: with none (or one for another week) the
+    // first ticked change of camp week would only make it and tell nobody. Inside the camp window only, never
+    // over an existing baseline for this week (an ETag-conditional put against what we just read).
+    try {
+      const sched = await dbGet(ictx, `${CAMPS[camp]}/pushSchedule`);
+      const wk = isObj(sched) && isValidWeekStart(sched.weekStart) ? sched.weekStart : '';
+      if (wk && now >= etWallToEpoch(wk, 0) - DAY && now <= etWallToEpoch(wk, 0) + 8 * DAY && ictx.left() >= 4) {
+        const tagged = await dbGetTagged(ictx, `pushServer/schedSeen/${camp}`);
+        const node = isObj(tagged.value) ? tagged.value : null;
+        if (!node || node.weekStart !== wk) await claimSchedSeen(ictx, camp, { weekStart: wk, blocks: slimBlocks(sched.blocks) }, tagged.etag);
+      }
+    } catch (e) { if (!(e instanceof BudgetError)) console.warn('camp-alerts: schedule baseline', e && e.message); }
+
     // Device records of people no longer on the member list. NEVER when the
     // list reads empty: that is a read problem, not a camp with no staff, and
     // acting on it would switch off everybody's alerts.
@@ -2269,11 +2707,13 @@ Object.defineProperty(handler, '_test', {
     b64urlEncode, b64urlDecode, utf8, timeKey, timeFromKey, clip,
     emailKey, identityFromKey, identityKeyFromClaims, memberName, normalizePrefs, deviceTarget,
     chatRecipients, alertRecipients, blockRecipients,
-    etWallToEpoch, etOffsetMs, formatEtTime, isValidWeekStart, addDaysYmd, cronWindow, dueBlocks,
+    etParts, etWallToEpoch, etOffsetMs, formatEtTime, isValidWeekStart, addDaysYmd, cronWindow, dueBlocks,
     makePayload, chatPayload, alertPayload, blockPayload, testPayload,
     verifyIdToken, adminToken, ensureVapid, vapidAuthorization, encryptPayload, ephemeralKey,
     deliverJobs, packBatches, drainBatch, classifyPushStatus, BudgetError, HttpError,
     pushHostAllowed, memberDevices, mentionedAsWord, memberNamedIn, teamNamedIn, verifiedMentions,
+    TEAM_SHORT_DEFAULTS, cleanShort,
+    slimBlocks, blockIdStyle, headLabel, clockMin, etYmd, scheduleChanges, windowScheduleItems, followsChange, scheduleLine, scheduleDigest, scheduleRecipients,
     MAX_DEVICES_PER_MEMBER, PUSH_HOST_SUFFIXES,
   },
 });

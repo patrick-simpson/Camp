@@ -52,6 +52,22 @@ test('etWallToEpoch agrees with the alert sender across three years of days and 
   assert.ok(checked > 16000);
 });
 
+// The schedule-change alerts (Step 26) read "today" and "tomorrow" off the sender's etParts and the offset behind it — the
+// same functions etWallToEpoch is built from — so they are held to camp-core's across a week either side of every DST edge
+// and a sample of the rest of three years.
+test('etParts and etOffsetMs agree with the alert sender across the DST edges and three years', async () => {
+  const W = (await importModule('../push-worker/worker.js')).default._test;
+  const edges = [Date.UTC(2026, 2, 8, 7), Date.UTC(2026, 10, 1, 6), Date.UTC(2027, 2, 14, 7), Date.UTC(2027, 10, 7, 6), Date.UTC(2028, 2, 12, 7), Date.UTC(2028, 10, 5, 6)];
+  const instants = [];
+  edges.forEach((edge) => { for (let m = -3 * 60; m <= 3 * 60; m += 5) instants.push(edge + m * 60000); });
+  for (let t = Date.UTC(2026, 0, 1); t < Date.UTC(2029, 0, 1); t += 3 * 3600000 + 17 * 60000 + 11000) instants.push(t);
+  instants.forEach((ms) => {
+    assert.deepEqual(W.etParts(ms), etParts(ms), 'etParts at ' + new Date(ms).toISOString());
+    assert.equal(W.etOffsetMs(ms), etOffsetMs(ms), 'etOffsetMs at ' + new Date(ms).toISOString());
+  });
+  assert.ok(instants.length > 8000);
+});
+
 // ── The double-points window ─────────────────────────────────────────
 
 const LEGACY_START = ISO('2026-07-23T21:00:00Z');

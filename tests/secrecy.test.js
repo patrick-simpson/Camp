@@ -18,6 +18,12 @@
 
 installSinks();
 const SINKS = __sinkRec;
+
+// The wall clock is pinned (a ?now= preview: Wednesday 10:00 AM camp time, inside the games block). These suites scan every
+// string the app writes for a signed number, and the Now card says "Running over · +10 min" in a real overrun hour of the real
+// clock, which is a time and not a point: loosening the pattern to ignore it would also let a real "+5" slip, so the suite
+// pins the time instead and never depends on the hour it runs.
+location.search = '?now=3-1000';
 const hostDoc = document;
 
 // What a counselor must never read: points, a place, a signed delta, a gap.
@@ -118,6 +124,9 @@ function openGameAsViewer(gameId) {
 
 // ── The guard ────────────────────────────────────────────────────────
 
+// The seeded pass boots its own fresh contexts seeded too, so a hint-painted first frame is checked over the edited-here week as well.
+const SECRECY_SEEDED = scheduleIsShared();
+
 test('standingsVisible is true for a director only, and a role that has not resolved is not one', () => {
   setMemberRole('editor');
   assert.ok(standingsVisible());
@@ -198,44 +207,74 @@ test('a full viewer renderAll with the guard throwing completes and leaks nothin
 
 test('POSITIVE CONTROL: the same render as a director does hit the patterns (the recorder is not blind)', () => {
   seedWeek();
+  state.ui.tab = 'games'; // the standings live on the Games tab, and only the visible tab renders
   setMemberRole('editor');
   renderAll();
   const found = leaksIn(__domSweep());
-  assert.ok(found.length >= 3, 'a director\'s home carries points, places and the rest: ' + found.length);
-  assert.ok(found.some((f) => f.startsWith('points')), 'the follow card says pts');
-  assert.ok(found.some((f) => f.startsWith('an ordinal place')), 'and names a place');
-  assert.ok(found.some((f) => f.startsWith('a signed number')), 'the ledgers carry signed numbers');
+  assert.ok(found.length >= 3, 'a director\'s Games standings carry places, awarded points and the gap sentence: ' + found.length);
+  assert.ok(found.some((f) => f.startsWith('an ordinal place')), 'the standings say who is 1st');
+  assert.ok(found.some((f) => f.startsWith('a signed number')), 'and the points Award points added (+5 awarded)');
+  assert.ok(found.some((f) => f.startsWith('a gap word')), 'and the gap sentence says who trails');
+  // The bare "points" pattern needs a dynamic sentence sink (a toast): prove it and the place / gap patterns bite there too.
+  assert.ok(leaksIn([{ kind: 'toast', text: 'Foxes are in 2nd place' }]).some((f) => f.startsWith('an ordinal place')), 'the place pattern bites');
+  assert.ok(leaksIn([{ kind: 'toast', text: 'Maples trail the Foxes' }]).some((f) => f.startsWith('a gap word')), 'the gap pattern bites');
   // and the log half: a director\'s point toast lands in the sinks
   const toast = record(() => notifyPointChanges([{ team: state.teams[0], delta: 7, total: 23 }]));
   assert.ok(leaksIn(toast).length >= 1, 'a director\'s point toast is caught by the recorder');
 });
 
-test('a viewer\'s standings table and ledgers are emptied, not just hidden', () => {
+test('a viewer\'s standings list and gap sentence are emptied, not just hidden — from the Games tab and from any other tab', () => {
   seedWeek();
-  const tbody = document.getElementById('standings-tbody');
-  const bonus = document.getElementById('bonus-body');
+  const list = document.getElementById('gs-list');
+  const gap = document.getElementById('gs-gap');
+  state.ui.tab = 'games'; // the standings live on the Games tab, and only the visible tab renders
   setMemberRole('editor');
   renderAll();
-  assert.ok(tbody.innerHTML.length > 100, 'precondition: a director\'s table has rows');
-  assert.ok(bonus.innerHTML.length > 50, 'and a ledger');
+  assert.ok(list.innerHTML.length > 100, 'precondition: a director\'s list has rows');
+  assert.ok(gap.innerHTML.length > 10, 'and a gap sentence');
   asViewer(() => renderAll()); // the role flip: a demoted editor's next render
-  assert.equal(tbody.innerHTML, '', 'the standings root is emptied');
-  assert.equal(bonus.innerHTML, '', 'the quick-points root is emptied');
-  assert.equal(document.getElementById('catchup-hint').innerHTML, '', 'and the catch-up sentence');
-  assert.equal(document.getElementById('catchup-hint').hidden, true);
+  assert.equal(list.innerHTML, '', 'the standings root is emptied');
+  assert.equal(gap.innerHTML, '', 'and the gap sentence');
+  assert.equal(gap.hidden, true);
+  // The same flip seen from ANOTHER tab: the Games panel renders only while it is showing, so the empty-out must not depend on it
+  // (runStandingsSideEffects, which runs on every pass, does it).
+  setMemberRole('editor');
+  renderAll();
+  assert.ok(list.innerHTML.length > 100, 'the director\'s list is back');
+  state.ui.tab = 'more';
+  asViewer(() => renderAll());
+  assert.equal(list.innerHTML, '', 'emptied from the More tab too: a role flip never leaves the standings in a node');
+  assert.equal(gap.innerHTML, '');
+  state.ui.tab = 'now';
+  // the quick-points sheet's own words go too (the team it was opened for, its place and points)
+  setMemberRole('editor');
+  state.ui.tab = 'games';
+  renderAll();
+  gamesOpenQuick('t1', null);
+  renderQuickSheet();
+  assert.ok(/point/.test(document.getElementById('qp-now').textContent), 'precondition: the sheet says "… points so far"');
+  asViewer(() => renderAll());
+  assert.equal(document.getElementById('qp-now').textContent, '', 'a demoted director\'s quick-points sheet says nothing');
+  assert.equal(gamesQuickReady(), false, 'and cannot open for a team');
+  state.ui.tab = 'now';
 });
 
-test('role flip: a demoted director\'s next render drops every editor-only number, a promoted one gets them', () => {
+test('role flip: a demoted director\'s next render drops every editor-only control and number from Now, a promoted one gets them', () => {
   seedWeek();
   setMemberRole('editor');
-  renderAll();
-  const card = document.getElementById('follow-team-card');
-  assert.ok(/pts/.test(card.innerHTML) && /place/.test(card.innerHTML), 'a director\'s team card carries rank and points');
-  asViewer(() => renderAll());
-  assert.notOk(/pts|place|\d+(st|nd|rd|th)/i.test(card.innerHTML.replace(/<[^>]+>/g, ' ')), 'a counselor\'s carries neither: ' + card.innerHTML.replace(/\s+/g, ' ').slice(0, 200));
-  assert.ok(card.innerHTML.includes(teamName('t1')), 'but it is still the team card');
+  const gb = nowBlocks(3).find((x) => x.kind === 'games' && gamesForBlock(3, x.b).length);
+  assert.ok(gb, 'precondition: a Wednesday block with games');
+  const paint = () => renderNow(nowModel({ now: { dow: 3, minutes: gb.b.start + 5 }, ms: serverNow() }));
+  const body = document.getElementById('now-card-body');
+  paint();
+  assert.ok(/data-score-game/.test(body.innerHTML), 'a director\'s games card carries Score');
+  asViewer(paint);
+  assert.notOk(/data-score-game/.test(body.innerHTML), 'a counselor\'s card has no Score');
+  assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: body.innerHTML }]), [], 'and no number');
+  assert.ok(/class="gr"/.test(body.innerHTML), 'but it is still the games card');
   setMemberRole('editor');
-  assert.ok(/pts/.test(card.innerHTML), 'promoted again: the numbers come back');
+  paint();
+  assert.ok(/data-score-game/.test(body.innerHTML), 'promoted again: Score comes back');
 });
 
 test('the hide switches on the two secret cards are gone, and nothing un-hides them', () => {
@@ -250,7 +289,14 @@ test('the hide switches on the two secret cards are gone, and nothing un-hides t
   assert.notOk(state.meta.hiddenCards.bonus);
   const html = readFixture('../index.html');
   assert.notOk(/data-hide-card="standings"/.test(html) || /data-hide-card="bonus"/.test(html), 'no switch markup for them');
-  assert.ok((html.match(/Counselors can't see this/g) || []).length === 2, 'each carries the note instead');
+  // The standings panel is the one secret section left on the Games tab; it carries the note instead of a switch (the quick-points
+  // CARD left with Step 18: quick points are a sheet opened from a standings row, so they are as secret as the panel).
+  const markup = html.replace(/<!--[\s\S]*?-->/g, ''); // the comments describe the page; the markup is the page
+  assert.equal((markup.match(/Counselors can't see this/g) || []).length, 0, 'the old cards, which said it in straight quotes, are gone');
+  assert.equal((markup.match(/Counselors can’t see this/g) || []).length, 1, 'one panel says it');
+  const panel = html.slice(html.indexOf('<section id="games-live"'), html.indexOf('</section>', html.indexOf('<section id="games-live"')));
+  assert.ok(/data-card="standings"/.test(panel) && /Counselors can’t see this/.test(panel), 'and it is the panel that carries data-card="standings"');
+  assert.notOk(/data-card="bonus"/.test(html.replace(/<!--[\s\S]*?-->/g, '')), 'there is no quick-points card left to hide');
   // and a viewer's applyCardVisibility hides both cards
   const cards = {};
   const realQuery = document.querySelector;
@@ -269,13 +315,18 @@ test('the hide switches on the two secret cards are gone, and nothing un-hides t
 
 // ── Each viewer surface (§4.12 rows) ─────────────────────────────────
 
-test('row 5: the follow card has no rank pill and no points for a counselor', () => {
+test('row 5: the Now card, its moment and the rows under it carry no rank and no points for a counselor', () => {
   seedWeek();
-  const card = document.getElementById('follow-team-card');
-  asViewer(() => renderFollowCard());
-  const text = card.innerHTML.replace(/<[^>]+>/g, ' ');
-  assert.ok(!/place|pts|follow-rank-pill|follow-points/.test(card.innerHTML), 'no rank markup at all');
-  assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: card.innerHTML }]), [], text.trim());
+  setMemberRole('editor');
+  renderAll(); // a director's page first, so every node holds director markup: the flip must clear it
+  // Bible study, a games block, lunch, the cleanup window after it, the afternoon and the evening of a Wednesday.
+  const times = [9 * 60 + 10, 10 * 60 + 30, 12 * 60 + 10, 12 * 60 + 40, 15 * 60, 19 * 60];
+  const out = record(() => asViewer(() => {
+    times.forEach((minutes) => renderNow(nowModel({ now: { dow: 3, minutes }, ms: serverNow() })));
+  }));
+  assert.ok(out.length > 10, 'the recorder is live: ' + out.length + ' sink writes seen');
+  assert.deepEqual(leaksIn(out), []);
+  assert.deepEqual(leaksIn(__domSweep()), [], 'markup left in a node after the flip');
 });
 
 test('row 6: a counselor hears no point change, a director still does', () => {
@@ -385,15 +436,16 @@ test('rows 9 and 10: verse shows the verse and nothing else, cleanup shows the r
   const cleanup = document.getElementById('cleanup-body');
   asViewer(() => { renderMemoryVerse(); renderMealCleanup(); });
   assert.ok(/verse-day-card/.test(verse.innerHTML), 'the verse text is there');
-  assert.notOk(/pts-grid|pts-row|pts-btn|\+\d/.test(verse.innerHTML), 'no per-team rows or "+N": ' + verse.innerHTML.replace(/\s+/g, ' ').slice(0, 160));
+  assert.notOk(/pts-grid|pts-row|pts-btn|aw-pt|aw-row|\+\d/.test(verse.innerHTML), 'no per-team rows or "+N": ' + verse.innerHTML.replace(/\s+/g, ' ').slice(0, 160));
   assert.ok(/cleanup-meal-row/.test(cleanup.innerHTML), 'the rota is there');
   assert.notOk(/cleanup-meal-pts|bonus-ledger|bonus-item|\+\d/.test(cleanup.innerHTML), 'no "+N" badge, no ledger');
   setMemberRole('editor');
   renderMemoryVerse(); renderMealCleanup();
   // Cleanup buttons sit on a rota team, so they only exist where the day has
   // one — senior's rota is all TBA until it is filled in.
-  const rotaSet = ['Breakfast', 'Lunch', 'Supper'].some((m) => cleanupAssigned(cleanupDay, m));
-  assert.ok(/pts-btn/.test(verse.innerHTML) && (!rotaSet || /pts-btn/.test(cleanup.innerHTML)), 'a director keeps the award buttons');
+  const rotaSet = ['Breakfast', 'Lunch', 'Supper'].some((m) => cleanupTeams(cleanupDay, m).length);
+  // The real keys are Award points' `.aw-pt` (the old pin matched "pts-btn" inside the wrapper's "pts-btns" and proved nothing about a key).
+  assert.ok(/class="aw-pt"/.test(verse.innerHTML) && (!rotaSet || /class="aw-pt"/.test(cleanup.innerHTML)), 'a director keeps the award buttons');
 });
 
 test('rows 11 and 12: a finished game shows its winners without "+N pts", a live tally shows no suggested medals', () => {
@@ -402,18 +454,22 @@ test('rows 11 and 12: a finished game shows its winners without "+N pts", a live
   const g = state.config.games.find((x) => state.results[x.id]);
   asViewer(() => { openGameAsViewer(g.id); renderGameView(); });
   assert.ok(entry.innerHTML.includes(teamName(state.results[g.id].medals.gold)), 'the gold winner is named');
-  assert.notOk(/medal-points|pts/.test(entry.innerHTML), 'but not what it is worth: ' + entry.innerHTML.replace(/\s+/g, ' ').slice(0, 200));
+  assert.notOk(/medal-points|gres-pts|pts|\+\d/.test(entry.innerHTML), 'but not what it is worth: ' + entry.innerHTML.replace(/\s+/g, ' ').slice(0, 200));
+  assert.notOk(/game-saved|game-change/.test(entry.innerHTML), 'and none of the director\'s saved line or Change button');
   setMemberRole('editor');
   openGameAsViewer(g.id); renderGameView();
-  assert.ok(/medal-points/.test(entry.innerHTML) && /\+\d+ pts/.test(entry.innerHTML), 'a director\'s result keeps the chips');
+  // CHANGED ON PURPOSE (Step 18, build session 2): the saved result is games-ui.js's list (mockup 14b), where what a medal is worth is
+  // the "+7" column (.gres-pts) rather than the old "+7 pts" chip (.medal-points). Still a director's alone.
+  assert.ok(/gres-pts">\+\d+</.test(entry.innerHTML), 'a director\'s result keeps what each medal is worth');
   if (live) {
     asViewer(() => { openGameAsViewer(live.id); renderGameView(); });
-    assert.ok(/lw-rank-list/.test(entry.innerHTML), 'the live scores are public');
+    assert.ok(/class="lb-r"/.test(entry.innerHTML), 'the live scores are public: the board\'s own rows, not just its wrapper');
     assert.notOk(/live-watch-suggest|Suggested|🥇/.test(entry.innerHTML), 'but no suggested winners before a director saves');
-    const home = asViewer(() => liveHomeTallyCard(live) + tallyBoardHTML(live));
-    assert.notOk(/medals ready|🥇/.test(home), 'nor on the home cards');
+    const nowBoard = asViewer(() => nowBoardHtml(nowLiveBoard(nowCtx(), live)));
+    assert.ok(/class="lb"/.test(nowBoard), 'the live row on Now carries the scores');
+    assert.notOk(/medals ready|🥇|lb-pl/.test(nowBoard), 'but no suggested winners and no places on Now');
     setMemberRole('editor');
-    assert.ok(/medals ready/.test(liveHomeTallyCard(live)), 'a director still sees them');
+    assert.ok(/lb-pl/.test(nowBoardHtml(nowLiveBoard(nowCtx(), live))), 'a director still sees the places');
   }
 });
 
@@ -435,28 +491,26 @@ function liveTallyUnderTest() {
 
 test('the live tally: a counselor gets the teams in roster order with no numerals, no podium and no leader', () => {
   const live = liveTallyUnderTest();
-  const rosterNames = state.teams.map((t) => teamName(t.id));
+  const rosterNames = state.teams.map((t) => nowTeamWord(t.id)); // what a Now row calls a team
   const at = (html) => rosterNames.map((n) => html.indexOf(n));
   const ascending = (xs) => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]));
   setMemberRole('editor');
-  const board = tallyBoardHTML(live);
-  assert.ok(/board-tally-podium/.test(board) && /board-tally-rank">\s*🥇/.test(board), 'positive control: a director sees the medals and the podium');
+  const board = nowBoardHtml(nowLiveBoard(nowCtx(), live));
+  assert.ok(/data-ranked/.test(board) && /lb-pl/.test(board), 'positive control: a director sees the live order and its places');
   assert.notOk(ascending(at(board)), 'a director sees the live order, which is not the roster order here');
-  const viewer = asViewer(() => tallyBoardHTML(live));
+  const viewer = asViewer(() => nowBoardHtml(nowLiveBoard(nowCtx(), live)));
   assert.ok(ascending(at(viewer)), 'a counselor sees the roster order');
   assert.ok(rosterNames.every((n) => viewer.includes(n)), 'every team is still on the board');
-  assert.notOk(/board-tally-podium/.test(viewer), 'no podium for a counselor');
-  assert.notOk(/board-tally-rank">\s*\d/.test(viewer), 'no numerals in the rank column');
+  assert.notOk(/data-ranked|lb-pl/.test(viewer), 'no places for a counselor');
+  assert.ok(/team order/.test(viewer), 'and the caption says it is not a ranking');
   const takeover = asViewer(() => { openGameAsViewer(live.id); renderGameView(); return document.getElementById('entry-area').innerHTML; });
-  assert.ok(/lw-rank-list/.test(takeover), 'the game takeover still shows the live scores');
+  assert.ok((takeover.match(/class="lb-r"/g) || []).length === state.teams.length, 'the game takeover still shows the live scores, a row per team');
   assert.notOk(/lw-podium|lw-rank">\s*\d/.test(takeover), 'and no places, numerals or podium');
   assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: viewer }, { kind: 'innerHTML', text: takeover }]), []);
-  const card = asViewer(() => liveHomeTallyCard(live));
   const n = state.teams.length; // 6 junior, 4 senior (this file also runs as senior)
-  assert.ok(/Scores so far/.test(card) && card.includes(`${n}/${n} teams in`), 'the home card counts the teams in');
-  assert.notOk(/Leader|Fastest|lh-nums|medals ready/.test(card), 'and names no leader: ' + card.replace(/\s+/g, ' ').slice(0, 160));
-  setMemberRole('editor');
-  assert.ok(/Leader/.test(liveHomeTallyCard(live)), 'a director still sees the leader');
+  const model = asViewer(() => nowLiveBoard(nowCtx(), live));
+  assert.equal(model.cap, `${n} of ${n} in`, 'the live row counts the teams in');
+  assert.notOk(model.ranked || 'place' in model.rows[0], 'and names no leader');
 });
 
 // A device whose role came only from the hint (the member record has not answered)
@@ -476,12 +530,14 @@ test('a hint-painted director with no answer yet gets no standings anywhere, and
       log = record(() => renderAll());
     } finally { setStandingsGuardThrows(false); }
     assert.deepEqual(leaksIn(log), [], 'no sink carries a number');
-    assert.equal(document.getElementById('standings-tbody').innerHTML, '', 'no standings table');
+    assert.equal(document.getElementById('gs-list').innerHTML, '', 'no standings list');
     setMemberRole('editor');
     assert.equal(standingsVisible(), true, 'the answer confirms the director');
     assert.ok(env.saves() > 0, 'and a confirmed director writes the seed');
+    state.ui.tab = 'games';
     renderAll();
-    assert.ok(/class="points-col">\d/.test(document.getElementById('standings-tbody').innerHTML), 'the table fills in');
+    assert.ok(/class="gs-pts">\d/.test(document.getElementById('gs-list').innerHTML), 'the list fills in');
+    state.ui.tab = 'now';
   } finally { env.restore(); }
 });
 
@@ -516,10 +572,10 @@ test('row 16: the copy no longer promises point alerts to a counselor', () => {
     shown.length = 0;
     setMemberRole('editor');
     toggleNotify();
-    assert.ok(/team's points change/.test(shown[0]), 'a director is still told about points');
+    assert.ok(/team’s points change/.test(shown[0]), 'a director is still told about points');
   } finally { showToast = real; }
   const html = readFixture('../index.html');
-  assert.ok(html.includes("You'll get alerts when your team plays and wins medals."), 'the picker says it plainly');
+  assert.ok(html.includes("You’ll get alerts when your team plays and wins medals."), 'the picker says it plainly');
   assert.notOk(/when they score/.test(html + readFixture('../app.js')), 'no "when they score" anywhere');
 });
 
@@ -556,15 +612,15 @@ test('a demoted director\'s change history is shut and its rows cleared on the n
 test('the readers that had no guard of their own now start with one: a viewer reaching them throws under test', () => {
   seedWeek();
   asViewer(() => {
-    assert.throws(() => startOfDayRanks([{ id: 't0' }]), 'startOfDayRanks');
+    assert.throws(() => startOfDayPlaces(), 'startOfDayPlaces');
     assert.throws(() => snapshotForLog({}), 'snapshotForLog');
-    assert.throws(() => renderCatchupHint([{ id: 't0' }, { id: 't1' }], {}), 'renderCatchupHint');
+    assert.throws(() => gamesStandings({ points: true, director: false }), 'the standings model: its own guard is the readers it calls');
     // recordPointHistory no longer reads points for a viewer at all: it returns before building a snapshot.
     assert.doesNotThrow(() => recordPointHistory({}, false), 'recordPointHistory returns before any read');
   });
   setStandingsGuardThrows(false);
   assert.deepEqual(snapshotForLog({}), { points: {}, results: {}, bonuses: {} }, 'in production a viewer gets an empty snapshot');
-  assert.deepEqual(startOfDayRanks([{ id: 't0' }]), {}, 'and no day baseline');
+  assert.equal(startOfDayPlaces(), null, 'and no day baseline');
   assert.equal(clPrevSnap, null, 'a viewer keeps no change baseline');
 });
 
@@ -595,14 +651,22 @@ test('a director demoted with a live tally and a placement game open loses every
   assert.ok(seen > 0, 'precondition: a director\'s open games carry entry controls');
 });
 
-test('the quick-points card for a counselor is empty even when called directly', () => {
+test('quick points for a counselor: no sheet opens, no write happens, and the model\'s standings are not there even when called directly', () => {
   seedWeek();
-  const wrap = document.getElementById('bonus-body');
   setMemberRole('editor');
-  renderBonuses();
-  assert.ok(/bonus-ledger/.test(wrap.innerHTML));
-  asViewer(() => renderBonuses());
-  assert.equal(wrap.innerHTML, '');
+  gamesOpenQuick('t2', null);
+  assert.equal(gamesQuickReady(), true, 'a director\'s tap on a team opens it');
+  assert.ok(gamesQuickInfo('t2'), 'and it knows the team\'s place');
+  asViewer(() => {
+    assert.equal(gamesQuickReady(), false, 'a counselor\'s sheet is not allowed');
+    assert.equal(shellSheetAllowed('quick'), false);
+    assert.equal(shellSheetAllowed('standings'), false);
+    assert.equal(gamesQuickInfo('t2'), null, 'it says nothing about a team');
+    const before = Object.keys(state.bonuses).length;
+    assert.equal(gamesQuickAdd('t2', 3, 'x').problem, 'not-director');
+    assert.equal(Object.keys(state.bonuses).length, before, 'and writes nothing');
+    assert.equal(gamesModel({ now: { dow: 3, minutes: 630 } }).standings, null);
+  });
 });
 
 // ── The first frame ──────────────────────────────────────────────────
@@ -614,12 +678,15 @@ test('hint-paint: a counselor phone booting from a cached week with points paint
   assert.ok(medalCounts().t0.points > 0);
   const vm = nodeRequire('vm');
   const { makeContext } = nodeRequire('./harness.js');
-  const boot = makeContext({ storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'viewer', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer' }) } });
+  const boot = makeContext({ seeded: SECRECY_SEEDED, storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'viewer', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer' }) } });
   boot.sandbox.installSinks();
   const get = (expr) => vm.runInContext(expr, boot.ctx);
   // applyTheme dispatches an event on window; the stub window has neither
   get('globalThis.CustomEvent = function (type, init) { this.type = type; this.detail = init && init.detail; }; globalThis.dispatchEvent = function () { return true; }');
   get('setStandingsGuardThrows(true)');
+  // A fresh context has its own location: pin the clock here too (see the top of this file), or a real running-over hour
+  // ("Still on Evening competition · +10 min") reads as a signed number.
+  get("location.search = '?now=3-1000'");
   boot.sandbox.__sinkRec.on = true;
   assert.doesNotThrow(() => get('boot()'), 'the first frame of a viewer never reaches a points reader');
   boot.sandbox.__sinkRec.on = false;
@@ -636,11 +703,12 @@ test('hint-paint, editor: a stale director hint on a phone whose database cannot
   const cache = JSON.stringify(state);
   const vm = nodeRequire('vm');
   const { makeContext } = nodeRequire('./harness.js');
-  const boot = makeContext({ storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'editor' }) } });
+  const boot = makeContext({ seeded: SECRECY_SEEDED, storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'editor' }) } });
   boot.sandbox.installSinks();
   const get = (expr) => vm.runInContext(expr, boot.ctx);
   get('globalThis.CustomEvent = function (type, init) { this.type = type; this.detail = init && init.detail; }; globalThis.dispatchEvent = function () { return true; }');
   get('setStandingsGuardThrows(true)');
+  get("location.search = '?now=3-1000'"); // the fresh context's own clock pin (see the viewer case above)
   boot.sandbox.__sinkRec.on = true;
   assert.doesNotThrow(() => get('boot()'), 'the first frame of a hinted director reaches no points reader');
   boot.sandbox.__sinkRec.on = false;

@@ -1,24 +1,30 @@
-// The week-config first-pull gate (setup-rebuild-spec S0h, scoring#3). The
-// games/days catalog syncs on its own node as a whole-object last-write-wins,
-// and a phone that edits it BEFORE its first config snapshot would see the edit
-// silently replaced by that snapshot (or, worse, push its stale catalog over
-// everyone's). So until the first snapshot lands: nothing is pushed (the
-// null-seed aside) and the games/days builder is read-only. Driven against the
-// in-memory Realtime Database in tests/fake-rtdb.js, with the app's real
-// listener (attachConfigListener).
+// The week-config first-pull gate (setup-rebuild-spec S0h, scoring#3), as the
+// config engine v2 (step 9, tests/config-sync.test.js) leaves it. Nothing is pushed
+// before the first config snapshot has been PROCESSED (the null-seed aside), and a
+// device with no confirmed baseline (_cfgBase — its first run of the engine) keeps the
+// games/days builder read-only until then, because nothing could tell its edit apart
+// from the cached copy the snapshot replaces. A device WITH a baseline may edit
+// meanwhile: tests/config-sync.test.js covers the merge. Driven against the in-memory
+// Realtime Database in tests/fake-rtdb.js, with the app's real listener
+// (attachConfigListener).
 
 const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js');
 const CONFIG_PATH = 'campScoreboard/config';
-const wait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
+// (Waits are for the app, not the clock: waitUntil / waitQuiet in tests/harness.js.)
 
-// Sync configured (so the gate applies), a fake database, the real listener.
+// Sync configured (so the gate applies), a fake database, the real listener. The
+// state engine's first pull has landed (remoteReady) unless a case says otherwise: the
+// first config snapshot waits for it (its epoch lives in state/meta).
 function gateSetup(opts) {
   freshState();
   setMemberRole('editor');
   window.FIREBASE_CONFIG = { apiKey: 'test' };
   configReady = false;
+  cfgFirstPending = null;
+  remoteReady = !(opts && opts.stateFirst === false);
   syncDenied = false;
   pendingConfigWrites = 0;
+  delete state._cfgBase;
   const db = makeFakeRtdb(Object.assign({ manualFirstSnapshot: true }, opts));
   fbConfigRef = db.ref(CONFIG_PATH);
   attachConfigListener();
@@ -29,19 +35,18 @@ function gateTeardown() {
   delete window.FIREBASE_CONFIG;
   fbConfigRef = null;
   configReady = false;
+  cfgFirstPending = null;
+  remoteReady = false;
   syncDenied = false;
   pendingConfigWrites = 0;
-  configFirstHeld = false;
-  pendingRemoteConfig = null;
+  configPushOwed = false;
+  delete state._cfgBase;
+  delete state._cfgNotes;
   dataEditPending = false;
+  document.activeElement = null;
   clearTimeout(pushConfigTimer);
   pushConfigTimer = null;
   setMemberRole(null);
-}
-
-// A card that records what the builder wrote into it.
-function builderCard() {
-  return { innerHTML: '', __view: undefined, querySelectorAll: () => [], querySelector: () => null };
 }
 
 function withToasts(fn) {
@@ -64,58 +69,20 @@ test('before the first config snapshot nothing is pushed, even when flushed', ()
   } finally { gateTeardown(); }
 });
 
-test('the games and days tabs are read-only placeholders until the first snapshot', () => {
-  gateSetup();
-  try {
-    assert.equal(configEditable(), false);
-    ['games', 'days'].forEach((key) => {
-      const card = builderCard();
-      renderSettingsSection(key, card);
-      assert.ok(card.innerHTML.includes('Loading the games list'), key + ': ' + card.innerHTML);
-      ['add-day-btn', 'game-row-main', 'reorder-btn', 'day-delete-btn', 'gd-save-btn', 'quick-game'].forEach((hook) =>
-        assert.notOk(card.innerHTML.includes(hook), key + ' has no ' + hook));
-    });
-    // Even with the editor open from before the reload (state.ui persists), the
-    // games tab shows the placeholder, and no draft is built behind it.
-    state.ui.editGameId = state.config.games[0].id;
-    gameDraft = null; gameDraftFor = null;
-    const card = builderCard();
-    renderSettingsSection('games', card);
-    assert.ok(card.innerHTML.includes('Loading the games list'));
-    assert.equal(gameDraft, null, 'no draft is built while loading');
-    // The other tabs are state, not config, and are not gated.
-    const teams = builderCard();
-    renderSettingsSection('teams', teams);
-    assert.notOk(teams.innerHTML.includes('Loading the games list'));
-  } finally { state.ui.editGameId = null; gateTeardown(); }
-});
-
-test('no builder edit is possible before the first snapshot', () => {
+test('no catalog edit is possible before the first snapshot', () => {
   gateSetup();
   try {
     withToasts((toasts) => {
-      // A day with no games, so deleteDay can only be refused by the gate itself
-      // (a day with games refuses on its own and would hide a missing guard).
-      state.config.days.push({ id: 'd-empty', name: 'Empty day', dow: 6, note: '' });
       const before = JSON.stringify({ c: state.config, r: state.results, b: state.brackets });
-      const id = state.config.games[0].id;
-      state.ui.editGameId = id;
-      ensureGameDraft();
-      gameDraft.name = 'Changed';
-      saveGameDraft();
-      duplicateGame();
-      deleteGame(id);
-      deleteDay('d-empty');
-      restoreDefaults();
+      assert.equal(configEditable(), false);
+      assert.equal(configLocked(), true, 'the guard every catalog writer asks says no, and says why');
       tryImport(JSON.stringify({ config: defaultConfig() }));
-      state.ui.editGameId = null;
       startQuickGame();
+      assert.equal(typeof gmOpenQuick === 'function' && gmUi.open, null, 'the ⚡ quick game did not open a sheet');
       assert.equal(JSON.stringify({ c: state.config, r: state.results, b: state.brackets }), before, 'nothing changed');
-      assert.equal(state.ui.editGameId, null, 'the ⚡ quick game did not open an editor');
-      assert.ok(state.config.days.some((d) => d.id === 'd-empty'), 'the empty day survived deleteDay');
-      assert.ok(toasts.length >= 5 && toasts.every((t) => /still loading/.test(t)), toasts.join(' | '));
+      assert.ok(toasts.length >= 3 && toasts.every((t) => /still loading/.test(t)), toasts.join(' | '));
     });
-  } finally { state.ui.editGameId = null; gameDraft = null; gameDraftFor = null; gateTeardown(); }
+  } finally { gateTeardown(); }
 });
 
 test('the first snapshot opens the gate, adopts the server catalog, and refreshes an open builder', () => {
@@ -131,6 +98,7 @@ test('the first snapshot opens the gate, adopts the server catalog, and refreshe
     remote.updatedAt = '2026-12-01T00:00:00.000Z';
     db.serverSet(CONFIG_PATH, remote);
     state.ui.view = 'settings';
+    state.ui.builderScreen = 'games';
     db.deliverFirstSnapshots();
     assert.equal(configReady, true);
     assert.equal(configEditable(), true);
@@ -139,10 +107,11 @@ test('the first snapshot opens the gate, adopts the server catalog, and refreshe
   } finally { renderAll = real; appStarted = wasStarted; state.ui.view = 'home'; gateTeardown(); }
 });
 
-test('a FIRST snapshot parked mid-entry keeps the builder shut until it is applied', () => {
+test('a FIRST snapshot arriving mid-entry is applied AT ONCE; only the repaint waits for the focused field', () => {
   const db = gateSetup();
   const real = renderAll;
-  renderAll = () => {};
+  let renders = 0;
+  renderAll = () => { renders += 1; };
   const wasStarted = appStarted;
   appStarted = true;
   try {
@@ -150,24 +119,21 @@ test('a FIRST snapshot parked mid-entry keeps the builder shut until it is appli
     remote.games = remote.games.slice(0, 3);
     remote.updatedAt = '2026-12-01T00:00:00.000Z';
     db.serverSet(CONFIG_PATH, remote);
-    dataEditPending = true; // a score edit is queued: the snapshot is held, like a focused field
+    dataEditPending = true; // a score edit is queued...
+    document.activeElement = { tagName: 'INPUT' }; // ...and a field has the keyboard
     db.deliverFirstSnapshots();
     assert.equal(configReady, true);
-    assert.ok(pendingRemoteConfig, 'the snapshot is parked');
-    assert.notOk(state.config.games.length === 3, 'state.config is still the stale cached catalog');
-    assert.equal(configEditable(), false, 'a Save now would whole-set that stale catalog over the server\'s');
-    const card = builderCard();
-    renderSettingsSection('games', card);
-    assert.ok(card.innerHTML.includes('Loading the games list'));
-    dataEditPending = false;
-    flushPendingRemoteConfig();
-    assert.equal(state.config.games.length, 3, 'the parked snapshot is applied');
-    assert.equal(configEditable(), true);
-    assert.equal(pendingRemoteConfig, null);
-  } finally { renderAll = real; appStarted = wasStarted; gateTeardown(); }
+    assert.equal(state.config.games.length, 3, 'the data is in state.config straight away (no parked snapshot, no stale catalog)');
+    assert.equal(configEditable(), true, 'so the builder is never shut by a focused field');
+    assert.equal(renders, 0, 'but nothing repaints under the focused field');
+    assert.equal(renderOwed, true, 'the repaint is owed to the idle tick');
+    document.activeElement = null;
+    idleRetryTick();
+    assert.ok(renders >= 1, 'and is paid once focus has left');
+  } finally { renderAll = real; appStarted = wasStarted; renderOwed = false; gateTeardown(); }
 });
 
-test('a LATER snapshot parked mid-entry never shuts an open builder', () => {
+test('a LATER snapshot mid-entry is applied at once too, and never shuts an open builder', () => {
   const db = gateSetup();
   const real = renderAll;
   renderAll = () => {};
@@ -180,9 +146,53 @@ test('a LATER snapshot parked mid-entry never shuts an open builder', () => {
     later.updatedAt = '2027-01-01T00:00:00.000Z';
     later.games = later.games.slice(0, 2);
     db.serverSet(CONFIG_PATH, later);
-    assert.ok(pendingRemoteConfig, 'held, as before');
+    assert.equal(state.config.games.length, 2, 'applied (rebased), not parked');
     assert.equal(configEditable(), true, 'an open game editor must not be swapped for "Loading"');
-  } finally { renderAll = real; gateTeardown(); }
+  } finally { renderAll = real; renderOwed = false; gateTeardown(); }
+});
+
+test('the first snapshot waits for the state engine\'s first pull (its epoch is in state/meta)', () => {
+  const db = gateSetup({ stateFirst: false });
+  try {
+    const remote = JSON.parse(JSON.stringify(state.config));
+    remote.games = remote.games.slice(0, 3);
+    db.serverSet(CONFIG_PATH, remote);
+    db.deliverFirstSnapshots();
+    assert.equal(configReady, false, 'not processed yet: the epoch to compare against is unknown');
+    assert.ok(cfgFirstPending, 'the snapshot is held');
+    assert.equal(configEditable(), false, 'a device with no baseline stays read-only meanwhile');
+    pushConfig();
+    assert.equal(db.log.filter((l) => l.kind === 'transaction').length, 0, 'and nothing is pushed');
+    // The state engine's first pull lands: its handler hands the config snapshot back.
+    handleRemoteSnapshot(syncedSnapshot());
+    assert.equal(remoteReady, true);
+    assert.equal(configReady, true);
+    assert.equal(cfgFirstPending, null);
+    assert.equal(state.config.games.length, 3, 'and it was adopted');
+    assert.equal(configEditable(), true);
+  } finally { gateTeardown(); fbRef = null; }
+});
+
+test('a device with a confirmed baseline may edit before the first snapshot; the merge keeps the edit', async () => {
+  const db = gateSetup();
+  try {
+    const server = JSON.parse(JSON.stringify(state.config));
+    db.serverSet(CONFIG_PATH, server);
+    state._cfgBase = cfgCanon(state.config); // what a returning phone has cached
+    assert.equal(configEditable(), true, 'a baseline can merge an edit made before the snapshot');
+    const id = state.config.games[0].id;
+    const renamed = withToasts(() => {
+      state.config.games[0].name = 'Edited before the snapshot';
+      saveConfig();
+      assert.equal(db.log.filter((l) => l.kind === 'transaction').length, 0, 'still nothing pushed before the first pull');
+      return true;
+    });
+    assert.ok(renamed);
+    db.deliverFirstSnapshots();
+    await waitQuiet();
+    assert.equal(gameById(id).name, 'Edited before the snapshot', 'the edit survived the first snapshot');
+    assert.equal(db.serverGet(CONFIG_PATH).games[0].name, 'Edited before the snapshot', 'and went up');
+  } finally { gateTeardown(); }
 });
 
 test('an identical first snapshot still repaints the builder (applyRemoteConfig alone would not)', () => {
@@ -195,12 +205,13 @@ test('an identical first snapshot still repaints the builder (applyRemoteConfig 
   try {
     db.serverSet(CONFIG_PATH, state.config);
     state.ui.view = 'settings';
+    state.ui.builderScreen = 'games';
     db.deliverFirstSnapshots();
     assert.ok(renders >= 1);
   } finally { renderAll = real; appStarted = wasStarted; state.ui.view = 'home'; gateTeardown(); }
 });
 
-test('after the first snapshot an edit goes up as a whole-config set, and is counted until acknowledged', async () => {
+test('after the first snapshot an edit goes up as a transaction of field ops, and is counted until acknowledged', async () => {
   const db = gateSetup();
   try {
     db.serverSet(CONFIG_PATH, state.config);
@@ -208,7 +219,7 @@ test('after the first snapshot an edit goes up as a whole-config set, and is cou
     db.goOffline(); // a write now stays pending, like the real SDK's offline queue
     state.config.games[0].name = 'Renamed offline';
     saveConfig();
-    await wait(450); // the 400 ms debounce
+    await waitQuiet(); // the 400 ms debounce fires and the (offline) write is queued
     assert.equal(pendingConfigWrites, 1, 'one config write is in flight');
     assert.equal(pendingWritesTotal(), 1);
     assert.equal(pendingWrites, 0, 'the state counter is untouched');
@@ -217,10 +228,12 @@ test('after the first snapshot an edit goes up as a whole-config set, and is cou
     assert.ok(hasUnconfirmedLocalWork(), 'or a sign-out');
     assert.ok(canAdoptRemote(), 'but a scores snapshot is still safe to adopt (state only)');
     db.goOnline();
-    await wait(20);
+    await waitQuiet();
     assert.equal(pendingConfigWrites, 0);
     assert.notOk(reloadBlocked());
     assert.equal(db.serverGet(CONFIG_PATH).games[0].name, 'Renamed offline');
+    assert.ok(db.log.some((l) => l.kind === 'transaction'), 'sent as a transaction');
+    assert.notOk(db.log.some((l) => l.kind === 'set'), 'never a whole-node set()');
   } finally { gateTeardown(); }
 });
 
@@ -239,9 +252,9 @@ test('a refused config write is surfaced, not swallowed, and does not wedge the 
     saveConfig();
     flushPendingPush();
     assert.equal(pendingConfigWrites, 1);
-    await wait(30);
+    await waitQuiet();
     assert.equal(pendingConfigWrites, 0, 'settled on failure too');
-    assert.ok(toasts.some((t) => /Couldn't save the week setup/.test(t)), toasts.join(' | '));
+    assert.ok(toasts.some((t) => /Couldn’t save the week setup/.test(t)), toasts.join(' | '));
   } finally { showToast = real; console.warn = realWarn; gateTeardown(); }
 });
 
@@ -249,7 +262,7 @@ test('an empty config node is seeded by a transaction, once, and never over an e
   const db = gateSetup();
   try {
     db.deliverFirstSnapshots(); // the node is empty
-    await wait(20);
+    await waitQuiet();
     assert.equal(configReady, true);
     assert.ok(db.log.some((l) => l.kind === 'transaction'), 'seeded through a transaction: ' + JSON.stringify(db.log));
     assert.notOk(db.log.some((l) => l.kind === 'set'), 'never a whole-node set');
@@ -264,7 +277,7 @@ test('two phones seeding at once: the loser aborts instead of overwriting the wi
     const winner = { version: 99, updatedAt: '2026-12-01T00:00:00.000Z', sessions: ['Morning'], days: [{ id: 'd1', name: 'Mon', dow: 1 }], games: [] };
     db.contend(CONFIG_PATH, (d) => d.serverSet(CONFIG_PATH, winner)); // the other phone seeds mid-transaction
     db.deliverFirstSnapshots();
-    await wait(30);
+    await waitQuiet();
     assert.equal(db.serverGet(CONFIG_PATH).version, 99, 'the first seed stands');
     assert.equal(pendingConfigWrites, 0);
   } finally { gateTeardown(); }
@@ -276,9 +289,7 @@ test('offline from the start: the first snapshot never comes, and the builder st
     db.goOffline();
     assert.equal(configReady, false);
     assert.equal(configEditable(), false);
-    const card = builderCard();
-    renderSettingsSection('games', card);
-    assert.ok(card.innerHTML.includes('Loading the games list'));
+    assert.equal(configLocked(), true, 'every catalog writer is shut');
   } finally { gateTeardown(); }
 });
 
@@ -287,9 +298,7 @@ test('local-only mode (no sync configured) is never gated', () => {
   setMemberRole('editor');
   assert.ok(!window.FIREBASE_CONFIG);
   assert.equal(configEditable(), true);
-  const card = builderCard();
-  renderSettingsSection('days', card);
-  assert.notOk(card.innerHTML.includes('Loading the games list'));
+  assert.equal(configLocked(), false);
   assert.equal(pendingConfigWrites, 0);
   setMemberRole(null);
 });
@@ -300,7 +309,7 @@ test('a refused config read (access revoked) opens the builder rather than leavi
   console.warn = () => {};
   try {
     db.revokeRead(CONFIG_PATH);
-    await wait(10);
+    await waitUntil(() => syncDenied, 'the refused read to be reported');
     assert.equal(syncDenied, true);
     assert.equal(configEditable(), true, 'no snapshot is coming; the app is already kicking this device out');
     assert.equal(fbConfigRef, null);

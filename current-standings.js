@@ -1,63 +1,45 @@
-// ── current-standings.js — the TV page's script ────────────────────────
-// The big-screen reveal for both camps. It used to be one inline <script> in
-// current-standings.html; it is a file now because the page carries a CSP that
-// refuses inline script. Load order (see the page): firebase-config.js,
-// defaults.js, camp-core.js, reveal-core.js, tv-camp.js, camps.js, then this. It reads the
-// camp profile (`CAMP`, `dbPath`, `lsKey`) and the shared helpers (the
-// double-points window, `liveGameIdSet`, the sanitizers) as globals from those
-// files, and keeps everything of its own inside this one IIFE.
+// ── current-standings.js — the big screen's script ─────────────────────
+// A PUBLIC, READ-ONLY subscriber (redesign §4.11). Anyone with the address can
+// open this page, so it has no account: no sign-in, no Auth SDK, no members read,
+// and it writes NOTHING to the database. It reads exactly three things:
+//
+//   <root>/revealPublic     one listener, both children (`real` and `practice`)
+//   .info/serverTimeOffset  the server's clock (until it arrives nothing is
+//                           painted from the node: a TV with a wrong clock must
+//                           not show a stale reveal or hide a live one)
+//   .info/connected         the status line and the "Reconnecting…" chip
+//
+// and draws whatever reveal-core's tvFrame() says: a pure function of (ctl, pub,
+// server time), so the phone's mini TV, this screen and the tests cannot disagree.
+// It never computes a standing: names, points and places arrive already frozen
+// into the node, one place at a time, and ONLY places a director has shown are in
+// the node at all. With no live reveal it says "Waiting for the directors…".
+//
+// Load order (see the page): the Firebase app + database SDKs, firebase-config.js,
+// defaults.js, camp-core.js, reveal-core.js, tv-camp.js, camps.js, then this. It
+// uses the camp profile (`CAMP`, `dbPath`), camp-core's sanitizers and reveal-core
+// as globals, and keeps everything of its own inside this one IIFE.
 (function () {
   'use strict';
 
-  // The page is typically opened once and left up on a TV for the whole reveal,
-  // so it polls itself for a newer build (checkForUpdate below). The build stamp
-  // lives in the HTML, not here: <meta name="tv-build"> is what this page reads,
-  // and the very same stamp sits in an HTML comment as `var TV_BUILD = '…'` for
-  // pages from before this script moved out of the HTML, which read that text to
-  // decide to reload. Bump BOTH on every edit to the page (CLAUDE.md, deploy step 2).
+  // The page is opened once and left up on a TV, so it polls itself for a newer
+  // build (checkForUpdate below). The build stamp lives in the HTML, not here:
+  // <meta name="tv-build"> is what this page reads, and the very same stamp sits in
+  // an HTML comment as `var TV_BUILD = '…'` for pages from before the script moved
+  // out of the HTML, which read that text to decide to reload. Bump BOTH on every
+  // edit to the page (CLAUDE.md, deploy step 2).
   var buildMeta = document.querySelector('meta[name="tv-build"]');
   var myBuild = (buildMeta && buildMeta.getAttribute('content')) || '';
 
-  // ── Shared with the app, not copied ────────────────────────────
-  // The camp (teams, emoji, crests, database root, storage namespace) comes from
-  // camps.js's CAMP — tv-camp.js picked it from ?camp= before camps.js ran — and
-  // the double-points window, the orphan filter and every sanitizer from
-  // camp-core.js. Only the medal values are still mirrored from app.js.
-  var MEDAL_POINTS = { gold: 7, silver: 5, bronze: 3 }; // mirrors app.js MEDAL_POINTS — keep in sync
-  // Verse recitals and custom bonuses count double inside the week's window
-  // (meal cleanup exempt). This week is the legacy one; a new-year week will
-  // resolve its own window through doubleWindowFor.
-  function bonusCountsDouble(b) { return bonusIsDouble(b, DOUBLE_WINDOW_LEGACY); }
-  // Games count double by their own `messtival` flag, read from the live week
-  // config — the same source the scoreboard uses (a hardcoded list can't know
-  // about games added in the week builder; that is how lauras-drinking-game was
-  // paid single here while the app doubled it, 2026-07-23). Until a config
-  // arrives the camp's built-in catalog stands in, and nothing is filtered.
-  var liveConfig = null;
-  var builtInDoubled = null;
-  function doubledGameIds() {
-    if (liveConfig && liveConfig.games) {
-      var arr = Array.isArray(liveConfig.games)
-        ? liveConfig.games
-        : Object.keys(liveConfig.games).sort().map(function (k) { return liveConfig.games[k]; });
-      var ids = [];
-      arr.forEach(function (g) { if (g && g.messtival && g.id) ids.push(g.id); });
-      return ids;
-    }
-    if (!builtInDoubled) {
-      builtInDoubled = [];
-      try {
-        CAMP.defaultConfig().games.forEach(function (g) { if (g && g.messtival && g.id) builtInDoubled.push(g.id); });
-      } catch (e) { /* no built-in catalog: nothing doubles until the live config lands */ }
-    }
-    return builtInDoubled;
-  }
-
-  var params = new URLSearchParams(location.search);
-  var DEMO = params.has('demo');
-  var FORCE_FINALE = params.has('finale');
+  var HIDDEN_OFFLINE_MS = 60 * 1000;     // a hidden page lets go of its connection after this long (Spark's 100-connection cap)
+  var FEED_RETRY_MS = 30 * 1000;         // a refused listener is dead for good in the SDK: attach again this often
+  var GIVE_UP_CONNECT_MS = 10 * 1000;    // never connected after this long: say so ("Reconnecting…") instead of "Connecting…"
+  var TICK_MS = 30 * 1000;               // a safety re-evaluation; the boundary timer is what normally moves the screen
+  var DOCK_MS = 460;                     // the hero's shrink into the board (CSS .hero.dock)
+  var SDK_RELOAD_MAX = 3;                // a page whose SDK never loaded reloads itself this many times once the network is back
 
   // ── Helpers ────────────────────────────────────────────────────
+  function $(id) { return document.getElementById(id); }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -67,107 +49,137 @@
     var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
-  function isFridayEastern() {
-    if (FORCE_FINALE) return true;
-    try {
-      var wd = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'America/New_York' }).format(new Date());
-      return wd === 'Fri';
-    } catch (e) { return new Date().getDay() === 5; }
+  // A TV has no Calm motion switch (no battery, no More tab): it honours the OS
+  // setting itself (redesign §10.4), read at call time.
+  function reduceMotion() {
+    try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+    catch (e) { return false; }
   }
-  // A team slot's own mascot (camps.js), used when its record carries none.
-  function defaultEmoji(id) { return (CAMP.teamEmoji && CAMP.teamEmoji[id]) || '🏕️'; }
+  // Only writes when the value changed (a TV repaints on every tick; an idle tick must touch nothing).
+  function setText(el, v) { if (el && el.textContent !== v) el.textContent = v; }
+  function setHidden(el, v) { if (el && el.hidden !== v) el.hidden = v; }
+  // A <div> with a class and (optionally) markup that is already escaped.
+  function box(cls, html) {
+    var d = document.createElement('div');
+    d.className = cls;
+    if (html != null) d.innerHTML = html;
+    return d;
+  }
 
-  // Coerce a synced teams value (array, or RTDB object) into an array of
-  // {id, name, emoji}. RTDB can prune/normalize; fall back to the camp's default roster.
-  function normalizeTeams(raw) {
-    var arr = [];
-    if (Array.isArray(raw)) arr = raw.slice();
-    else if (raw && typeof raw === 'object') arr = Object.keys(raw).sort().map(function (k) { return raw[k]; });
-    arr = arr.filter(Boolean);
-    if (!arr.length) {
-      arr = CAMP.defaultTeamNames.map(function (name, i) { return { id: 't' + i, name: name }; });
+  // ── Teams: a team's mark, by id ────────────────────────────────
+  // Names and points come from the node. A mark is drawn by reveal-core's revealMarkSpec in the phones' own
+  // order: the photo a director picked (a small copy that rides in the shown place's entry), else the camp's
+  // shipped shield (junior) or flag (senior), else a tile; a team the new-year setup cleared never falls back
+  // to the printed look. `brand` is a SHOWN place's laundered entry (k, em, pl, ph); Waiting and the intro draw no
+  // mark at all (owner's decisions item 11), so no team's look is public before its place is shown. A database string never
+  // becomes markup or a style: the colour only SELECTS a palette value, the photo is a laundered data address
+  // set as a property, the emoji and the numeral go in as text.
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var PARTY = ['🎉', '🎊', '✨', '⭐'];
+
+  // A colour a director picked for a SHOWN place, as the palette's light value, or ''. The entry's `k` only SELECTS
+  // a swatch (an own-property lookup, so '__proto__' or a style payload selects nothing); the value is the constant's.
+  // A junior shield and a photo do not wear the colour, so it is drawn beside the mark: a rule under the name in the
+  // spotlight and the crowning for every picked colour (one team, one colour), and on the board a bar under a shield or
+  // a photo (the page's CSS: .tn, .em[data-accent]).
+  function accentOf(e) {
+    var k = e && e.k;
+    return typeof k === 'string' && Object.prototype.hasOwnProperty.call(CAMP_TEAM_PALETTE, k) ? CAMP_TEAM_PALETTE[k].l : '';
+  }
+  // A shown team's name as markup, escaped; with its picked colour as a rule under it. The colour is a palette hex,
+  // never a database string, so it may ride a style attribute.
+  function nameHtml(e) {
+    var acc = accentOf(e);
+    return acc ? '<span class="tn" style="--team-rule:' + acc + '">' + esc(e.nm) + '</span>' : esc(e.nm);
+  }
+  // Senior's printed mascots are colour dots (🔴🔵🟢🟡): a team that picked another colour must not fly its old one
+  // beside a flag in the new colour, so it gets the party set unless it picked an emoji of its own.
+  var COLOUR_DOTS = ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫', '⚪'];
+  // The emoji that fly for a set of entries: a team's own, nothing of a cleared team's (the party set instead),
+  // else the camp's printed mascot.
+  function confettiFor(entries) {
+    var out = [];
+    entries.forEach(function (e) {
+      var m = revealMascot(CAMP, e.id, e);
+      var recoloured = !!m && !e.em && !!accentOf(e) && COLOUR_DOTS.indexOf(m) >= 0;
+      if (m && !recoloured) out.push(m); else if (e.pl === true || e.em || recoloured) out.push.apply(out, PARTY);
+    });
+    return out.length ? out : PARTY;
+  }
+
+  // A team's mark as a DOM node, in the slot's own class (hero-shield, row-crest, champ-crest), which carries its size and motion. Never an <img> with no usable source, never an address
+  // concatenated into markup.
+  function teamMark(id, cls, brand) {
+    var spec = revealMarkSpec(CAMP, id, brand);
+    if (spec.kind === 'photo' || spec.kind === 'shield') {
+      var img = document.createElement('img');
+      img.className = spec.kind === 'photo' ? cls + ' tv-photo' : cls;
+      img.alt = '';
+      img.src = spec.src; // a DOM property, never concatenated into markup
+      return img;
     }
-    return arr.map(function (t, i) {
-      var id = String(t.id || ('t' + i));
-      return {
-        id: id,
-        name: String(t.name || CAMP.defaultTeamNames[i] || ('Team ' + (i + 1))),
-        // Anything a team record says about its emoji is laundered here, once, so
-        // every screen of the reveal can use it without a second thought.
-        emoji: safeEmoji(t.emoji, defaultEmoji(id))
-      };
-    });
+    if (spec.kind === 'flag') {
+      var svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('class', cls + ' tv-flag');
+      svg.setAttribute('data-flag', spec.color);
+      svg.setAttribute('viewBox', '0 0 32 32');
+      svg.setAttribute('aria-hidden', 'true');
+      if (spec.fill) svg.style.setProperty('--flag-fill', spec.fill); // a palette value, never a database string
+      var use = document.createElementNS(SVG_NS, 'use');
+      use.setAttribute('href', '#flag-' + spec.shape);
+      svg.appendChild(use);
+      return svg;
+    }
+    var tile = document.createElement('div');
+    tile.className = cls + ' crest-tile';
+    tile.setAttribute('aria-hidden', 'true');
+    if (spec.num) {
+      tile.setAttribute('data-num', '');
+      var sp = document.createElement('span');
+      sp.textContent = spec.num;
+      tile.appendChild(sp);
+    } else {
+      tile.textContent = spec.emoji;
+    }
+    if (spec.edge) {
+      tile.setAttribute('data-edge', '');
+      tile.style.setProperty('--tile-edge', spec.edge);
+    }
+    return tile;
   }
 
-  // Replicates app.js medalCounts + bonusBreakdown + rankTeamsByPoints (until the
-  // public big screen replaces this page, it only ever shows what the app would).
-  function computeStandings(state) {
-    if (!directorStandings) return []; // secrecy: a counselor's page computes no points
-    state = state || {};
-    var teams = normalizeTeams(state.teams);
-    var results = state.results || {};
-    var bonuses = state.bonuses || {};
-    var counts = {};
-    teams.forEach(function (t) {
-      counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 };
-    });
-    var doubled = doubledGameIds();
-    // A result whose game is no longer in the week (an import or restore can
-    // leave one behind) has no game to clear it from; the app skips it, so
-    // must this. null = no config yet: count everything.
-    var live = liveGameIdSet(liveConfig);
-    Object.keys(results).forEach(function (id) {
-      var r = results[id];
-      if (!r || !r.medals) return;
-      if (live && !live.has(id)) return;
-      var mult = doubled.indexOf(id) >= 0 ? 2 : 1;
-      var m = r.medals;
-      if (counts[m.gold]) { counts[m.gold].gold += 1; counts[m.gold].medalPts += MEDAL_POINTS.gold * mult; }
-      if (counts[m.silver]) { counts[m.silver].silver += 1; counts[m.silver].medalPts += MEDAL_POINTS.silver * mult; }
-      if (counts[m.bronze]) { counts[m.bronze].bronze += 1; counts[m.bronze].medalPts += MEDAL_POINTS.bronze * mult; }
-    });
-    Object.keys(bonuses).forEach(function (k) {
-      var b = bonuses[k];
-      if (!b || !counts[b.teamId]) return;
-      var p = Number(b.points);
-      if (isNaN(p)) return;
-      var bucket = b.category === 'verse' ? 'verse' : b.category === 'cleanup' ? 'meals' : 'custom';
-      counts[b.teamId][bucket] += p * (bonusCountsDouble(b) ? 2 : 1);
-    });
-    teams.forEach(function (t) {
-      var c = counts[t.id];
-      c.bonus = c.verse + c.meals + c.custom;
-      c.points = c.medalPts + c.bonus;
-    });
-    var ranked = teams.slice().sort(function (a, b) {
-      var sa = counts[a.id], sb = counts[b.id];
-      if (sb.points !== sa.points) return sb.points - sa.points;
-      if (sb.gold !== sa.gold) return sb.gold - sa.gold;
-      if (sb.silver !== sa.silver) return sb.silver - sa.silver;
-      return sb.bronze - sa.bronze;
-    });
-    return ranked.map(function (t) { return { team: t, stats: counts[t.id] }; });
+  // The breakdown in words, as on every phone ("2 gold · 1 silver · 1 bronze", then
+  // "verse 4 · cleanup 3 · quick 2"): a medal disc means a place won, never a count
+  // (redesign §8.4). Every number came through normalizeRevealPub, so these are
+  // plain integers.
+  function signed(n) { return n < 0 ? '−' + (-n) : String(n); }
+  function medalWords(e) { return e.g + ' gold · ' + e.s + ' silver · ' + e.b + ' bronze'; }
+  function extraWords(e) {
+    if (!e.v && !e.m && !e.c) return '';
+    return 'verse ' + signed(e.v) + ' · cleanup ' + signed(e.m) + ' · quick ' + signed(e.c);
   }
 
-  // Places come from reveal-core.js, loaded before this page: the one rule the
-  // phone, the remote and this screen share. Equal points share a place, and a tie
-  // is ordered by golds, then silvers, then bronzes, then name. The rows go in rank
-  // order, as computeStandings returns them.
-  function placesOf(ranked) {
-    var rows = ranked.map(function (r) {
-      return { id: r.team.id, nm: r.team.name, p: r.stats.points, g: r.stats.gold, s: r.stats.silver, b: r.stats.bronze, row: r };
-    });
-    return groupPlaces(rows).map(function (gr) {
-      return { place: gr.place, entries: gr.entries.map(function (e) { return e.row; }) };
-    });
-  }
+  // ── Elements ───────────────────────────────────────────────────
+  var waitingEl = $('waiting');
+  var screenEl = $('screen');
+  var introEl = $('intro');
+  var heroWrap = $('hero-wrap');
+  var boardEl = $('board');
+  var finaleEl = $('finale');
+  var practiceTag = $('tv-practice');
+  var reconnectChip = $('tv-reconnect');
+  var updateChip = $('update-chip');
+  var waitStatus = $('wait-status');
+  var waitStatusText = $('wait-status-text');
+  var waitFeed = $('wait-feed');
 
-  // ── Confetti (hand-rolled emoji cannons — no external lib) ──────
-  var cvs = document.getElementById('confetti');
+  // ── Confetti (hand-rolled emoji cannons — no external lib) ─────
+  var cvs = $('confetti');
   var ctx = cvs.getContext('2d');
   var parts = [];
   var streamEmojis = null; // active light stream while a hero is shown
   var lastStream = 0;
+  var ticking = false;
   var dpr = Math.min(window.devicePixelRatio || 1, 2);
   function resize() {
     cvs.width = Math.floor(innerWidth * dpr);
@@ -181,10 +193,19 @@
   function launch(emoji, x, y, vx, vy, size) {
     parts.push({ e: emoji, x: x, y: y, vx: vx, vy: vy, size: size,
       rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.3 });
+    kick();
+  }
+  // The animation loop runs only while something is in the air (a TV that waits
+  // for hours should not redraw a full-screen canvas sixty times a second).
+  function kick() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(tick);
   }
   // Impact burst at mid-stage for the tie fight — 💥 and sparks radiating
   // from where the two shields collide.
   function clashBurst() {
+    if (reduceMotion()) return;
     var W = cvs.width, H = cvs.height;
     var mix = ['💥', '⚔️', '✨'];
     for (var i = 0; i < 14; i++) {
@@ -192,16 +213,14 @@
       var sp = (4 + Math.random() * 7) * dpr;
       launch(mix[i % mix.length], W / 2, H * 0.42, Math.cos(a) * sp, Math.sin(a) * sp - 4 * dpr, (30 + Math.random() * 40) * dpr);
     }
-    sfxBreak();
   }
-  // ── Visible corner cannons (the 🎉 the bursts fire out of) ──────
-  var cannonEls = [document.getElementById('cannon-l'), document.getElementById('cannon-r')];
+  // Visible corner cannons (the 🎉 the bursts fire out of).
+  var cannonEls = [$('cannon-l'), $('cannon-r')];
   var cannonHideTimer = null;
-  // Pops the cannons in (if hidden), kicks their recoil, and schedules
-  // them to slip away after the last shot. Returns the delay the caller
-  // should wait before actually launching particles: when the cannons had
-  // to pop in first, the shot holds ~230ms so "appear joyfully, THEN fire"
-  // reads in the right order; if they're already up, fire instantly.
+  // Pops the cannons in (if hidden), kicks their recoil, and schedules them to slip
+  // away after the last shot. Returns the delay the caller should wait before
+  // launching particles: when the cannons had to pop in first, the shot holds
+  // ~230ms so "appear joyfully, THEN fire" reads in the right order.
   function showCornerCannons() {
     var wasHidden = !cannonEls[0].classList.contains('show');
     cannonEls.forEach(function (el) {
@@ -211,7 +230,6 @@
       if (!wasHidden) el.classList.add('fire-anim');
     });
     if (wasHidden) {
-      // Kick only once they're visible, in sync with the delayed shot.
       setTimeout(function () {
         cannonEls.forEach(function (el) { el.classList.add('fire-anim'); });
       }, 230);
@@ -222,23 +240,26 @@
     }, 1500);
     return wasHidden ? 230 : 0;
   }
-
-  // Fire from both bottom corners toward the upper-middle. Real bursts
-  // (count > 1) summon the visible corner cannons; the per-220ms hero
-  // stream (count 1) stays cannon-less so they remain a moment, not
-  // permanent furniture.
+  // Fire from both bottom corners, UP THE EDGES. Real bursts (count > 1) summon the
+  // visible corner cannons; the hero's stream (count 1, every 220 ms) stays
+  // cannon-less so they remain a moment, not permanent furniture. The name in the
+  // middle is the answer (§8.1 rule 1) and the room is reading it, so no particle
+  // may cross it: each one's sideways drift over its whole flight (up and back
+  // down, 2·|vy|/g frames) is held to EDGE_DRIFT of the width.
+  var EDGE_DRIFT = 0.12;
   function cannon(emojis, count, power) {
-    if (!emojis || !emojis.length) return;
+    if (!emojis || !emojis.length || reduceMotion()) return;
     var delay = count > 1 ? showCornerCannons() : 0;
     var fire = function () {
       var W = cvs.width, H = cvs.height;
+      var g = 0.16 * dpr; // tick()'s gravity
       for (var side = 0; side < 2; side++) {
         var baseX = side === 0 ? W * 0.04 : W * 0.96;
         for (var i = 0; i < count; i++) {
           var e = emojis[i % emojis.length];
           var toCenter = side === 0 ? 1 : -1;
-          var vx = toCenter * (0.6 + Math.random() * 0.9) * power;
           var vy = -(1.4 + Math.random() * 0.9) * power;
+          var vx = toCenter * (0.15 + Math.random() * 0.85) * EDGE_DRIFT * W * g / (2 * -vy);
           var size = (34 + Math.random() * 44) * dpr;
           launch(e, baseX, H * 0.99, vx, vy, size);
         }
@@ -248,7 +269,7 @@
   }
   function tick() {
     ctx.clearRect(0, 0, cvs.width, cvs.height);
-    var g = 0.16 * dpr;
+    var g = 0.16 * dpr; // cannon() aims with the same gravity
     // light continuous stream while a hero is up
     if (streamEmojis) {
       var now = performance.now();
@@ -267,646 +288,502 @@
       ctx.fillText(p.e, 0, 0);
       ctx.restore();
     }
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-
-  // ── Sound — disabled by request; kept as no-ops so calls are harmless. ──
-  var audio = null, muted = true;
-  function ensureAudio() {
-    if (audio || muted) return;
-    try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
-  }
-  function beep(freq, dur, when, type, vol) {
-    if (!audio || muted) return;
-    var o = audio.createOscillator(), g = audio.createGain();
-    o.type = type || 'triangle'; o.frequency.value = freq;
-    var t = audio.currentTime + (when || 0);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol || 0.25, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(audio.destination);
-    o.start(t); o.stop(t + dur + 0.02);
-  }
-  function sfxReveal() { ensureAudio(); beep(523, 0.14, 0); beep(784, 0.18, 0.09); }
-  function sfxBreak() { ensureAudio(); beep(988, 0.16, 0, 'sine', 0.2); }
-  function sfxFanfare() {
-    ensureAudio();
-    [523, 659, 784, 1047].forEach(function (f, i) { beep(f, 0.28, i * 0.13, 'triangle', 0.28); });
-  }
-  // ── Data loading ───────────────────────────────────────────────
-  var liveGroups = null;       // latest live standings (used on intro)
-  var haveData = false;
-
-  function demoState() {
-    var names = CAMP.defaultTeamNames;
-    // Slot i of the printed demo, wrapped onto however many teams this camp has
-    // (identity for junior's six).
-    function T(i) { return 't' + (i % names.length); }
-    return {
-      teams: names.map(function (n, i) { return { id: 't' + i, name: n }; }),
-      results: {
-        'demo-a': { medals: { gold: T(0), silver: T(1), bronze: T(2) } },
-        'demo-b': { medals: { gold: T(0), silver: T(2), bronze: T(3) } },
-        'demo-c': { medals: { gold: T(4), silver: T(0), bronze: T(1) } },
-        'demo-d': { medals: { gold: T(3), silver: T(4), bronze: T(5) } },
-        'demo-e': { medals: { gold: T(1), silver: T(5), bronze: T(4) } }
-      },
-      bonuses: {
-        b1: { teamId: T(0), points: 5, category: 'verse' },
-        b2: { teamId: T(2), points: 5, category: 'cleanup' },
-        b3: { teamId: T(5), points: -3, category: 'custom' }
-      }
-    };
-  }
-  function readLocal() {
-    // the app's per-camp cache key
-    try { var raw = localStorage.getItem(lsKey('campScoreboardV2')); return raw ? JSON.parse(raw) : null; }
-    catch (e) { return null; }
+    if (parts.length || streamEmojis) requestAnimationFrame(tick);
+    else { ticking = false; ctx.clearRect(0, 0, cvs.width, cvs.height); }
   }
 
-  // ── Secrecy: live standings are for directors only ─────────────
-  // Counselors don't see points, places or gaps until the directors reveal them
-  // (redesign §4.12), and this page computes them live from `state`. So until
-  // the public reveal page replaces it (Step 23), it answers only a signed-in
-  // DIRECTOR with standings, and says "Waiting for the directors…" to a
-  // counselor's account. None of that is CSS. It rests on three things:
-  //   1. `directorStandings` is set only by the paths that have proven a director
-  //      (the demo, and an approved editor's member record). ingest() and
-  //      computeStandings() compute nothing without it. A device-stored hint proves
-  //      nothing: a stale 'editor' hint on a counselor's phone with the sign-in
-  //      service unreachable waits, the same as a counselor (fail closed).
-  //   2. A counselor's account never attaches the state or config listener, so
-  //      nothing is in memory to compute from.
-  //   3. The member record is read LIVE. A role change, a removal or a second
-  //      account reloads the page (leavePage), so no listener or reveal from the
-  //      previous state survives into the new one.
-  // A signed-out visitor is asked to sign in, and an account that is not on this
-  // camp's list gets the "isn't on the list" panel. Neither reads `state`, and
-  // neither shows a number.
-  var directorStandings = false; // the one switch that lets standings compute (see above)
-  var directorAttached = false;  // attachData ran: this page is reading a director's standings
-  var pageLeaving = false;       // a reload is under way: nothing more may paint
-  var waitingEl = document.getElementById('waiting');
-  function showWaiting() {
-    var ov = document.getElementById('auth-overlay');
-    if (ov) ov.style.display = 'none';
-    loadingEl.style.display = 'none';
-    // The reveal screen has its own `hidden` attribute, which the page's CSS
-    // overrides unless #screen[hidden] says otherwise. Hiding it here as well means
-    // a waiting page shows no intro frame whatever the stylesheet does.
-    if (screenEl) screenEl.hidden = true;
-    if (waitingEl) waitingEl.hidden = false;
-  }
-  var lastRawState = null; // last ingested state — recomputed when the config lands
-  function ingest(state) {
-    if (!directorStandings || pageLeaving) return; // not a director: nothing is computed
-    lastRawState = state;
-    // The localStorage fallback state embeds the week config; the remote
-    // state node doesn't (config is a sibling ref, handled in attachData).
-    if (state && state.config && state.config.games) liveConfig = state.config;
-    liveGroups = placesOf(computeStandings(state));
-    if (!haveData) { haveData = true; onDataReady(); }
-  }
-  // Reloads the page now, for a change of account or of role. The reload starts
-  // clean, and nothing still in flight may paint in the meantime.
-  function leavePage() {
-    if (pageLeaving) return;
-    pageLeaving = true;
-    reloadNow();
-  }
-  // ── Sign-in gate ───────────────────────────────────────────────
-  // The database only answers approved, signed-in members (see the rules
-  // notes in CLAUDE.md), so this page signs in too: sign in ONCE on the
-  // TV/presenter machine with any approved account and it works like
-  // before. The old behavior — silently falling back to fake demo data
-  // when the database didn't answer — is gone for the non-?demo path; a
-  // signed-out TV now says so on screen instead of showing wrong numbers.
-  // (Safari note: ~7 days without a visit purges site storage, signing
-  // the TV out. The overlay reappearing with a button IS the design.)
-  // 'checking' is the one state a healthy TV passes through on EVERY load
-  // (and every auto-reload after a TV_BUILD bump): the sign-in is restored
-  // and approved within a moment. Painting the near-black overlay for that
-  // moment was a white -> black -> white flash before the intro, so while
-  // nothing is covering the page 'checking' waits CHECK_OVERLAY_DELAY_MS and
-  // only shows if the check is genuinely slow or offline — the page's own
-  // "Loading standings…" line covers the wait until then. Any other mode
-  // cancels it, so an approval inside the delay never shows the overlay at
-  // all; 'signin' and 'denied' stay immediate. If the overlay is already up
-  // (a presenter who just tapped Continue with Google), 'checking' is shown
-  // straight away as feedback.
-  var CHECK_OVERLAY_DELAY_MS = 1500;
-  var checkTimer = null;
-  function setAuthOverlay(mode, email) {
-    var el = document.getElementById('auth-overlay');
-    if (!el) return;
-    if (checkTimer) { clearTimeout(checkTimer); checkTimer = null; }
-    if (mode === 'checking' && el.style.display === 'none') {
-      checkTimer = setTimeout(function () { checkTimer = null; paintAuthOverlay('checking'); }, CHECK_OVERLAY_DELAY_MS);
-      return;
+  // ── The feed: one public path, read-only ───────────────────────
+  var nodes = { real: null, practice: null }; // the last snapshot's two children, raw { ctl, pub }
+  var offsetKnown = false, serverOffset = 0;
+  var gotSnapshot = false;      // the listener has answered at least once
+  var feedDenied = false;       // the listener was refused (rules not published, or the read was switched off)
+  var sdkFailed = false;        // the Firebase SDK never loaded, or would not start
+  var connected = false, everConnected = false, gaveUpConnecting = false;
+  var deliberatelyOffline = false; // we let go of the connection ourselves (hidden for a minute)
+  var sdkReady = false;
+  var feedRetryTimer = null;
+
+  // The server's clock, or NaN until `.info/serverTimeOffset` has answered (tvFrame
+  // reads NaN as "no clock": it waits).
+  function serverNow() { return offsetKnown ? Date.now() + serverOffset : NaN; }
+
+  // Which reveal is on the screen: a live real reveal always wins; a live practice
+  // plays (tagged) only when there is none. null = waiting. A reveal that ended,
+  // idled out, expired or is too new for this build is "waiting" inside tvFrame.
+  function pick() {
+    if (feedDenied) return null;
+    var modes = ['real', 'practice'];
+    for (var i = 0; i < modes.length; i++) {
+      var n = nodes[modes[i]];
+      if (!n) continue;
+      var f = tvFrame(n.ctl, n.pub, serverNow);
+      if (f.mode === 'waiting') continue;
+      // A frame with nothing to draw (a half-written command: the board of a reveal that has published
+      // no place) is not a frame. Fail closed to Waiting rather than leave a blank stage up.
+      if (f.mode === 'board' && !f.groups.length) continue;
+      var c = normalizeRevealCtl(n.ctl);
+      if (!c) continue;
+      return { mode: modes[i], frame: f, id: c.id, seq: c.seq, teams: c.teams, finale: !!c.finale };
     }
-    paintAuthOverlay(mode, email);
-  }
-  function paintAuthOverlay(mode, email) {
-    var el = document.getElementById('auth-overlay');
-    if (!el) return;
-    el.style.display = mode === 'hidden' ? 'none' : 'flex';
-    document.getElementById('auth-ov-checking').style.display = mode === 'checking' ? 'block' : 'none';
-    document.getElementById('auth-ov-signin').style.display = mode === 'signin' ? 'block' : 'none';
-    document.getElementById('auth-ov-denied').style.display = mode === 'denied' ? 'block' : 'none';
-    if (email) document.getElementById('auth-ov-email').textContent = email;
+    return null;
   }
 
-  // Attached once a director's approval is confirmed. Nothing else in this file
-  // attaches a listener to `state` or `config`.
-  function attachData() {
-    directorAttached = true;
-    directorStandings = true;
-    if (waitingEl) waitingEl.hidden = true; // a promoted viewer's Waiting screen gives way
-    loadingEl.style.display = '';
-    // Week config first (sibling ref): it carries each game's
-    // double-points flag, the same source the main scoreboard uses.
-    // If it lands (or changes) after the state did, recompute so the
-    // totals here can never disagree with the main site's.
-    var gotRemote = false;
-    firebase.database().ref(dbPath('config')).on('value', function (snap) {
-      var remoteCfg = snap.val();
-      if (remoteCfg && remoteCfg.games) {
-        liveConfig = remoteCfg;
-        if (lastRawState) ingest(lastRawState);
-      }
+  // When something changes with time alone: a place's name → score → breakdown →
+  // dock beats, an unended reveal timing out, `until`. One timer for the soonest,
+  // re-armed after every paint; a quiet 30 s tick and the page coming back to the
+  // front are the backstops, so a missed timer costs seconds, never correctness.
+  function nextBoundary(now) {
+    var best = null;
+    function take(t) { if (typeof t === 'number' && t > now && (best === null || t < best)) best = t; }
+    ['real', 'practice'].forEach(function (m) {
+      var n = nodes[m];
+      var c = n && normalizeRevealCtl(n.ctl);
+      if (!c) return;
+      take(c.until);
+      take(c.at + REVEAL_BEAT_SCORE_MS);
+      take(c.at + REVEAL_BEAT_BREAKDOWN_MS);
+      take(c.at + REVEAL_BEAT_DOCK_MS);
+      if (c.phase !== 'ended') take(c.at + (c.phase === 'champion' || c.phase === 'table' ? REVEAL_AUTO_END_SHORT_MS : REVEAL_AUTO_END_LONG_MS) + 1);
     });
-    firebase.database().ref(dbPath('state')).on('value', function (snap) {
-      var remote = snap.val();
-      if (remote) { gotRemote = true; ingest(remote); }
-    });
-    // Offline resilience for an APPROVED machine only: if the network is
-    // down, fall back to this device's cached snapshot (never demo data).
-    setTimeout(function () {
-      if (!gotRemote && !haveData) {
-        var local = readLocal();
-        if (local) ingest(local);
-      }
-    }, 3500);
+    return best;
+  }
+  var boundaryTimer = null;
+  function armTimer() {
+    if (boundaryTimer) { clearTimeout(boundaryTimer); boundaryTimer = null; }
+    var now = serverNow();
+    if (!isFinite(now)) return;
+    var t = nextBoundary(now);
+    if (t === null) return;
+    // a little past the moment (never early: an early fire would only re-arm); capped, because a
+    // timer longer than 2^31 ms fires at once — a long wait is simply re-armed by the next tick
+    boundaryTimer = setTimeout(function () { boundaryTimer = null; render('timer'); }, Math.min(Math.max(t - now + 25, 25), 2147000000));
   }
 
-  // The approval read. Only an editor's record leads to standings. Anything else
-  // ends on the Waiting or the denied panel, and a director who loses the role
-  // (demoted, removed, or refused) is reloaded into the right panel, so nothing of
-  // the old role stays attached.
-  function onApproval(rec, email, refused) {
-    if (pageLeaving) return;
-    var editor = !refused && !!rec && rec.role === 'editor';
-    if (directorAttached) {
-      if (!editor) leavePage();
-      return;
-    }
-    if (refused || !rec || !rec.role) { setAuthOverlay('denied', email); return; }
-    setAuthOverlay('hidden');
-    // A counselor's account is approved but may not see the standings: wait.
-    if (!editor) { showWaiting(); return; }
-    attachData();
+  function onFeed(snap) {
+    var v = snap && snap.val ? snap.val() : null;
+    var ok = v && typeof v === 'object';
+    nodes.real = ok && v.real && typeof v.real === 'object' ? v.real : null;
+    nodes.practice = ok && v.practice && typeof v.practice === 'object' ? v.practice : null;
+    gotSnapshot = true;
+    feedDenied = false;
+    render('data');
+  }
+  // A refused read is terminal in the SDK (it will not re-arm a cancelled listener), so the
+  // page fails closed (nothing shown, the small "Can't reach" line) and attaches again later:
+  // the rules get published, or the read is switched back on, and the screen comes back by itself.
+  function onFeedRefused() {
+    feedDenied = true;
+    nodes.real = null; nodes.practice = null;
+    render('denied');
+    if (feedRetryTimer) clearTimeout(feedRetryTimer);
+    feedRetryTimer = setTimeout(function () { feedRetryTimer = null; attachFeed(); }, FEED_RETRY_MS);
+  }
+  var feedRef = null;
+  function attachFeed() {
+    try {
+      if (feedRef) { try { feedRef.off('value'); } catch (e) { /* ignore */ } }
+      feedRef = firebase.database().ref(dbPath('revealPublic'));
+      feedRef.on('value', onFeed, onFeedRefused);
+    } catch (e) { onFeedRefused(); }
   }
 
-  function startData() {
-    if (DEMO) { directorStandings = true; ingest(demoState()); return; }
+  function startFeed() {
     var cfg = window.FIREBASE_CONFIG;
-    if (!cfg || !cfg.apiKey || !cfg.databaseURL || typeof firebase === 'undefined' || !firebase.auth) {
-      // No Firebase, so nothing can prove this account is a director. The cached
-      // snapshot is NOT a fallback here: the hint that would unlock it can be stale
-      // or hand-set, and the cache holds the results a counselor must not see. The
-      // page waits. (attachData's cached fallback still runs, but only after a
-      // director's approval has been read from the member record.)
-      showWaiting();
-      return;
-    }
-    try { if (!firebase.apps.length) firebase.initializeApp(cfg); } catch (e) { return; }
-    setAuthOverlay('checking');
-    var btn = document.getElementById('auth-ov-btn');
-    if (btn) {
-      btn.addEventListener('click', function () {
-        // Synchronously in the click handler — an await first and the
-        // browser blocks the popup.
-        // select_account: always show Google's chooser. A presenter laptop
-        // is often already signed into some other (non-camp) Google account,
-        // which would otherwise be re-picked silently every time.
-        var provider = new firebase.auth.GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' });
-        firebase.auth().signInWithPopup(provider).catch(function (err) {
-          var msgEl = document.getElementById('auth-ov-error');
-          if (msgEl) msgEl.textContent = 'Sign-in didn\'t work (' + ((err && err.code) || 'error') + ') — try again.';
-        });
-      });
-    }
-    // The way out of the denied state: signing out ends this page's account, and
-    // the auth change below reloads the page into the sign-in panel.
-    var switchBtn = document.getElementById('auth-ov-switch');
-    if (switchBtn) {
-      switchBtn.addEventListener('click', function () {
-        try { firebase.auth().signOut().catch(function () {}); } catch (e) { /* ignore */ }
-      });
-    }
-    // The one account this page runs for, set by the first signed-in account it sees.
-    var pageAccount = null;
-    firebase.auth().onAuthStateChanged(function (user) {
-      // Key = lowercased email, ALL dots → commas: the same contract as app.js's
-      // emailKey (keep in sync). The camp's own members list: a director of one camp
-      // isn't automatically on the other's.
-      var who = user && user.email ? String(user.email).trim().toLowerCase().replaceAll('.', ',') : '';
-      // One account per page life. A sign-out, or another account, after this page
-      // has been running for an account reloads it, so nothing the old account
-      // attached or painted survives into the new one (or the sign-in panel).
-      if (pageAccount !== null && who !== pageAccount) { leavePage(); return; }
-      if (!user || !user.email) { setAuthOverlay('signin'); return; }
-      if (pageAccount !== null) return; // the same account again: its member listener is already on
-      pageAccount = who;
-      setAuthOverlay('checking');
-      // A LIVE read of this account's member record, not a one-shot: a role change
-      // or a removal takes effect at once (app.js's self-read works the same way).
-      firebase.database().ref(dbPath('members/' + who)).on('value', function (snap) {
-        onApproval(snap.val(), user.email, false);
-      }, function () {
-        onApproval(null, user.email, true);
-      });
+    if (!cfg || !cfg.databaseURL || typeof firebase === 'undefined' || !firebase.database) { failSdk(); return; }
+    try { if (!firebase.apps.length) firebase.initializeApp(cfg); } catch (e) { failSdk(); return; }
+    sdkReady = true;
+    var db = firebase.database();
+    db.ref('.info/serverTimeOffset').on('value', function (s) {
+      var off = Number(s && s.val ? s.val() : NaN);
+      if (!isFinite(off)) return;
+      serverOffset = off;
+      offsetKnown = true;
+      render('clock');
     });
+    db.ref('.info/connected').on('value', function (s) {
+      connected = !!(s && s.val && s.val() === true);
+      if (connected) { everConnected = true; deliberatelyOffline = false; }
+      render('connection');
+    });
+    attachFeed();
+    setTimeout(function () { if (!everConnected) { gaveUpConnecting = true; render('connection'); } }, GIVE_UP_CONNECT_MS);
+  }
+  // No SDK (gstatic blocked, offline at load): the page still says what it is, and says it can't reach
+  // the feed; the update poll reloads it once the network is demonstrably back.
+  function failSdk() { sdkFailed = true; render('sdk'); }
+
+  // ── Paint: the status line, the chip, the waiting screen ───────
+  function connectionTone() {
+    if (sdkFailed || feedDenied) return 'offline';
+    // Connected is only said once the screen really is ready: the socket is up, the server's clock is known and
+    // the feed has answered (a reveal already under way would otherwise flash "Waiting" under "Connected").
+    if (connected) return gotSnapshot && offsetKnown ? 'ok' : 'connecting';
+    if (deliberatelyOffline) return 'connecting'; // we let go of it ourselves; taking it up again
+    return everConnected || gaveUpConnecting ? 'offline' : 'connecting';
+  }
+  var TONE_TEXT = { connecting: 'Connecting…', ok: 'Connected · this screen is ready', offline: 'Reconnecting…' };
+
+  var painted = null; // what the stage shows: { sig, id, mode, kind, heroKey } — null while waiting
+
+  function paintStatus() {
+    var tone = connectionTone();
+    if (waitStatus && waitStatus.getAttribute('data-tone') !== tone) waitStatus.setAttribute('data-tone', tone);
+    setText(waitStatusText, TONE_TEXT[tone]);
+    setHidden(waitFeed, !(sdkFailed || feedDenied));
+    // On a reveal's frames the status line is not on screen: a chip carries the news instead.
+    setHidden(reconnectChip, !(painted && tone === 'offline'));
   }
 
-  // ── UI: intro ──────────────────────────────────────────────────
-  var loadingEl = document.getElementById('loading');
-  var screenEl = document.getElementById('screen');
-  var introEl = document.getElementById('intro');
-  var heroWrap = document.getElementById('hero-wrap');
-  var boardEl = document.getElementById('board');
-  var hintEl = document.getElementById('hint');
-  var finaleEl = document.getElementById('finale');
+  function showWaiting() {
+    if (painted) {
+      painted = null;
+      resetStage();
+      // A newer page shipped mid-reveal: the reveal is over now, so this is the moment (nobody loses a place).
+      if (updateSeen) { reloadNow(); return; }
+    }
+    setHidden(screenEl, true);
+    setHidden(waitingEl, false);
+    setHidden(practiceTag, true);
+  }
+
+  // ── The stage ──────────────────────────────────────────────────
+  var introBuilt = false, introBlastIv = null, introBlastTimer = null;
+  var dockTimer = null, introHideTimer = null, finaleIv = null;
+  var heroTimers = [];
+  var boardHtml = null;
+
+  function clearHeroTimers() { heroTimers.forEach(clearTimeout); heroTimers = []; }
+  function stopIntroBlast() {
+    if (introBlastIv) { clearInterval(introBlastIv); introBlastIv = null; }
+    if (introBlastTimer) { clearTimeout(introBlastTimer); introBlastTimer = null; }
+  }
+  function stopFinale() {
+    if (finaleIv) { clearInterval(finaleIv); finaleIv = null; }
+    finaleEl.classList.remove('show');
+  }
+  // Everything on the stage back to nothing: another reveal (a real Start over a practice, a new Start)
+  // or the page returning to Waiting. The next paint builds from scratch.
+  function resetStage() {
+    clearHeroTimers();
+    stopIntroBlast();
+    stopFinale();
+    if (dockTimer) { clearTimeout(dockTimer); dockTimer = null; }
+    if (introHideTimer) { clearTimeout(introHideTimer); introHideTimer = null; }
+    streamEmojis = null;
+    heroWrap.innerHTML = '';
+    boardEl.innerHTML = '';
+    boardHtml = null;
+    boardEl.className = '';
+    introBuilt = false;
+  }
 
   function buildIntro() {
-    var words = ['CURRENT', 'STANDINGS'];
+    var words = ['Current', 'standings']; // sentence case, as every other line on this page (§8.2)
     var i = 0;
     // Wrap each word so it never splits mid-word when the line wraps;
     // letters still drop in one by one.
-    introEl.querySelector('#intro-title').innerHTML = words.map(function (word) {
+    $('intro-title').innerHTML = words.map(function (word) {
       var letters = word.split('').map(function (ch) {
         return '<span style="animation-delay:' + (0.15 + (i++) * 0.045).toFixed(2) + 's">' + esc(ch) + '</span>';
       }).join('');
       return '<span class="word">' + letters + '</span>';
     }).join(' ');
-    // One crest per REAL team (a camp may have four or six), each built as a DOM
-    // node so a crest address is only ever assigned to img.src.
-    var sh = introEl.querySelector('#intro-shields');
-    sh.innerHTML = '';
-    currentTeams().forEach(function (t, i) {
-      var node = crestNode(t, 'intro-crest');
-      node.style.animationDelay = (0.5 + i * 0.12).toFixed(2) + 's, ' + (1.2 + i * 0.2).toFixed(2) + 's';
-      sh.appendChild(node);
-    });
   }
 
-  // The teams the page is showing right now, in slot order (always at least the
-  // camp's default roster).
-  function currentTeams() { return normalizeTeams(lastRawState && lastRawState.teams); }
+  // Intro: an opening party burst, then a fresh blast every 10 s for as long as the intro is up.
+  function startIntroBlast() {
+    stopIntroBlast();
+    // The party set, never a team's mascot (owner's decisions item 11): no team's look before its place is shown.
+    var mix = PARTY;
+    introBlastTimer = setTimeout(function () { introBlastTimer = null; cannon(mix, 6, 11 * dpr); }, 700);
+    introBlastIv = setInterval(function () { cannon(mix, 6, 11 * dpr); }, 10000);
+  }
 
-  // A team's crest as a DOM node: its shipped shield when it has one that passes
-  // safeCrestSrc, else an emoji tile — never an <img> with no usable source.
-  // `cls` is the slot's own class (intro-crest, hero-shield, champ-crest), which
-  // carries the size and motion; the tile adds .crest-tile on top.
-  function crestNode(team, cls) {
-    var src = safeCrestSrc(CAMP.teamCrest && CAMP.teamCrest[team.id]);
-    var node;
-    if (src) {
-      node = document.createElement('img');
-      node.className = cls;
-      node.alt = '';
-      node.src = src; // a DOM property, never concatenated into markup
+  function setIntroShown(on, fade) {
+    if (introHideTimer) { clearTimeout(introHideTimer); introHideTimer = null; }
+    if (on) { introEl.classList.remove('hide'); introEl.style.display = ''; return; }
+    if (fade && introEl.style.display !== 'none') {
+      introEl.classList.add('hide');
+      introHideTimer = setTimeout(function () { introHideTimer = null; introEl.style.display = 'none'; }, 520);
     } else {
-      node = document.createElement('div');
-      node.className = cls + ' crest-tile';
-      node.setAttribute('aria-hidden', 'true');
-      node.textContent = team.emoji;
+      introEl.style.display = 'none';
     }
-    return node;
-  }
-  // A <div> with a class and (optionally) markup that is already escaped.
-  function box(cls, html) {
-    var d = document.createElement('div');
-    d.className = cls;
-    if (html != null) d.innerHTML = html;
-    return d;
   }
 
-  var introBlastIv = null;
-  function onDataReady() {
-    loadingEl.style.display = 'none';
-    screenEl.hidden = false;
-    buildIntro();
-    // Celebratory emoji blast on the title screen — an opening burst, then a
-    // fresh blast every 10s for as long as the intro is up.
-    var mix = currentTeams().map(function (t) { return t.emoji; });
-    setTimeout(function () { cannon(mix, 6, 11 * dpr); }, 700);
-    if (introBlastIv) clearInterval(introBlastIv);
-    introBlastIv = setInterval(function () {
-      if (phase !== 'intro') { clearInterval(introBlastIv); introBlastIv = null; return; }
-      cannon(mix, 6, 11 * dpr);
-    }, 10000);
+  // The five stage layouts, applied whole so a screen can jump to any of them (a late join, a Back, a
+  // replaced reveal) from any other.
+  function layout(kind, o) {
+    setIntroShown(kind === 'intro', o.fadeIntro);
+    heroWrap.style.display = kind === 'hero' || kind === 'board' ? '' : 'none';
+    boardEl.style.display = kind === 'intro' || kind === 'champion' ? 'none' : '';
+    ['dropped', 'final', 'still'].forEach(function (c) { boardEl.classList.remove(c); });
+    if (kind === 'hero') boardEl.classList.add('dropped');
+    if (kind === 'table') boardEl.classList.add('final');
+    if (o.still) boardEl.classList.add('still');
+    if (kind !== 'champion') stopFinale();
+    if (kind !== 'intro') stopIntroBlast();
+    if (kind !== 'hero') { streamEmojis = null; if (kind !== 'board') { clearHeroTimers(); heroWrap.innerHTML = ''; } }
   }
 
-  var hintTimer = null;
-  // On-screen instruction hints removed by request — no-op.
-  function showHint() {}
-
-  // ── Reveal state machine ───────────────────────────────────────
-  var phase = 'intro';   // 'intro' | 'reveal' | 'done'
-  var order = [];        // reveal order: lowest place first (6th → 1st)
-  var bigIndex = -1;     // index in `order` currently shown big, or -1
-  var dockedCount = 0;   // number of groups already docked into the board
-  var autoTimer = null, beatTimer = null, soloTimer = null;
-
-  function medalStr(s) {
-    return '🥇 ' + s.gold + '   🥈 ' + s.silver + '   🥉 ' + s.bronze;
+  // Board holds the docked places in ONE sheet (the phones' mirror, mockup 05): a "Still to come" row per TEAM not
+  // shown yet on top (never per place, so no tie can be read off the count), then the places, the best on top, a tie
+  // keeping reveal-core's order inside it. o: { teams, nowIdx (the place just shown: the gold edge), crown (1st, once
+  // the champions were crowned) }. A row's mark is the camp's shield or flag as a DOM node, put into its empty .em
+  // after the markup is written (a shipped address is a property, never concatenated into markup).
+  function paintBoard(groups, docked, o) {
+    o = o || {};
+    var rows = [];
+    var ids = [];
+    var placed = groups.filter(function (g) { return g.idx < docked; });
+    var shownTeams = placed.reduce(function (n, g) { return n + g.entries.length; }, 0);
+    for (var i = 0; i < Math.max(0, (o.teams || 0) - shownTeams); i++) rows.push('<div class="row ghost">Still to come</div>');
+    placed.sort(function (a, b) { return b.idx - a.idx; }).forEach(function (g) {
+      g.entries.forEach(function (e) {
+        var cls = 'row' + (g.idx === o.nowIdx ? ' now' : '') + (o.crown && g.place === 1 ? ' crowned' : '');
+        ids.push(e);
+        rows.push(
+          '<div class="' + cls + '">' +
+            '<div class="rank">' + esc(ordinal(g.place)) + '</div>' +
+            '<div class="who"><span class="em"></span><span class="nm">' + esc(e.nm) + '</span></div>' +
+            '<div class="score"><span class="pts">' + esc(String(e.p)) + '<small>pts</small></span>' +
+              '<span class="med">' + esc(medalWords(e)) + '</span></div>' +
+          '</div>'
+        );
+      });
+    });
+    var html = rows.length ? '<div class="board-sheet">' + rows.join('') + '</div>' : '';
+    if (html === boardHtml) return;
+    boardHtml = html;
+    boardEl.innerHTML = html;
+    var slots = boardEl.querySelectorAll ? boardEl.querySelectorAll('.em') : [];
+    for (var k = 0; k < slots.length && k < ids.length; k++) {
+      slots[k].appendChild(teamMark(ids[k].id, 'row-crest', ids[k]));
+      // The bar stands in for the colour only where the mark does not wear it (a shield, a photo): a flag or a tile
+      // in that colour already says it, and a second line under it was noise in a dense row.
+      var acc = accentOf(ids[k]);
+      var kind = acc ? revealMarkSpec(CAMP, ids[k].id, ids[k]).kind : '';
+      if (kind === 'shield' || kind === 'photo') { slots[k].setAttribute('data-accent', ''); slots[k].style.setProperty('--team-rule', acc); }
+    }
   }
-  function bonusStr(s) {
-    if (!s.bonus) return '';
-    var bits = [];
-    if (s.verse) bits.push((s.verse > 0 ? '+' : '') + s.verse + ' verse');
-    if (s.meals) bits.push((s.meals > 0 ? '+' : '') + s.meals + ' meals');
-    if (s.custom) bits.push((s.custom > 0 ? '+' : '') + s.custom + ' bonus');
-    return (s.bonus > 0 ? '+' : '') + s.bonus + ' pts' + (bits.length ? ' (' + bits.join(', ') + ')' : '');
+
+  // The beat inside one place's moment: the name alone, then the place and score, then the breakdown.
+  function setBeat(hero, beat) {
+    if (beat === 'name') hero.classList.add('solo'); else hero.classList.remove('solo');
+    if (beat === 'breakdown') hero.classList.add('beat2'); else hero.classList.remove('beat2');
+    if (beat !== 'name') hero.classList.remove('fight');
+    // The name has landed: the place's light stream starts (only for a place this screen saw arrive).
+    if (beat !== 'name' && hero.__stream) { streamEmojis = hero.__stream; hero.__stream = null; kick(); }
   }
 
-  function clearTimers() { clearTimeout(autoTimer); clearTimeout(beatTimer); clearTimeout(soloTimer); }
-
-  function showBig(orderIdx) {
-    clearTimers();
-    bigIndex = orderIdx;
-    var group = order[orderIdx];
-    var tie = group.entries.length > 1;
-    // Built from DOM nodes: the crest is created, not concatenated, and every
-    // string that came from the database is esc()'d (names) or already laundered
-    // (emoji) before it lands in the few markup fragments below.
+  // One place on the big screen. `f.fresh` is true only inside the place's first 3 s: the one time a
+  // screen that just joined still gets the confetti (a late joiner sees the frame as it stands).
+  function buildHero(g, f, animate) {
+    clearHeroTimers();
+    var tie = g.entries.length > 1;
+    // Built from DOM nodes: the mark is created, not concatenated, and every string that came from the
+    // database is esc()'d (names) or already laundered (emoji) before it lands in a markup fragment.
     var hero = box('hero');
-    hero.appendChild(box('hero-place', esc(ordinal(group.place)) + (tie ? '<span class="tie">TIE</span>' : '')));
+    hero.appendChild(box('hero-place', esc(ordinal(g.place)) + ' place' + (tie ? '<span class="tie">tie</span>' : '')));
     var entriesEl = box('hero-entries');
-    group.entries.forEach(function (en) {
-      var s = en.stats;
+    g.entries.forEach(function (e) {
       var entry = box('hero-entry');
-      entry.appendChild(crestNode(en.team, 'hero-shield'));
+      entry.appendChild(teamMark(e.id, 'hero-shield', e));
+      var extra = extraWords(e);
       entry.appendChild(box('hero-info',
-        '  <div class="hero-name"><span class="hero-emoji">' + esc(en.team.emoji) + '</span> ' + esc(en.team.name) + '</div>' +
-        '  <div class="hero-stats">' +
-        '    <div class="hero-points"><span class="num">' + s.points + '</span><span class="lbl">points</span></div>' +
-        '    <div class="hero-break"><div class="medals">' + medalStr(s) + '</div>' +
-        (bonusStr(s) ? '<div class="bonus">' + esc(bonusStr(s)) + '</div>' : '') + '</div>' +
-        '  </div>'));
+        '<div class="hero-name">' + nameHtml(e) + '</div>' +
+        '<div class="hero-stats">' +
+          '<div class="hero-points"><span class="num">' + esc(String(e.p)) + '</span><span class="lbl">points</span></div>' +
+          '<div class="hero-break"><div class="words">' + esc(medalWords(e)) + '</div>' +
+          (extra ? '<div class="words">' + esc(extra) + '</div>' : '') + '</div>' +
+        '</div>'));
       entriesEl.appendChild(entry);
     });
     hero.appendChild(entriesEl);
     heroWrap.innerHTML = '';
     heroWrap.appendChild(hero);
-    hero.classList.add('enter');
+    if (animate) hero.classList.add('enter');
     // Ties get the compact side-by-side layout (see .hero.tied CSS).
     if (tie) hero.classList.add('tied');
-    // First 3s: only the shield + a super-large team name (place/score hidden).
-    hero.classList.add('solo');
-    // Two-way tie: the shields FIGHT for the spot during the solo
-    // spotlight — two charge-and-clash cycles with a 💥 burst at each
-    // contact (52% of each 1.5s cycle). Skipped for 3-way ties (no clean
-    // head-to-head geometry) and for reduced-motion viewers.
-    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (tie && group.entries.length === 2 && !reduceMotion) {
+    // Three or more on one place are sized from their count (see .hero.many in the page's CSS): a Practice before any
+    // score exists puts all six teams on one place.
+    if (g.entries.length > 2) hero.classList.add('many', 'n' + Math.min(6, g.entries.length));
+    setBeat(hero, f.beat);
+    // Two-way tie: the shields FIGHT for the spot during the name beat — two charge-and-clash cycles
+    // with a 💥 burst at each contact (52% of each 1.5 s cycle). Not for 3-way ties (no clean
+    // head-to-head geometry), a late joiner, or reduced motion.
+    if (tie && g.entries.length === 2 && f.fresh && f.beat === 'name' && !reduceMotion()) {
       hero.classList.add('fight');
       [780, 2280].forEach(function (t) {
-        setTimeout(function () {
+        var wait = t - f.elapsed;
+        if (wait <= 0) return;
+        heroTimers.push(setTimeout(function () {
           if (hero.isConnected && hero.classList.contains('fight')) clashBurst();
-        }, t);
+        }, wait));
       });
-      setTimeout(function () { if (hero.isConnected) hero.classList.remove('fight'); }, 3050);
     }
-    // Drop the board off-screen so the team spotlight is the only thing shown.
-    boardEl.classList.add('dropped');
-
-    // confetti: fire the team mascot(s), then keep a light stream.
-    var emojis = group.entries.map(function (en) { return en.team.emoji; });
-    cannon(emojis, 8, 11 * dpr);
-    streamEmojis = emojis;
-    sfxReveal();
-
-    // At 3s: shrink the name and let the place + score appear.
-    soloTimer = setTimeout(function () { hero.classList.remove('solo'); sfxBreak(); }, 3000);
-    // A beat later, slide the medal/bonus breakdown in.
-    beatTimer = setTimeout(function () { hero.classList.add('beat2'); }, 4500);
-    // Hold the solo spotlight for 8s, then shrink the team into the table
-    // (presenter can skip with →). If this was the last place, waiting it
-    // out rolls into the finale too.
-    var wasLast = orderIdx === order.length - 1;
-    autoTimer = setTimeout(function () { dockCurrent(); if (wasLast) finish(); }, 8000);
-
-    showHint(orderIdx === 0 ? 'Press → for the next place' : (orderIdx === order.length - 1 ? 'Press → to finish' : 'Press → next  ·  ← back'));
+    streamEmojis = null;
+    if (f.fresh) {
+      // confetti: the team mascot(s) up the edges as the place arrives; the light stream waits for the score beat
+      // (setBeat), so nothing moves around the name while the room reads it. Three or more on one place (a Practice
+      // before any score puts every team there) fill the width, so their outer columns sit in the confetti's edge
+      // lanes: they get the opening cannon only, and no stream runs through their names, points and counts.
+      var emojis = confettiFor(g.entries);
+      cannon(emojis, 8, 11 * dpr);
+      hero.__stream = reduceMotion() || g.entries.length > 2 ? null : emojis; // fresh is the name beat: setBeat starts it at the next one
+      kick();
+    }
+    return hero;
   }
 
-  function dockCurrent() {
-    if (bigIndex < 0) return;
-    clearTimers();
-    streamEmojis = null;
+  // The place leaves the spotlight and shrinks into the board.
+  function dockHero(animate) {
     var hero = heroWrap.querySelector('.hero');
-    var idx = bigIndex;
-    bigIndex = -1;
-    if (hero) {
-      hero.classList.add('dock');
-      setTimeout(function () {
-        if (heroWrap.querySelector('.hero') === hero) heroWrap.innerHTML = '';
-      }, 460);
-    }
-    dockedCount = idx + 1;
-    renderBoardRows();
-    // Slide the table back up into view (now holding the just-docked team).
-    boardEl.classList.remove('dropped');
-  }
-
-  // Board holds docked groups; higher place on top (prepend as we go up).
-  function renderBoardRows() {
-    var rows = [];
-    // order[] is lowest-place-first, so walk it from the docked top place down:
-    // 1st on top, and a tie keeps its reveal-core order from the top of the tie.
-    for (var i = dockedCount - 1; i >= 0; i--) {
-      var group = order[i];
-      group.entries.forEach(function (en) {
-        var s = en.stats, id = en.team.id;
-        var pcls = group.place <= 3 ? ' p' + group.place : '';
-        rows.push(
-          '<div class="row' + pcls + '">' +
-            '<div class="rank">' + esc(ordinal(group.place)) + '</div>' +
-            '<div class="who"><span class="em">' + esc(en.team.emoji) + '</span><span class="nm">' + esc(en.team.name) + '</span></div>' +
-            '<div class="score"><span class="pts">' + s.points + '<small>pts</small></span>' +
-              '<span class="med">' + medalStr(s) + '</span></div>' +
-          '</div>'
-        );
-      });
-    }
-    boardEl.innerHTML = rows.join('');
-  }
-
-  function beginReveal() {
-    if (phase !== 'intro') return;
-    // Nothing to reveal yet (signed out / still loading): stay on the intro.
-    // Starting anyway froze order = [] and threw in showBig, leaving a blank
-    // stage even after the data arrived.
-    if (!liveGroups || !liveGroups.length) return;
-    phase = 'reveal';
-    if (introBlastIv) { clearInterval(introBlastIv); introBlastIv = null; }
-    // Freeze the standings at the moment the reveal starts.
-    order = (liveGroups || []).slice().reverse(); // lowest place first
-    introEl.classList.add('hide');
-    setTimeout(function () { introEl.style.display = 'none'; }, 520);
-    dockedCount = 0;
-    showBig(0);
-  }
-
-  function advance() {
-    if (phase === 'intro') { beginReveal(); return; }
-    if (phase === 'done') {
-      // Friday lands here with only the champion celebration showing —
-      // one more advance reveals the full standings table behind it.
-      // Harmless no-op if the table is already showing (non-Friday, or a
-      // second tap after Friday's transition).
-      showFinalStandingsTable();
-      return;
-    }
-    if (phase !== 'reveal') return;
-    if (bigIndex >= 0) {
-      var wasLast = bigIndex === order.length - 1;
-      dockCurrent();
-      if (wasLast) { finish(); return; }
-      showBig(dockedCount);
-    } else {
-      if (dockedCount < order.length) showBig(dockedCount);
-      else finish();
-    }
-  }
-
-  function back() {
-    if (phase === 'done') {
-      // Re-enter the reveal at 1st place to review the countdown backwards.
-      phase = 'reveal';
-      boardEl.classList.remove('final');
-      boardEl.style.display = '';
-      heroWrap.style.display = '';
-      finaleEl.classList.remove('show');
-      if (finaleIv) { clearInterval(finaleIv); finaleIv = null; }
-      var last = order.length - 1;
-      dockedCount = last;
-      renderBoardRows();
-      showBig(last);
-      return;
-    }
-    if (phase !== 'reveal') return;
-    var target;
-    if (bigIndex >= 0) target = bigIndex - 1;
-    else target = dockedCount - 1;
-    if (target < 0) return; // already at the first-revealed place
-    clearTimers();
-    dockedCount = target;
-    renderBoardRows();
-    showBig(target);
-  }
-
-  function finish() {
-    if (phase === 'done') return;
-    phase = 'done';
-    clearTimers();
+    clearHeroTimers();
     streamEmojis = null;
-    bigIndex = -1;
-    dockedCount = order.length;
-    renderBoardRows();
-    boardEl.classList.remove('dropped');
-    var champGroup = order[order.length - 1]; // first place
-    if (isFridayEastern() && champGroup) {
-      // Friday: go all out — a full-screen champion celebration first (the
-      // table was already walked through on the way up). The full final
-      // standings table still follows on the next advance (tap / → /
-      // Enter) — showFinalStandingsTable(), same table the quiet branch
-      // below shows immediately.
-      heroWrap.innerHTML = '';
-      heroWrap.style.display = 'none';
-      boardEl.style.display = 'none';
-      boardEl.classList.remove('final');
-      runFinale(champGroup);
-      showHint('🎉 Champions! Press → for the full standings  ·  ← to review');
+    if (hero && animate) {
+      hero.classList.add('dock');
+      if (dockTimer) clearTimeout(dockTimer);
+      dockTimer = setTimeout(function () {
+        dockTimer = null;
+        if (heroWrap.querySelector('.hero') === hero) heroWrap.innerHTML = '';
+      }, DOCK_MS);
     } else {
-      // Quiet end: center the full standings table on screen right away.
-      showFinalStandingsTable();
+      heroWrap.innerHTML = '';
     }
   }
 
-  // The centered full-standings screen — shown immediately on a non-Friday
-  // finish(), and reachable on Friday via advance() after the champion
-  // celebration has had its moment. Idempotent: safe to call again (e.g. a
-  // stray extra tap) with no visible change.
-  function showFinalStandingsTable() {
-    if (finaleIv) { clearInterval(finaleIv); finaleIv = null; }
-    finaleEl.classList.remove('show');
-    heroWrap.innerHTML = '';
-    heroWrap.style.display = 'none';
-    boardEl.style.display = '';
-    boardEl.classList.add('final');
-    showHint('Final standings  ·  Press ← to review');
-  }
-
-  var finaleIv = null;
-  function runFinale(group) {
-    var names = group.entries.map(function (en) { return esc(en.team.name); }).join(' & ');
-    var pts = group.entries[0].stats.points;
-    var emojis = group.entries.map(function (en) { return en.team.emoji; });
-    var champ = document.getElementById('champ');
-    champ.innerHTML = '<div class="crown">👑</div><div class="lead">Camp Champions</div>';
+  // The champions' celebration (a finale day): a full-screen crowning, a sustained barrage while it is fresh.
+  function paintChampion(g, animate) {
+    var names = g.entries.map(nameHtml).join(' &amp; ');
+    var emojis = confettiFor(g.entries); // the confetti only, never beside a name
+    var pts = g.entries[0].p;
+    var champ = $('champ');
+    champ.innerHTML = '<div class="crown" aria-hidden="true"></div><div class="lead">Camp champions</div>';
+    var crownSlot = champ.querySelector('.crown');
+    if (crownSlot) {
+      var crown = document.createElementNS(SVG_NS, 'svg');
+      crown.setAttribute('viewBox', '0 0 24 24');
+      var cu = document.createElementNS(SVG_NS, 'use');
+      cu.setAttribute('href', '#i-crown');
+      crown.appendChild(cu);
+      crownSlot.appendChild(crown);
+    }
     var crests = box('champ-shields');
-    group.entries.forEach(function (en) { crests.appendChild(crestNode(en.team, 'champ-crest')); });
+    g.entries.forEach(function (e) { crests.appendChild(teamMark(e.id, 'champ-crest', e)); });
     champ.appendChild(crests);
     champ.insertAdjacentHTML('beforeend',
-      '<div class="name">' + emojis.map(esc).join(' ') + ' ' + names + '</div>' +
-      '<div class="pts">' + pts + ' points</div>');
+      '<div class="name">' + names + '</div>' +
+      '<div class="pts">' + esc(String(pts)) + ' points</div>');
     finaleEl.classList.add('show');
-    sfxFanfare();
-    // Sustained confetti barrage.
-    if (finaleIv) clearInterval(finaleIv);
-    var bursts = 0;
-    finaleIv = setInterval(function () {
+    if (finaleIv) { clearInterval(finaleIv); finaleIv = null; }
+    if (animate && !reduceMotion()) {
+      var bursts = 0;
       cannon(emojis, 10, 12 * dpr);
-      if (++bursts > 24) { clearInterval(finaleIv); finaleIv = null; }
-    }, 350);
+      finaleIv = setInterval(function () {
+        cannon(emojis, 10, 12 * dpr);
+        if (++bursts > 24) { clearInterval(finaleIv); finaleIv = null; }
+      }, 350);
+    }
   }
 
-  // ── Input ──────────────────────────────────────────────────────
-  document.addEventListener('keydown', function (e) {
-    // No data yet, or the sign-in overlay is up: leave the key alone (before
-    // preventDefault, so Space/Enter still activates the focused sign-in
-    // button instead of being swallowed and starting an empty reveal).
-    if (pageLeaving || !haveData || document.getElementById('auth-overlay').style.display !== 'none') return;
-    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter' || e.key === 'PageDown') {
-      e.preventDefault(); ensureAudio(); advance();
-    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-      e.preventDefault(); ensureAudio(); back();
+  function groupsSig(groups) {
+    return groups.map(function (g) {
+      return g.idx + ':' + g.place + ':' + g.entries.map(function (e) {
+        return [e.id, e.nm, e.p, e.g, e.s, e.b, e.v, e.m, e.c, e.k || '', e.em || '', e.pl ? 1 : 0, e.ph ? e.ph.length + e.ph.slice(-12) : 0].join(',');
+      }).join(';');
+    }).join('/');
+  }
+
+  function paintStage(sel) {
+    var f = sel.frame;
+    var sig = [sel.mode, sel.id, sel.seq, f.mode, f.heroIdx, f.beat, f.docked, groupsSig(f.groups)].join('|');
+    if (painted && painted.sig === sig) return;
+    var prev = painted;
+    var sameReveal = !!prev && prev.id === sel.id && prev.mode === sel.mode;
+    // A page that was already showing a reveal has watched this change happen, so it plays it; one that just
+    // joined (a reload, a late open) shows the frame as it stands, and only a place still inside its first
+    // 3 s gets its moment.
+    var animate = !!prev || f.fresh;
+    if (!sameReveal) resetStage();
+    setHidden(waitingEl, true);
+    setHidden(screenEl, false);
+    setHidden(practiceTag, sel.mode !== 'practice');
+    var kind = f.mode, heroKey = null;
+    var g;
+    if (kind === 'hero') {
+      g = f.groups.filter(function (x) { return x.idx === f.heroIdx; })[0];
+      if (!g) kind = 'board'; // tvFrame promises it exists; never a blank stage if it does not
+    } else if (kind === 'champion') {
+      g = f.groups.filter(function (x) { return x.place === 1; })[0];
+      if (!g) kind = 'board';
+    }
+    var wasKind = sameReveal ? prev.kind : null;
+    layout(kind, { fadeIntro: animate && wasKind === 'intro', still: !animate && (kind === 'board' || kind === 'table') });
+    if (kind === 'intro') {
+      if (!introBuilt) { buildIntro(); introBuilt = true; startIntroBlast(); }
+    } else if (kind === 'hero') {
+      heroKey = sel.id + ':' + sel.seq + ':' + f.heroIdx;
+      paintBoard(f.groups, f.docked, { teams: sel.teams });
+      var hero = heroWrap.querySelector('.hero');
+      if (hero && sameReveal && prev.heroKey === heroKey) setBeat(hero, f.beat);
+      else buildHero(g, f, animate);
+    } else if (kind === 'board') {
+      dockHero(animate && wasKind === 'hero');
+      paintBoard(f.groups, f.docked, { teams: sel.teams, nowIdx: f.docked - 1 });
+    } else if (kind === 'table') {
+      paintBoard(f.groups, f.docked, { teams: sel.teams, crown: sel.finale });
+    } else if (kind === 'champion') {
+      paintBoard(f.groups, f.docked, { teams: sel.teams }); // behind the crowning, ready for Back / the final table
+      paintChampion(g, animate && wasKind !== 'champion');
+    }
+    painted = { sig: sig, id: sel.id, mode: sel.mode, kind: kind, heroKey: heroKey };
+  }
+
+  function render(why) {
+    try {
+      var sel = pick();
+      if (!sel) showWaiting(); else paintStage(sel);
+      paintStatus();
+    } catch (e) {
+      // A drawing bug must never leave a wrong frame up: fail closed to Waiting.
+      try { console.error('current-standings render (' + why + ')', e); } catch (e2) { /* ignore */ }
+      try { painted = null; resetStage(); setHidden(screenEl, true); setHidden(waitingEl, false); setHidden(practiceTag, true); } catch (e3) { /* ignore */ }
+    }
+    armTimer();
+  }
+
+  // ── Holds its connection only while visible ────────────────────
+  // Spark allows 100 connections at once across both camps, every phone and every TV page, and a public page
+  // makes it easy for a few curious people to open one. A TV never hides; a phone in a pocket does: a minute
+  // hidden lets go of the connection, coming back takes it up again (and the page repaints from the node).
+  var hiddenTimer = null;
+  function goOffline() {
+    if (!sdkReady || deliberatelyOffline) return;
+    try { firebase.database().goOffline(); deliberatelyOffline = true; render('offline'); } catch (e) { /* ignore */ }
+  }
+  function goOnline() {
+    if (!sdkReady || !deliberatelyOffline) return;
+    try { firebase.database().goOnline(); } catch (e) { /* ignore */ }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      if (hiddenTimer) clearTimeout(hiddenTimer);
+      hiddenTimer = setTimeout(function () { hiddenTimer = null; goOffline(); }, HIDDEN_OFFLINE_MS);
+    } else {
+      if (hiddenTimer) { clearTimeout(hiddenTimer); hiddenTimer = null; }
+      goOnline();
+      render('visible');
+      checkForUpdate();
     }
   });
-  // Tap / click anywhere (except the top-bar controls) advances. Not before
-  // there is data, and never from inside the sign-in overlay — a click on
-  // "Continue with Google" bubbles here and used to start the reveal.
-  document.addEventListener('click', function (e) {
-    if (pageLeaving || !haveData || e.target.closest('.topbar, #auth-overlay')) return;
-    ensureAudio(); advance();
-  });
 
-  // ── Self-update check ────────────────────────────────────────────
-  // No fetch/service-worker interception, same network-only pattern the
-  // main scoreboard uses (see app.js checkForUpdate). A code fix (like
-  // tonight's double-points one) is invisible to an already-open tab
-  // otherwise. Auto-reload is free ONLY on the 'intro' screen (nothing to
-  // lose — the presenter hasn't pressed start yet); once a reveal is under
-  // way or finished, force-reloading would wipe the presenter's manual
-  // click-through progress, so we surface a small tappable chip instead
-  // and let a human pick the moment.
+  // ── Self-update check ──────────────────────────────────────────
+  // No fetch/service-worker interception, same network-only pattern the main scoreboard uses (see app.js
+  // checkForUpdate): a code fix is invisible to an already-open tab otherwise. A TV with nothing on the stage
+  // reloads at once; mid-reveal a small chip appears instead (a reload would drop the frame), and the page
+  // reloads itself the moment the reveal is over.
   var updateSeen = false;
   function checkForUpdate() {
-    if (updateSeen) return;
     fetch('current-standings.html?_=' + Date.now(), { cache: 'no-store' })
       .then(function (res) { return res.ok ? res.text() : null; })
       .then(function (html) {
@@ -915,26 +792,33 @@
         var m = html.match(/<meta\s+name="tv-build"\s+content="([^"]*)"/) || html.match(/var TV_BUILD = '([^']+)'/);
         if (m && myBuild && m[1] !== myBuild) {
           updateSeen = true;
-          if (phase === 'intro') { reloadNow(); return; }
-          var chip = document.getElementById('update-chip');
-          if (chip) chip.hidden = false;
+          if (!painted) { reloadNow(); return; }
+          setHidden(updateChip, false);
+        } else if (sdkFailed && sdkReloads() < SDK_RELOAD_MAX) {
+          // The page loaded without its SDK and the network answers now: try once more (a few times at most,
+          // so a firewall that blocks the SDK for good cannot make a TV flash forever).
+          noteSdkReload();
+          reloadNow();
         }
       })
       .catch(function () { /* offline / blocked — try again next tick */ });
   }
+  function sdkReloads() { try { return Number(sessionStorage.getItem('campTvSdkReloads')) || 0; } catch (e) { return 0; } }
+  function noteSdkReload() { try { sessionStorage.setItem('campTvSdkReloads', String(sdkReloads() + 1)); } catch (e) { /* ignore */ } }
   function reloadNow() {
     var u = new URL(location.href);
     u.searchParams.set('r', String(Date.now()));
     location.replace(u.toString());
   }
-  var updateChipEl = document.getElementById('update-chip');
-  if (updateChipEl) updateChipEl.addEventListener('click', reloadNow);
+  if (updateChip) updateChip.addEventListener('click', reloadNow);
   setInterval(checkForUpdate, 90000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) checkForUpdate(); });
+  setInterval(function () { render('tick'); }, TICK_MS);
   checkForUpdate();
 
   // ── Go ─────────────────────────────────────────────────────────
-  // The tab says which camp it is showing (two camps, one page).
-  document.title = 'Current Standings — ' + CAMP.label;
-  startData();
+  // The tab and the page say which camp this is (two camps, one page).
+  document.title = 'Current standings — ' + campWord(); // camps.js: the one way the camp's name is written
+  setText($('wait-camp'), campWord() + ' · Standings');
+  startFeed();
+  render('start');
 })();

@@ -350,14 +350,15 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   with the frame-rate sampler, battery check and the OS setting (the OS beats Off); Calm motion
   Auto / On / Off in today's Settings drawer for now; pre-paint calm in `boot-guard.js`;
   `JOY_REDUCED` and the raw reads replaced; the nine media blocks become `html.calm-motion`; Jelly
-  token mapping.
+  token mapping **(toaster radius only; the rest moves to Step 13's visual system, see its Ships line)**.
 - **Needs:** — (placed after 4 so the two refactors don't overlap).
 - **Tests:** `motion.test.js` (sampler vs Jelly's integrator; presets' damping and overshoot; the
   minimum visible deformation per row; calm truth table; no transform keyframes while calm;
   `outerHTML` unchanged after press, release, play, playOut, flipKeyed), `shell.test.js` (no motion
   media queries; pre-paint calm), `auth.test.js` wipe list.
 - **Live check:** the switch works; a phone with Reduce Motion is calm; no first-paint flash after
-  a reload (the boot guard); the springs match `motion-demo.html` (Step 0) side by side.
+  a reload (the boot guard); the springs match `motion-demo.html` (Step 0) side by side (an
+  owner eyeball: only `motion.test.js`'s constant-for-constant check backs it).
 - **Rollback:** revert.
 
 ### Step 13 · The shell: tabs, header, More, takeovers · redesign D2 · Jan · XL (5) · Opus pass, then Sonnet
@@ -369,10 +370,13 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   Run the reveal / Tell everyone / Award points appear as Steps 23–24 ship), Chat as a tab, the
   bottom stack, keyboard handling, scroll memory, history and Back, deep links, **What counselors
   see** (the six Hide switches move here; the standings switch retires), `teamMark` keyed images,
-  accordion and idle-collapse removed, the Home Screen metas. Now hosts today's banner and live
+  accordion and idle-collapse removed, the Home Screen metas, **and the rest of the redesign §8.10 Jelly
+  token mapping that Step 12 deferred** (surface, border, foreground, azure, mint, amber, rose: today's
+  `--color-*` are sourced FROM the `--jelly-*` tokens, so mapping them back before the palette lands
+  would be a cycle; only the toaster radius shipped in Step 12). Now hosts today's banner and live
   home unchanged inside the new frame. Check whether `sw.js`'s open targets need the new deep links
   (`reveal`, `game:<id>`, `alert:<id>`); if so bump `PUSH_SW_VERSION`.
-- **Opus pass:** the visual system (redesign §8: tokens, type, colour roles, the blue roof, tab bar,
+- **Opus pass:** the visual system (redesign §8: tokens including the deferred §8.10 Jelly mapping, type, colour roles, the blue roof, tab bar,
   More's grouped lists, sheet and takeover frames) against mockups 09, 15, 16.
 - **Needs:** 12 (and the accessors from 4).
 - **Tests:** `tabs.test.js` (switching, dirty render, scroll memory, history including Next-replaces
@@ -382,7 +386,11 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   at 130% and 200% text, both themes, both camps.
 - **Live check:** both camps, as counselor and director. **Real iPhone, Home Screen app** (status-bar
   colour under the blue roof, tab bar above the home indicator, keyboard with the chat composer,
-  Back gestures, wake lock available).
+  Back gestures, wake lock available). **Also note the status-bar GLYPH colour** on a roof screen
+  (force `.takeover.is-roof` until Steps 23–24 ship one): `status-bar-style` is `default`, so iOS
+  draws dark glyphs, and black on #2c47ee is 3.24:1. If they are dark, the roof screens keep paper
+  behind the status bar (pad the roof by `env(safe-area-inset-top)` in `--paper`, blue below it)
+  and `CHROME_ROOF` stays paper: no status-bar-style flip mid-session.
 - **Rollback:** revert (one deploy).
 - **Owner:** the iPhone check, 20 minutes (§6).
 
@@ -394,6 +402,11 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   next; the owner-only gating is already in place for the buttons that arrive in Step 15.
 - **Opus pass:** the hub, the frame around every setup screen and the director's-clipboard language
   (P2 §11.0–11.2).
+- **Replaces Step 9's stopgaps:** the docked undo pill (6 s) takes over from the Undo/Redo toast
+  action (`addToastAction` in `undoRecord` / `undoEntry` — a toast over the builder swallows the next
+  tap), and the inline "Keep mine / Use his" of P2 §6.3.5 replaces `saveGameDraft`'s native
+  `confirm()` for a field both directors changed (the confirm cannot name who). The config has no
+  authorship, so the undo messages say "someone" until then.
 - **Needs:** 11 (rules); placed after 13 so the hub's home (More → Director) already exists.
 - **Tests:** `setup-sync.test.js`, `restore.test.js`, `editors-here.test.js`, `checklist.test.js`,
   `owner-only.test.js` (the owner helpers and the hub's owner-only rendering contract; Steps 15, 19
@@ -482,7 +495,10 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   sitting.
 - **Needs:** 19; placed after 16.
 - **Live check:** Now's cleanup and verse moments and More → Meal cleanup / Memory verse show the
-  seeded data unchanged on both camps; an edited dish appears on the Now card after lunch.
+  seeded data unchanged on both camps; an edited dish appears on the Now card after lunch. **Senior
+  first:** its seed leaves "Supper and free time" without the Meal tag (the hub's Schedule row says so),
+  so tag it on the Schedule screen before turning meals and cleanup on; and note senior's meal start
+  (lunch 12:30, not the built-in 12:00) once the schedule is edited here — the "Next meal cleanup" time.
 - **Rollback:** the per-section **Use the original week again**.
 - **Owner:** 10 minutes.
 
@@ -497,6 +513,18 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   bracket or clock).
 - **Live check:** both camps: add a game to an item, see it on Now and Games.
 - **Rollback:** revert (`blockId` is inert to old code).
+- **Built (Step 21, build session 1; LIVE at v206):** the Games screen and the progressive game sheet, in `setup-ui.js` section 16 (no new
+  file, so **no new versioned asset**: the deploy bumps every `?v=` in index.html, `APP_VERSION` and `CODE_UPDATED_AT`, and the TV page's references
+  are unchanged). No rules change. What differs from the plan: Matchups' "By the standings" is honoured in the six-team wizard as a suggestion to
+  the director who calls a match up (`bracketSuggestPair`, app.js; the four-team bracket reads `bracketSeed` itself in Step 22), and a bracket on a
+  camp with other than six teams says so until `bracketKindFor` exists; a field two directors change at once is last-commit-wins per field (the
+  classic editor's clash block is not used; a game deleted elsewhere asks inline). The real-tap pass is `docs/build-notes/verify/step21-pass.cjs`.
+  Owner checks (real phone / real sign-in): see the session report's `ownerActions`.
+  **Build session 2:** the ⚡ quick game follows the Now card's own block (`nowCurrentBlock`); the Games tab's Add games opens the game sheet on that
+  day (the screen only when no day takes games); Undo through the setup pill is pinned; a counselor preview reaches none of the sheet
+  (`preview.test.js`); `tests/emulator/games-client.mjs` proves the real client's Games writes against the published rules on both camps and
+  found a config-engine race (a colleague's commit beating my commit's completion rolled the phone back behind it), fixed with one settle
+  re-read (`cfgSettleReread`, pinned in `config-sync.test.js`); `docs/build-notes/verify/step21-states.cjs` is the state-by-state browser pass.
 
 ### Step 22 · The 4-team bracket · P2 S6b · Mar · L (3) · Sonnet
 - **Ships:** the `brackets4` sync key, the four-team flow (semifinals, 3rd place before the final,
@@ -509,6 +537,40 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
 - **Live check:** a senior sandbox tournament end to end, Clear result, delete the game; a junior
   6-team smoke test.
 - **Rollback:** revert (old code ignores `brackets4`).
+- **Built (Step 22, build session 1; LIVE at v207):** `tests/bracket.test.js` pinned the six-team wizard first (it drives the real handlers and has
+  not changed since), then `sixPick` … `sixMedals` and the shared `finishBracket` / `cancelBracket` were extracted; `brackets4` joined `SYNC_KEYS` (per-match
+  diff `brackets4/<gid>/m/<match>`, normalized on read, in the backup, import, delete, format change and prune; `rules.test.js` no longer carries its
+  allowance; no rules change); the four-team engine is in app.js ("The brackets" in CLAUDE.md): `fourRead` and the pure rules (`fourRecord`, `fourUndo`,
+  `fourMedals`, `fourResolve` for the Re-check, `fourSeeds`) and the page-state wrappers (`fourStartGame`, `fourRecordTap`, `fourUndoTap`, `fourResolveTap`,
+  `fourSaveResult`: director only, own-team guard, late tap after a result ignored). Tests: `bracket.senior.test.js`, `bracket-sync.senior.test.js`,
+  `tests/emulator/brackets4-client.mjs` (the real client's writes against the published rules: SAFE).
+- **Built (Step 22, build session 2; LIVE at v207):** the four-team screens (`renderBracketFour`: the Start card — fixed pairs, "Suggested by the
+  points right now" with Choose different, or a pick — then the step bar over the match as the six-team wizard's own callout and live tally, Completed, Undo last
+  match, the Re-check card, the summary with Save Result, Cancel / Clear), `bracketPlayable(4)` true (the Games sheet's note is for any other roster size), the
+  readers on `fourRead` (`nowBracket4`, the Now row's board, `upcomingMatchups`, `findNextMatchupFor`, `gameRoundTeams`, a counselor's `renderLiveWatchFour`), Reopen
+  the final from `results[gid].path` (Change the result: Reopen the final / Start over / Keep it), `bracketNotes` on the hub's Games row and screen (a late tap after
+  a saved result, with Discard; a re-check waiting), Undo at every step and the stale-tap guard in the six-team wizard (`sixBackToBye`, `sixUndoSemifinal`,
+  `sixUndoFinal`, `sixLive`), senior's Legacy Game seeded as a bracket (`seniorDefaultConfig`: the live config is the owner's to change), a takeover that no
+  longer scrolls sideways. **Changed on purpose:** `week.senior.test.js` (a four-team roster starts the bracket; five is refused with its count),
+  `bracket.test.js` (the wizard's refusal case runs on 5 / 3 / 2 teams), `camps.test.js`, `games-screen.test.js` (two cases), `games-tab.test.js` and
+  `now-model.test.js` (an unreadable bracket is not a live game). New: `preview.test.js` walks every step of a four-team bracket;
+  `docs/build-notes/verify/step22-pass.cjs` is the browser pass (senior end to end with real taps, every state at 360 / 390, both themes, 100 / 130 / 200 % text,
+  a counselor's game view and Now card, a junior six-team smoke test). **Owner's checks** are in the session report: switch the live Legacy Game to Bracket,
+  a real-phone tournament on senior, two phones where one screen is a step behind (the same match recorded twice: the Re-check card), a junior bracket.
+- **Function review fixes (Step 22; LIVE at v207):** (1) one thumb, one result: a screen repaints in place, so a real double tap on one phone
+  recorded the NEXT match with the first team (the stale-tap guard cannot see it: the new match is what the screen shows). `bracketTapHeld` / `bracketTapDone`
+  hold record taps for 700 ms after a record (four-team and six-team wizard alike; Start and the Re-check answers too), and an Undo after an Undo; an Undo right
+  after a record is not held (the "wrong team" reflex). (2) Start over / Clear it and pick again now removes whatever bracket node a late tap left under the saved
+  result (`dropBracketNodes`); it used to leave it, where it came back as a bracket nobody started or blocked the next Start as "already started". (3) The own-team
+  guard (`canScoreRound`) now also covers the Re-check answers (`fourResolveTeams`: the semifinal that changed and every later match thrown out or put back) and
+  Reopen the final (the final's two teams); the card and the dialog say why the buttons are not offered. (4) `fourRead` returns null unless the camp has exactly
+  four teams, so a stray `brackets4` under a junior game is no live game, matchup or alert. (5) A stale second tap says what is saved ("Already recorded: Gold Team
+  won Semifinal 1."). **Recorded cuts and decisions:** the screen walks the matches in order (Q12, the step bar; P2's drafts list parallel semifinals on two fields
+  as a non-goal), so two phones recording the two semifinals at once is not a flow the app offers: per-match sync paths still keep two phones' writes to DIFFERENT
+  matches, which is what a phone one step behind produces, and the same match from two phones is last-write-wins and audited by the Re-check card. Not built:
+  "Already recorded by <name>" (a match record has no author, and the published rules' `brackets4` shape would need one) and the 60 s "changed this right after
+  you" toast for the director whose recorded match another ref overwrote (a director sees the change when the screen repaints; a later match that no longer fits
+  raises the Re-check card). The Discard button's browser hit-test is in the Step 22 pass.
 
 ### Step 23 · The reveal: remote, counselor mirror, public big screen, finale · redesign D5 · Mar · XL (6) · Opus pass, then Sonnet
 - **Ships:** `reveal.js` (`?v=` → 18): the director remote (mini TV, grouped ladder, masked
@@ -551,6 +613,14 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   27. An old TV page (a Step 2 or 3 build) reloads into the new page, or is simply reloaded.
 - **Rollback:** revert the client; the rules stay (inert for everything else). The old signed-in TV
   page returns with the revert.
+- **Built (Step 23 sessions, not yet deployed):** the engine is `reveal.js` and the screens are
+  `reveal-ui.js` (a separate file, so **nineteen** versioned assets, not eighteen: the deploy bumps
+  every `?v=` in index.html, `APP_VERSION`, `CODE_UPDATED_AT`, the TV page's own `?v=` references and
+  its two-place stamp, and `tests/shell.test.js` pins the count); the big screen is
+  `current-standings.js`, a public read-only subscriber. The end-to-end run is
+  `tests/emulator/reveal-e2e.cjs`. **Ship the big-screen page's markup and script in ONE deploy** (the
+  markup has no sign-in overlay). What stays for the owner: the live check above on real phones and a
+  real TV, and Buzz stays dark until Step 27.
 - **Owner:** a TV or screen, two director phones, 30 minutes; reload the TV once after the deploy.
   **Nothing to decide:** redesign §18 Q2 (the big screen is public) and Q3 (practice uses the real
   standings) are answered and built in.
@@ -574,7 +644,10 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
 - **Ships:** P2 §11.7–11.9, §11.18: the palette and `teamAccentVars`, team photos, People (lists,
   **Put people on teams**, the asking switch, the block list, the owner row), Campers (directors
   only, never on a device), the denied screen's **Ask to join** (default role Counselor), chat
-  mentions from `teamShort` with the capitalised-team-word rule. The Members row in More becomes
+  mentions from `teamShort` with the capitalised-team-word rule. **Accessor-level colour sanitising:**
+  `teamAccent()` (Step 4's seam) returns the camps.js colour raw into three `style=` interpolations
+  today; before any team colour comes from the database it must launder through `safeColorVars`
+  (and `teamAccentVars` is the one place that does), tested with a hostile colour string. The Members row in More becomes
   People, and the join badge and request bar are wired to their new homes (§7 item 5). Before shipping: both camps' `state/teams` ids are read (an owner GET in
   Cloud Shell, 2 minutes); a one-off repair is built only if one isn't `tN`.
 - **Needs:** 11, 14.
@@ -610,7 +683,9 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
 
 ### Step 28 · New-year wizard (owner only) · P2 S8 · Apr · L (3) · Sonnet
 - **Ships:** P2 §11.3 in full: the five steps, the claim, hold-to-clear, the verified archive, **Undo
-  the new-year setup**, device-local reset on a new epoch, the history filter, the stranded-work
+  the new-year setup**, and the owner's other emergency valve, **Advanced → Start this section again
+  from the original** (P2 §10.1 / §11.16: the owner-only re-seed of a section that has ever been on;
+  no earlier step builds it — Steps 15 and 19 stop at "Use the original week again"), device-local reset on a new epoch, the history filter, the stranded-work
   download. The clear update **also deletes** `revealPublic` and `revealFull` (both
   children, §7 item 6).
 - **Needs:** 15, 19, 25; placed after 23 (it deletes the reveal nodes and ignores old-epoch reveals).

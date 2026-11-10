@@ -24,8 +24,11 @@ function cachedWeek(mutate) {
   return JSON.stringify(state);
 }
 
+// The seeded pass boots the fresh context seeded too (the schedule edited here, the games on their items, applied once
+// the scripts have loaded): a cached week that carries blockIds loads the same either way.
+const BOOT_SEEDED = scheduleIsShared();
 function bootWith(json) {
-  const { ctx } = makeContext({ storage: { [STORAGE_KEY]: json } });
+  const { ctx } = makeContext({ storage: { [STORAGE_KEY]: json }, seeded: BOOT_SEEDED });
   const get = (expr) => vm.runInContext(expr, ctx);
   return { ctx, get };
 }
@@ -57,4 +60,19 @@ test('a cached week on a new-year epoch loads and keeps its roster', () => {
 test('a cached state with every synced map missing still loads (RTDB-pruned shapes)', () => {
   const json = cachedWeek((s) => { ['brackets', 'drafts', 'clocks', 'live', 'picSetup', 'bonuses', 'announcements'].forEach((k) => { delete s[k]; }); });
   assert.doesNotThrow(() => bootWith(json));
+});
+
+test('a cached quarantine (edits the rules refused, parked by S2a) loads at boot and keeps riding the cache', () => {
+  // readQuarantine runs while app.js is still evaluating, so it may only touch
+  // `state` and SYNC_KEYS: a TDZ throw here would be a blank app on exactly the
+  // phone that has an unsaved score to protect.
+  const parked = { 'results/g1': { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: 'x' } };
+  const json = cachedWeek((s) => { s._quarantine = parked; });
+  let boot;
+  assert.doesNotThrow(() => { boot = bootWith(json); });
+  assert.equal(boot.get('JSON.stringify(stateQuarantine)'), JSON.stringify(parked), 'the parked set is rebuilt from the cache');
+  assert.equal(boot.get('JSON.stringify(state._quarantine)'), JSON.stringify(parked), 'and the cache keeps carrying it');
+  // Junk in the slot is ignored rather than trusted.
+  const junk = bootWith(cachedWeek((s) => { s._quarantine = ['x']; }));
+  assert.equal(junk.get('Object.keys(stateQuarantine).length'), 0);
 });

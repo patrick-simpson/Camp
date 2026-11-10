@@ -74,7 +74,8 @@ test('electives are fully inert at senior camp', () => {
   assert.notOk(CAMP.features.electives);
   assert.deepEqual(ELECTIVES, {});
   state.identity = 'Someone';
-  assert.equal(myElectivesToday(), null, 'no elective data → no card');
+  assert.equal(electiveMeOnDay(1), false, 'no elective data → nobody is at a station');
+  assert.equal(myStationFor(1, 0), null, 'and no station of mine to show');
   // The identity picker is an electives affordance — it must refuse to open.
   state.followTeam = 't1';
   state.identity = undefined;
@@ -83,8 +84,8 @@ test('electives are fully inert at senior camp', () => {
 });
 
 test('the meal-cleanup rota is all TBA until filled in', () => {
-  assert.equal(cleanupAssigned(1, 'Breakfast'), null);
-  assert.equal(findNextCleanupFor('t0'), null, 'no rota → no "next cleanup" line on the follow card');
+  assert.deepEqual(cleanupTeams(1, 'Breakfast'), []);
+  assert.equal(findNextCleanupFor('t0'), null, 'no rota → no "next cleanup" line on the Your team sheet');
 });
 
 test('senior verse card data renders without a real sheet', () => {
@@ -98,20 +99,39 @@ test('teamEmoji and accents cover the four senior teams (and only them)', () => 
     assert.ok(teamEmoji(id) !== '🏳️', `${id} has a real emoji`);
     assert.ok(teamAccent(id), `${id} has an accent color`);
   });
-  assert.equal(teamShield('t0'), null, 'no flag artwork yet — crest lookup is empty');
+  assert.equal(teamCrestSrc('t0'), null, 'no flag artwork yet — crest lookup is empty');
   assert.equal(teamEmoji('t5'), '🏳️', 'junior-only slots fall back safely');
 });
 
-test('the six-team bracket wizard correctly refuses a four-team senior week', () => {
-  // Until the 4-team bracket ships (planned), tournament games must show
-  // the guidance path, not a broken bracket. renderTournament gates on
-  // state.teams.length !== 6 — pin that the gate CATCHES senior.
+// CHANGED ON PURPOSE (Step 22, setup-rebuild-spec S6b): this used to pin that a tournament game on senior's four teams showed the
+// six-team wizard's "needs exactly 6 teams" card and created no bracket. Four teams now play the four-team bracket (brackets4): the
+// game shows its own Start card, and the six-team wizard's node is never touched. A roster that is neither four nor six is still
+// refused, with the count (below, on a five-team roster).
+test('a tournament game on senior\'s four teams starts the four-team bracket, and never creates a six-team one', () => {
   freshState();
+  setMemberRole('editor');
   assert.equal(state.teams.length, 4);
   const container = document.getElementById('entry-area');
   const g = { id: 'x', name: 'X', format: 'tournament', rules: [] };
   assert.doesNotThrow(() => renderTournament(container, g));
-  assert.notOk(state.brackets && state.brackets.x, 'no bracket was created');
+  assert.notOk(state.brackets && state.brackets.x, 'no six-team bracket was created');
+  assert.notOk(/needs exactly 6 teams/.test(container.innerHTML), 'the six-team refusal is gone for a four-team roster');
+  assert.ok(/data-four="pick"/.test(container.innerHTML) || /data-four="start-plan"/.test(container.innerHTML), 'the four-team Start card is what shows: ' + container.innerHTML.slice(0, 200));
+  assert.equal(bracketPlayable(4), true);
+});
+
+test('a roster that is neither four nor six is refused with its count, and starts nothing', () => {
+  freshState();
+  setMemberRole('editor');
+  state.teams = state.teams.concat([{ id: 't4', name: 'Fifth', counselor: '' }]);
+  assert.equal(teamIds().length, 5);
+  const container = document.getElementById('entry-area');
+  const g = { id: 'y', name: 'Y', format: 'tournament', rules: [] };
+  assert.doesNotThrow(() => renderTournament(container, g));
+  assert.ok(/needs exactly 6 teams — you have 5/.test(container.innerHTML), container.innerHTML.slice(0, 200));
+  assert.notOk(state.brackets && state.brackets.y, 'no bracket was created');
+  assert.notOk(state.brackets4 && state.brackets4.y, 'and no four-team one either');
+  assert.deepEqual(fourStartGame(g, [['t0', 't1'], ['t2', 't3']]), { ok: false, reason: 'teams', count: 5 });
 });
 
 test('a senior notice draft seeds itself and stays invisible', () => {

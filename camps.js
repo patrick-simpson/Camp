@@ -101,10 +101,8 @@ const TEAM_SHIELD = {
   t4: 'images/team-shields/patriotic-pilgrims.webp?v=5',
   t5: 'images/team-shields/runaway-john-deeres.webp?v=5',
 };
-// Per-team accent color, tuned to each team's shield/emoji. Drives the "Your
-// team" card's tint, border, and rank pill via the --team-accent CSS custom
-// property (see renderFollowCard / .follow-team-card). Only one team's card
-// shows at a time, so these never sit side by side.
+// Per-team accent color, tuned to each team's shield/emoji. Drives the team tint on boards and rows via the
+// --team-accent CSS custom property (see teamAccentVars in app.js).
 const TEAM_ACCENT = {
   t0: '#e2672b', // Ferocious Foxes — fox orange
   t1: '#9c6420', // Turkey Dinner — roast brown
@@ -380,8 +378,8 @@ const SCHED_DAYS = [
   { dow: 6, short: 'Sat', full: 'Saturday', tag: 'Send-off' },
 ];
 
-// This week's counselors, per team — the seed list behind "Add this week's
-// counselors" in the Members drawer. They start as PENDING members (a name
+// This week’s counselors, per team — the seed list behind "Fill in last year’s printed
+// roster" on the People screen. They start as PENDING members (a name
 // and a team, no sign-in yet); an editor fills in each person's email or
 // phone later with "Add sign-in", which is what actually lets them in.
 // Spellings follow the standings' counselor text, which is what camp prints.
@@ -428,40 +426,39 @@ const MEAL_CLEANUP_SCHEDULE = {
 function defaultNotice() {
   return {
     status: 'draft',
-    eyebrow: '🧹 Campground cleanup · 8:30–9:30am',
+    eyebrow: 'Campground cleanup · 8:30–9:30 AM',
     title: 'Where your team cleans',
-    sub: "Straight from breakfast to your team's area — no going up to the cabins yet. "
-       + 'Finish by 9:30, then meet in the Tabernacle for send-off.',
+    sub: 'Go straight from breakfast to your team’s area. Finish by 9:30, then meet in the Tabernacle for send-off.',
     zones: [
       { teamId: 't3', place: 'Chapel Lawn', note: '' },
       { teamId: 't1', place: 'Waterfront', note: '' },
       { teamId: 't0', place: 'Linger a While', note: '' },
       { teamId: 't5', place: 'Snack Shack', note: '' },
-      { teamId: 't2', place: 'Dining Hall', note: 'breakfast cleanup' },
+      { teamId: 't2', place: 'Dining Hall', note: 'Breakfast cleanup' },
       { teamId: 't4', place: 'Tabernacle', note: '' },
     ],
     steps: [
       { emoji: '🚶', when: 'Straight after breakfast', items: [
-        "Campers go straight to their team's area above — nobody goes up to the cabins yet.",
+        'Nobody goes up to the cabins yet. Packing comes later.',
       ] },
       { emoji: '🗑️', when: 'In your area', items: [
-        'All the trash goes — empty the cans and put a fresh bag in.',
-        'Put away the games and anything else we used this week.',
-        'Lost and found goes to the tables at the Snack Shack.',
+        'Empty every trash can and put in a fresh bag.',
+        'Put away the games and everything else we used this week.',
+        'Take lost and found to the tables at the Snack Shack.',
       ] },
       { emoji: '⛪', when: 'When your area is done', items: [
         'Head to the Tabernacle and help finish up there.',
       ] },
-      { emoji: '🛏️', when: 'Cabins — once the Tabernacle is set', items: [
-        'Now campers can go up to pack.',
-        'Sweep the floors and clear out the trash before anything gets packed.',
+      { emoji: '🛏️', when: 'Cabins, once the Tabernacle is set', items: [
+        'Now campers can go up and pack.',
+        'Sweep the floors and take out the trash before anything gets packed.',
       ] },
       { emoji: '🚿', when: 'Once the campers have gone', items: [
         'Clean the shower houses.',
-        'Walk the cabins one last time — nothing left behind.',
+        'Walk through the cabins one last time and check nothing is left behind.',
       ] },
     ],
-    signoff: "Let's leave these grounds looking better than we found them!",
+    signoff: 'Let’s leave these grounds better than we found them.',
   };
 }
 CAMPS.junior = {
@@ -484,6 +481,7 @@ CAMPS.junior = {
   seedCounselors: SEED_COUNSELORS,
   daySchedule: DAY_SCHEDULE,
   schedDays: SCHED_DAYS,
+  gameBlockOverrides: {},       // { gameId: schedule block id }: wins over "Put games on the schedule"'s own rules (none needed yet)
   electives: ELECTIVES,
   stationEmoji: STATION_EMOJI,
   electiveSlotMin: ELECTIVE_SLOT_MIN,
@@ -500,10 +498,10 @@ CAMPS.junior = {
 
 // ════════════════════════════════════════════════════════════════════
 // SENIOR CAMP — ages 13–18, four teams with flags, no electives.
-// Everything here is a PLACEHOLDER until Patrick fills in the real week
-// (teams and games via Settings → Set up the week; schedule/meals/verses/
-// cleanup rota by editing this profile). The daily rhythm below is the
-// published senior-camp sample day.
+// Everything here is a PLACEHOLDER until the real week is filled in through
+// More → Set up the week (this profile is the built-in copy a section shows
+// while it is not edited there). The daily rhythm below is the published
+// senior-camp sample day.
 // ════════════════════════════════════════════════════════════════════
 (function () {
 
@@ -582,22 +580,34 @@ const SCHED_DAYS = [
 // The seeded senior week: five days, and per day the sample-day program —
 // two team-competition blocks, the Legacy Game, and the two evening crowd
 // games (all SCORED, per Patrick). Every game is a placement placeholder
-// (works at any team count) that Patrick renames/retypes in the builder.
+// (works at any team count) that Patrick renames/retypes in the builder —
+// except the Legacy Game, which is the four-team bracket (two semifinals, the
+// 3rd-place match, the final; setup-rebuild-spec decision Q10, BUILD-PLAN
+// Step 22): format 'tournament', semifinals suggested from the standings, a
+// plain running scoreboard per match (the Games sheet's own default for a
+// bracket). This seeds a NEW senior config only: the live config is a
+// director's to change in Set up the week → Games (nothing here reaches it).
 function seniorDefaultConfig() {
   const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   const games = [];
   names.forEach(function (name, i) {
     const dayId = 'd' + (i + 1);
-    function mk(idBase, gname, emoji, session, headline) {
-      games.push({
+    function mk(idBase, gname, emoji, session, headline, bracket) {
+      const game = {
         id: idBase + '-' + dayId, name: gname, emoji: emoji, dayId: dayId, session: session,
         location: 'TBA', format: 'placement', headline: headline,
-        rules: [{ h: 'How it works', items: ['Details to come — edit this game in Settings → Set up the week.'] }],
-      });
+        rules: [{ h: 'How it works', items: ['Details to come — edit this game in More → Set up the week → Games.'] }],
+      };
+      if (bracket) {
+        game.format = 'tournament';
+        game.bracketSeed = 'standings';
+        game.liveTracker = { unit: 'Points', periodLabel: 'Round', innings: 1, outs: 0 };
+      }
+      games.push(game);
     }
     mk('team-comp-am', 'Team Competition (Morning)', '🏅', 'Morning', 'Morning team-competition block.');
     mk('team-comp-pm', 'Team Competition (Afternoon)', '🎽', 'Afternoon', 'Afternoon team-competition block.');
-    mk('legacy-game', 'Legacy Game', '🏆', 'Afternoon', 'The ultimate version of a camp classic.');
+    mk('legacy-game', 'Legacy Game', '🏆', 'Afternoon', 'The ultimate version of a camp classic.', true);
     mk('hot-seat', 'Hot Seat', '🎤', 'Evening', 'Evening crowd game — scored.');
     mk('lets-make-a-deal', "Let's Make a Deal", '🤝', 'Evening', 'Evening crowd game — scored.');
   });
@@ -629,23 +639,24 @@ const MEMORY_VERSES = {
 };
 
 // A worked example of the notice board, as a DRAFT (never posts itself) —
-// one zone per senior team, places TBA.
+// one zone per senior team, each area still to be set ("Area to be set": a phrase no other screen uses — "Still to come"
+// is the reveal's word for an unrevealed team).
 function seniorDefaultNotice() {
   return {
     status: 'draft',
-    eyebrow: '🧹 Campground cleanup',
+    eyebrow: 'Campground cleanup',
     title: 'Where your team cleans',
-    sub: 'Assignments to come — edit this notice in Settings → Set up the week → Notice.',
+    sub: 'Go to your team’s area and clean it before send-off.',
     zones: [
-      { teamId: 't0', place: 'TBA', note: '' },
-      { teamId: 't1', place: 'TBA', note: '' },
-      { teamId: 't2', place: 'TBA', note: '' },
-      { teamId: 't3', place: 'TBA', note: '' },
+      { teamId: 't0', place: 'Area to be set', note: '' },
+      { teamId: 't1', place: 'Area to be set', note: '' },
+      { teamId: 't2', place: 'Area to be set', note: '' },
+      { teamId: 't3', place: 'Area to be set', note: '' },
     ],
     steps: [
-      { emoji: '🗑️', when: 'In your area', items: ['Trash out, fresh bags in, gear put away.'] },
+      { emoji: '🗑️', when: 'In your area', items: ['Empty the trash, put in fresh bags and put away the games.'] },
     ],
-    signoff: "Let's leave these grounds looking better than we found them!",
+    signoff: 'Let’s leave these grounds better than we found them.',
   };
 }
 
@@ -662,13 +673,19 @@ CAMPS.senior = {
   oldPlaceholderTeamNames: [],  // empty ⇒ normalizeSyncedState never auto-renames senior teams
   oldPlaceholderCounselors: [],
   teamEmoji: TEAM_EMOJI,
-  teamCrest: {},                // no flag artwork yet — emoji fallback everywhere
+  teamCrest: {},                // no flag artwork yet — teamMark draws a flag (below), then an emoji tile
+  // The flag's COLOUR per team (index.html's #flag-* marks; styles.css .flag[data-flag]).
+  // The SHAPE (plain / swallowtail / stripe / chevron) comes from the team's order,
+  // so two teams stay apart under colour-blindness (redesign §8.4).
+  teamFlag: { t0: 'red', t1: 'blue', t2: 'green', t3: 'gold' },
   teamAccent: TEAM_ACCENT,
   teamAbbrev: TEAM_ABBREV,
   teamCounselors: {},           // filled by member teamId assignments, not a printed sheet
   seedCounselors: [],           // no printed senior roster yet ⇒ the seed button never shows
   daySchedule: DAY_SCHEDULE,
   schedDays: SCHED_DAYS,
+  placeholderDays: [0, 6],      // Sunday arrival and Saturday send-off are STUBS: the seed marks them, so the hub shows a quiet "still use the sample schedule" note (only while the day still matches the seed), never a warning
+  gameBlockOverrides: {},
   electives: {},
   stationEmoji: {},
   electiveSlotMin: [],
@@ -707,5 +724,8 @@ function otherCampId() { return CAMP.id === 'senior' ? 'junior' : 'senior'; }
 // Every Firebase path and per-camp localStorage key goes through these two.
 // For junior both are identity-preserving (dbRoot is the original literal,
 // suffix is '') — pinned by tests/camps.test.js.
+// ONE way to write a camp's name on screen (redesign §8.2, sentence case): "Junior camp", "Senior camp" — the app's kickers,
+// the sign-in, the sheets and the big screen all say it the same way. The calendar file's X-WR-CALNAME keeps the plain label.
+function campWord(camp) { return String(((camp || CAMP) && (camp || CAMP).label) || 'Camp').replace(/\bCamp\b/, 'camp'); }
 function dbPath(sub) { return CAMP.dbRoot + '/' + sub; }
 function lsKey(base) { return base + CAMP.storageSuffix; }

@@ -34,7 +34,7 @@
 // When you fill this in, ALSO add the same origin to connect-src in the
 // Content-Security-Policy in index.html — otherwise the browser silently
 // blocks every request to it (the drawer's sender line will say so).
-const PUSH_SERVICE_URL = '';
+const PUSH_SERVICE_URL = 'https://camp-alerts.patricksimpson-fx.workers.dev';
 
 // Part of the service worker's registration URL (sw.js?v=N). Bump it when
 // sw.js changes in a way an already-installed worker must pick up promptly —
@@ -122,12 +122,12 @@ function pushScheduleBlocks(daySchedule) {
       if (!b || b.noTime) return;
       const start = Number(b.start);
       if (!Number.isInteger(start) || start < 0 || start >= 1440) return;
-      out[`d${dow}-${start}-${i}`] = {
+      out[blockPushId(b, dow, i)] = {
         dow,
         start,
         label: pushClip(String(b.label || '').trim(), 120) || 'Schedule block',
         emoji: pushClip(String(b.emoji || '').trim(), 16) || '🕒',
-        key: pushBlockKey(b.label),
+        key: blockKey(b),
       };
     });
   }
@@ -290,6 +290,12 @@ function isValidWeekStart(s) {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d && dt.getUTCDay() === 0;
 }
 
+// The week phone alerts were last set up for (the drawer's date), as far as this device has read it — campWeek()'s
+// fallback while setup/meta/weekStart is empty. null until the drawer or the publisher has looked.
+function pushKnownWeekStart() {
+  return isValidWeekStart(pushWeekStart) ? pushWeekStart : null;
+}
+
 // "Jul 18–24" / "Jul 30 – Aug 5" for the week starting on that Sunday.
 function pushWeekLabel(weekStart) {
   if (!isValidWeekStart(weekStart)) return '';
@@ -410,9 +416,10 @@ function pushValidVapidKey(key) {
 function pushAudienceLabel(audience) {
   if (audience === 'all') return 'Everyone';
   if (audience === 'editors') return 'Directors only';
+  if (audience === 'followers') return 'People who follow these items';
   if (PUSH_TEAM_RE.test(String(audience || '')) && typeof teamName === 'function') {
     const t = (typeof state !== 'undefined' && state.teams || []).find((x) => x.id === audience);
-    return t ? `${teamEmoji(audience)} ${t.name} counselors` : 'One team';
+    return t ? `${t.name} counselors` : 'One team';
   }
   return 'Everyone';
 }
@@ -530,20 +537,20 @@ function pushErrorMessage(err) {
   const code = (err && (err.pushCode || err.code)) || '';
   const server = err && err.serverError;
   if (server === 'not-editor') return 'Only directors can send alerts.';
-  if (server === 'not-member') return "The alert sender doesn't think you're on the camp list. Try signing out and back in.";
+  if (server === 'not-member') return "The alert sender doesn’t think you’re on the camp list. Try signing out and back in.";
   if (server === 'rate') return 'Give it a few seconds between sends.';
   if (err && err.serverMessage) return err.serverMessage;
   switch (code) {
-    case 'unsupported': return "This browser can't get phone alerts.";
-    case 'sw-timeout': return "This phone didn't finish setting up alerts. Close Camp completely, reopen it, and try again.";
-    case 'sw-failed': return "This phone couldn't start the alerts helper. Close Camp completely, reopen it, and try again.";
-    case 'vapid': return "Couldn't reach the alert sender — check your connection and try again.";
+    case 'unsupported': return "This browser can’t get phone alerts.";
+    case 'sw-timeout': return "This phone didn’t finish setting up alerts. Close Camp completely, reopen it, and try again.";
+    case 'sw-failed': return "This phone couldn’t start the alerts helper. Close Camp completely, reopen it, and try again.";
+    case 'vapid': return "Couldn’t reach the alert sender — check your connection and try again.";
     case 'subscribe': return 'This phone refused to set up alerts. Check that notifications are allowed for Camp, then try again.';
-    case 'save-timeout': return "Couldn't save — check your connection and try again.";
-    case 'not-signed-in': return "You're not signed in — sign in again and retry.";
+    case 'save-timeout': return "Couldn’t save — check your connection and try again.";
+    case 'not-signed-in': return "You’re not signed in — sign in again and retry.";
     case 'network': return pushCspBlocked
-      ? "The site's security settings are blocking the alert sender (see the note under Camp week)."
-      : "Couldn't reach the alert sender — check your connection.";
+      ? "The site’s security settings are blocking the alert sender (see the note under Camp week)."
+      : "Couldn’t reach the alert sender — check your connection.";
     case 'timeout': return 'The alert sender took too long to answer — try again in a moment.';
     case 'PERMISSION_DENIED': case 'permission_denied':
       return "The database refused — phone alerts may not be switched on in the rules yet (ask Patrick).";
@@ -820,6 +827,8 @@ function pushPrefsChanged() {
 }
 
 async function pushRewriteRecord() {
+  // A bell flipped inside a counselor preview is kept on this phone; the record is rewritten once the preview is over.
+  if (counselorPreviewOn) { clearTimeout(pushPrefsTimer); pushPrefsTimer = setTimeout(pushRewriteRecord, 5000); return; }
   try {
     const reg = await pushExistingRegistration();
     const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
@@ -832,7 +841,7 @@ async function pushRewriteRecord() {
   } catch (e) {
     if (e && e.pushCode === 'save-timeout') return; // queued — lands when back online
     console.warn('[push] saving prefs failed', e);
-    showToast("Couldn't save your alert settings — check your connection and try again.");
+    showToast("Couldn’t save your alert settings — check your connection and try again.");
   }
 }
 
@@ -852,6 +861,7 @@ function pushSetBusy(on) {
 // "Turn on phone alerts" (and "Reconnect"). MUST run straight from the tap.
 async function pushEnable() {
   if (pushBusy || !pushConfigured() || !pushSyncReady) return;
+  if (previewRefuses()) return; // a counselor preview subscribes nothing (it would write this phone's alert record)
   if (pushEnvironment() !== 'ready') {
     renderPushDrawerIfOpen();
     return;
@@ -893,6 +903,7 @@ async function pushEnable() {
 
 async function pushDisable() {
   if (pushBusy) return;
+  if (previewRefuses()) return;
   pushSetBusy(true);
   try {
     let removed = true;
@@ -902,7 +913,7 @@ async function pushDisable() {
       // The browser subscription is shared with the other camp, so it can't
       // be dropped — and with the record still here this phone would keep
       // buzzing. Say so rather than pretend.
-      showToast("Couldn't turn alerts off — check your connection and try again.");
+      showToast("Couldn’t turn alerts off — check your connection and try again.");
       return;
     }
     pushSetOn(false);
@@ -920,6 +931,7 @@ async function pushDisable() {
 
 async function pushSendTest() {
   if (pushBusy) return;
+  if (previewRefuses()) return;
   pushSetBusy(true);
   try {
     const res = await pushPost('/notify', { camp: CAMP.id, kind: 'test', deviceId: pushDeviceId(false) || undefined }, true);
@@ -927,7 +939,7 @@ async function pushSendTest() {
     const n = (Number(res.sent) || 0) + (Number(res.queued) || 0);
     showToast(n
       ? '✅ Test sent — it should buzz in a few seconds.'
-      : "The sender couldn't find this phone. Turn alerts off and on again.", { mine: !!n });
+      : "The sender couldn’t find this phone. Turn alerts off and on again.", { mine: !!n });
   } catch (e) {
     console.warn('[push] test failed', e);
     showToast(pushErrorMessage(e));
@@ -950,7 +962,7 @@ function pushOfferReconnect() {
       return;
     } catch (e) { /* fall back to the plain toast */ }
   }
-  showToast('📲 Phone alerts stopped on this phone — reconnect in Settings → Phone alerts.');
+  showToast('📲 Phone alerts stopped on this phone — reconnect in More → Alerts.');
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -975,6 +987,11 @@ function initPush() {
     pushSelfHeal().catch((e) => console.warn('[push] self-heal failed', e));
     if (typeof canEdit === 'function' && canEdit()) {
       pushMaybeRepublishSchedule().catch((e) => console.warn('[push] schedule republish failed', e));
+      if (typeof onSetupEvent === 'function' && !pushSetupHooked) {
+        pushSetupHooked = true;
+        pushLastShared = typeof scheduleIsShared === 'function' && scheduleIsShared();
+        onSetupEvent(pushOnSetupEvent);
+      }
     }
   } catch (e) { console.warn('[push] init failed', e); }
 }
@@ -1061,7 +1078,7 @@ function pushNotifyChat(ch, msgId, text) {
       // An announcement is the one message people count on getting. Say so —
       // quietly — rather than let the poster believe every phone buzzed.
       if (ch === 'announcements' && typeof showToast === 'function') {
-        showToast('📣 Posted — but phone alerts may not have gone out. It\'s on everyone\'s screen when they open Camp.');
+        showToast('📣 Posted — but phone alerts may not have gone out. It’s on everyone’s screen when they open Camp.');
       }
       return null;
     });
@@ -1071,41 +1088,247 @@ function pushNotifyChat(ch, msgId, text) {
 // The published schedule (editors)
 // ════════════════════════════════════════════════════════════════════
 
-function pushPublishSchedule(weekStart) {
-  return pushWithTimeout(firebase.database().ref(dbPath('pushSchedule')).set({
-    weekStart,
-    at: firebase.database.ServerValue.TIMESTAMP,
-    by: identityKey(authUser),
-    blocks: pushScheduleBlocks(DAY_SCHEDULE),
-  }), 10000, 'save-timeout');
+// What the Worker reads is the week as plain data (pushScheduleBlocks) and the Sunday it starts on. `src` is a short
+// hash of exactly that content, so two editors who build the same week write the same `src`, and a republish of
+// unchanged content is recognised as one (setup-rebuild-spec §12.1). `rev` counts the real changes, by transaction.
+function pushScheduleSrc(weekStart, blocks) {
+  return fnv1a(pushStableJson({ weekStart, blocks }));
 }
 
-// The schedule is code (camps.js), so a deploy can change it. The first
-// editor device to load a new build republishes — no tap — keeping the
-// week the director already set. A week that was never set stays unset:
-// there'd be nothing to remind anyone about.
+// The `src` this device last saw published (a read or its own write): the cheap "nothing to do" for a commit that
+// did not touch the schedule. null until it has looked.
+let pushPublishedSrc = null;
+
+// Publish the week: ONE transaction on pushSchedule — `{ weekStart, at, by, blocks, rev: (cur.rev || 0) + 1, src }`,
+// or nothing at all when `cur` already holds this content (the author still sends its own /notify, §12.2). A null
+// `cur` is legitimate (never published); the SDK re-runs the function on a stale guess. Built-in camps publish as
+// they always did (ids d<dow>-<start>-<position>); a camp whose schedule is edited here publishes <dk>-<block id>,
+// which stays put when a block is moved or renamed, with every block's own alert key. Resolves
+// { published, rev, src }.
+async function pushPublishSchedule(weekStart) {
+  const blocks = pushScheduleBlocks(scheduleWeek());
+  const src = pushScheduleSrc(weekStart, blocks);
+  const by = identityKey(authUser);
+  let rev = 0;
+  const res = await pushWithTimeout(firebase.database().ref(dbPath('pushSchedule')).transaction((cur) => {
+    if (cur && typeof cur === 'object' && cur.src === src && cur.weekStart === weekStart) { rev = Number(cur.rev) || 0; return undefined; }
+    rev = (cur && typeof cur === 'object' ? Number(cur.rev) || 0 : 0) + 1;
+    return { weekStart, at: firebase.database.ServerValue.TIMESTAMP, by, blocks, rev, src };
+  }, null, false), 10000, 'save-timeout');
+  pushPublishedSrc = src;
+  return { published: !!(res && res.committed), rev, src };
+}
+
+// Catch-up: republish when what is published differs from this device's own build of the week, never alerting.
+// The week is setup/meta/weekStart (campWeek(), which falls back to the date the drawer set); a camp with no date
+// publishes nothing — there is nobody to remind. `opts.force` is the hub's Publish now.
+async function pushRepublishSchedule(opts) {
+  const o = opts || {};
+  if (!pushConfigured() || typeof firebase === 'undefined' || !firebase.database) return { published: false, why: 'off' };
+  if (!(typeof directorTab === 'function' && directorTab())) return { published: false, why: 'readonly' }; // the schedule a director already committed is published in a preview too
+  const weekStart = typeof campWeek === 'function' ? campWeek().start : pushKnownWeekStart();
+  if (!weekStart) return { published: false, why: 'no-week' };
+  if (!o.force && pushScheduleSrc(weekStart, pushScheduleBlocks(scheduleWeek())) === pushPublishedSrc) return { published: false, why: 'same' };
+  return pushPublishSchedule(weekStart);
+}
+
+// The schedule is data a director edits (or, until Edit the week here is pressed, code in camps.js that a deploy
+// can change). The first editor device to load republishes — no tap — keeping the week the director already set. A
+// week that was never set stays unset: there'd be nothing to remind anyone about. A published record with no `src`
+// (an older build wrote it) never equals a build's own, so it is put right the same way.
 async function pushMaybeRepublishSchedule() {
   const snap = await pushWithTimeout(firebase.database().ref(dbPath('pushSchedule')).once('value'), 15000);
   const cur = snap.val();
   pushWeekStart = cur && isValidWeekStart(cur.weekStart) ? cur.weekStart : null;
+  pushPublishedSrc = cur && typeof cur.src === 'string' ? cur.src : null;
   renderPushWeekStatus();
-  if (!pushWeekStart || !canEdit()) return;
-  if (pushStableJson(cur.blocks || {}) === pushStableJson(pushScheduleBlocks(DAY_SCHEDULE))) return;
-  await pushPublishSchedule(pushWeekStart);
+  pushMigrateWeekStart();
+  if (!pushWeekStart && !(typeof campWeek === 'function' && campWeek().start)) return;
+  await pushRepublishSchedule();
+}
+
+// The week date moves into setup/meta/weekStart (§10.6): a director device copies the one alerts were set up with,
+// once, when setup has none. Retried on setup events (the first snapshot may not have landed yet).
+let pushWeekMigrated = false;
+function pushMigrateWeekStart() {
+  if (pushWeekMigrated || !isValidWeekStart(pushWeekStart)) return;
+  if (typeof setupWeekStart !== 'function' || typeof commitSetup !== 'function' || !(typeof canEdit === 'function' && canEdit())) return;
+  if (setupWeekStart()) { pushWeekMigrated = true; return; }
+  const weekStart = pushWeekStart;
+  const r = commitSetup((d) => { d.meta.weekStart = weekStart; }, { undo: false });
+  if (r.ok) pushWeekMigrated = true; // 'loading' (no first snapshot yet) tries again on the next setup event
+}
+
+// Who publishes (§12.1): the author's device, a few seconds after its own setup commit; and every editor device when
+// the switch itself moves (Edit the week here, Use the original week again), because the ids change format then. The
+// content is deterministic, so racing editors write identical blocks and all but the first abort.
+let pushRepublishTimer = null;
+let pushLastShared = null;
+let pushSetupHooked = false;
+function pushScheduleSoon(ms) {
+  if (!pushConfigured() || !pushSyncReady) return;
+  clearTimeout(pushRepublishTimer);
+  pushRepublishTimer = setTimeout(() => {
+    pushRepublishTimer = null;
+    pushRepublishSchedule().then(() => pushScheduleSettle()).catch((e) => console.warn('[push] schedule republish failed', e));
+  }, ms === undefined ? 5000 : ms);
+}
+
+// ── Schedule-change alerts: the client half (Step 26) ────────────────────────────────────────────────────────────
+// After a director commits a schedule change the page publishes the new schedule (above), then asks the Worker's
+// /notify kind 'schedule' which published blocks it touched. The Worker takes NO words from the page: it compares the
+// published schedule with its own per-block baseline and writes the digest itself. So the page only names block ids
+// and says whether to alert. A change made without the tick is still named with alert:false, so the baseline moves and
+// a later alert about the same block never repeats it. Nothing here ever throws into, or blocks, a setup commit.
+let pushSchedSent = null;        // the published blocks as the sender was last told about them (this device's view)
+let pushSchedAlertsOff = false;  // an older Worker answered "unknown kind": the tick is hidden for this page load
+let pushSchedResetOwed = false;  // the schedule switch moved: the baseline is remade (ids ['*'], never an alert)
+const PUSH_SCHED_IDS_MAX = 200;  // the Worker's own cap on one request
+
+function pushScheduleSnapshot() {
+  if (!pushConfigured()) return null; // dormant: nothing is ever told, so don't build the snapshot
+  try { return pushScheduleBlocks(scheduleWeek()); } catch (e) { return null; }
+}
+
+// The published block ids whose slim record differs (added, removed, moved, renamed), at most PUSH_SCHED_IDS_MAX.
+function pushScheduleChangedIds(a, b) {
+  if (!a || !b) return [];
+  const ids = [];
+  const all = new Set(Object.keys(a).concat(Object.keys(b)));
+  all.forEach((id) => { if (pushStableJson(a[id] === undefined ? null : a[id]) !== pushStableJson(b[id] === undefined ? null : b[id])) ids.push(id); });
+  return ids.slice(0, PUSH_SCHED_IDS_MAX);
+}
+
+// Should the "Tell people who follow this" tick be offered at all? Only with phone alerts live, a director who may
+// act now, the camp week running, and a Worker that knows the kind. `dow` (optional) limits it to today and tomorrow:
+// the Worker only tells people about times from now to the end of tomorrow.
+function pushScheduleAlertOffered(dow) {
+  if (!pushConfigured() || pushSchedAlertsOff) return false;
+  if (!(typeof canEdit === 'function' && canEdit())) return false;
+  if (typeof campWeek !== 'function' || campWeek().phase !== 'during') return false;
+  if (dow === undefined || dow === null) return true;
+  const today = campNow().dow;
+  return dow === today || dow === (today + 1) % 7;
+}
+
+// Would the sender tell anyone about this time? Its own window (worker.js windowScheduleItems): the occurrence — the
+// camp week's Sunday + `dow`, at `start` minutes, camp time — hasn't started yet and is before the end of tomorrow, by
+// the SERVER's clock. The sheets offer the tick only for a change with such a time (before or after it), so a box is
+// never ticked for a change that can only end in "nobody was alerted".
+function pushScheduleTimeTellable(dow, start) {
+  const ws = typeof campWeek === 'function' ? campWeek().start : '';
+  if (!ws || !Number.isInteger(dow) || dow < 0 || dow > 6 || !Number.isInteger(start) || start < 0 || start >= 1440) return false;
+  try {
+    const ymd = (base, add) => { const p = String(base).split('-').map(Number); return new Date(Date.UTC(p[0], p[1] - 1, p[2] + add)).toISOString().slice(0, 10); };
+    const now = typeof serverNow === 'function' ? serverNow() : Date.now();
+    const t = etParts(now);
+    const today = t.year + '-' + String(t.month).padStart(2, '0') + '-' + String(t.day).padStart(2, '0');
+    const at = etWallToEpoch(ymd(ws, dow), start);
+    return at > now && at < etWallToEpoch(ymd(today, 2), 0);
+  } catch (e) { return false; }
+}
+
+// Publish, then name what changed since `before` (a pushScheduleSnapshot taken before the commit). Resolves
+// { ok, reason?, sent, queued, failed, devices, items } and never rejects.
+async function pushScheduleTell(before, alert) {
+  const after = pushScheduleSnapshot();
+  const ids = pushScheduleChangedIds(before, after);
+  const sentWas = pushSchedSent; // given back if the send fails: the sender's baseline did not move, so ours must not
+  if (after) pushSchedSent = after;
+  if (!pushConfigured() || pushSchedAlertsOff) return { ok: false, reason: 'off' };
+  if (!(typeof directorTab === 'function' && directorTab())) return { ok: false, reason: 'readonly' };
+  if (!ids.length) return { ok: true, reason: 'no-change' };
+  if (!alert && !(typeof campWeek === 'function' && campWeek().phase === 'during')) return { ok: true, reason: 'quiet' };
+  try {
+    await pushRepublishSchedule({ force: true });
+    const res = await pushPost('/notify', { camp: CAMP.id, kind: 'schedule', alert: !!alert, ids }, true);
+    pushDrainBatches(res.batches);
+    return { ok: true, reason: res.reason || '', sent: Number(res.sent) || 0, queued: Number(res.queued) || 0, failed: Number(res.failed) || 0, devices: Number(res.devices) || 0, items: Number(res.items) || 0 };
+  } catch (e) {
+    if (e && e.serverError === 'bad-kind') pushSchedAlertsOff = true; // an older Worker: hide the tick, change nothing else
+    pushSchedSent = sentWas;
+    console.warn('[push] schedule alert failed', e);
+    return { ok: false, reason: 'failed', code: (e && (e.serverError || e.pushCode || e.code)) || '', error: pushErrorMessage(e) };
+  }
+}
+
+// One plain sentence for what a tick did ('' = say nothing). A director who ticked must never be left believing phones
+// were told when they weren't (Tell everyone's rule: a send never lies), so every outcome the sender can give a ticked
+// request is worded; "Tell people in person" wherever nobody heard. `many`: the change named several items (the rain
+// plan). A failure's "Try again" is the toast's own button (setup-ui.js setupTellAfter), never words in the sentence.
+function pushScheduleTellWords(r, many) {
+  if (!r) return '';
+  const item = many ? 'these items' : 'this item';
+  if (r.ok === false) {
+    if (r.reason !== 'failed') return '';
+    if (r.code === 'bad-kind') {
+      const who = typeof ownerName === 'function' ? ownerName() : 'the owner';
+      return 'The change is saved, but the alert sender needs an update before it can send schedule alerts. Tell ' + who + '.';
+    }
+    if (r.code === 'rate') return "The change is saved, but the alert didn’t go out yet: alerts go out at most once every 10 seconds.";
+    return "The change is saved, but the alert didn’t go out. Check your signal.";
+  }
+  const n = (r.sent || 0) + (r.queued || 0);
+  if (n) return 'Told ' + n + ' phone' + (n === 1 ? '' : 's') + ' that follow' + (n === 1 ? 's' : '') + (many ? ' these.' : ' this.');
+  if (r.reason === 'no-followers') return 'Nobody has reminders on for ' + item + ', so nobody was alerted. Tell people in person.';
+  if (r.reason === 'nothing-to-tell') return (many ? 'Those times have' : 'That time has') + ' already started or ' + (many ? 'are' : 'is') + ' too far off for an alert, so nobody was alerted. Tell people in person.';
+  if (r.reason === 'baseline') return 'Alerts were only just set up for this week, so this change wasn’t sent. Tell people in person.';
+  if (r.reason === 'not-camp-week' || r.reason === 'no-schedule') return 'Alerts only go out during camp week, so nobody was alerted.';
+  return '';
+}
+
+// The quiet half after any setup commit (copy a day, bring an item back…): what changed since the sender was last
+// told is named with alert:false, so the baseline keeps up. Also remakes the baseline when the schedule switch moved.
+async function pushScheduleSettle() {
+  if (!pushConfigured() || pushSchedAlertsOff || !(typeof directorTab === 'function' && directorTab())) return;
+  if (typeof campWeek !== 'function' || campWeek().phase !== 'during') return;
+  const cur = pushScheduleSnapshot();
+  if (!cur) return;
+  try {
+    if (pushSchedResetOwed) {
+      pushSchedResetOwed = false;
+      pushSchedSent = cur;
+      await pushPost('/notify', { camp: CAMP.id, kind: 'schedule', alert: false, ids: ['*'] }, true);
+      return;
+    }
+    if (!pushSchedSent) { pushSchedSent = cur; return; }
+    const ids = pushScheduleChangedIds(pushSchedSent, cur);
+    if (!ids.length) return;
+    pushSchedSent = cur;
+    await pushPost('/notify', { camp: CAMP.id, kind: 'schedule', alert: false, ids }, true);
+  } catch (e) {
+    if (e && e.serverError === 'bad-kind') pushSchedAlertsOff = true;
+  }
+}
+
+function pushOnSetupEvent(kind) {
+  if (kind === 'commit') { pushScheduleSoon(); pushMigrateWeekStart(); return; }
+  if (kind === 'tree') {
+    const shared = typeof scheduleIsShared === 'function' && scheduleIsShared();
+    if (pushLastShared !== null && shared !== pushLastShared) { pushSchedResetOwed = true; pushScheduleSoon(); }
+    pushLastShared = shared;
+    if (pushSchedSent === null) pushSchedSent = pushScheduleSnapshot();
+    pushMigrateWeekStart();
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════
 // Notification taps and messages from sw.js
 // ════════════════════════════════════════════════════════════════════
 
-// A tap on a notification lands here with what to open: 'chat:<channel>' or
-// 'schedule'. A notification from the OTHER camp switches camps first (the
+// A tap on a notification lands here with what to open: 'chat:<channel>',
+// 'schedule', and the shell's deep links 'reveal', 'game:<id>' and
+// 'alert:<id>' (redesign §13.5 — nothing SENDS these three yet: sw.js and the
+// Worker still emit only chat / schedule, and a director alert opens Now, which
+// is where alert:<id> and reveal land anyway; the page accepts them now so the
+// later sender and the in-app links agree on one set). A notification from the
+// OTHER camp switches camps first (the
 // usual set-key-and-reload), carrying the target across in sessionStorage —
 // but only into a camp this account is known to be on, so a stale alert can
 // never bounce anyone into a denial screen.
 function pushHandleOpen(open, camp) {
   const target = String(open || '');
-  if (!/^(chat:[a-z0-9_-]{1,32}|schedule)$/.test(target)) return;
+  if (!/^(chat:[a-z0-9_-]{1,32}|schedule|reveal|game:[A-Za-z0-9_.:-]{1,80}|alert:[A-Za-z0-9_-]{1,64})$/.test(target)) return;
   if (camp && typeof CAMPS !== 'undefined' && CAMPS[camp] && camp !== CAMP.id) {
     const role = typeof readCampsHint === 'function' ? readCampsHint()[camp] : null;
     if ((role === 'editor' || role === 'viewer') && typeof switchCamp === 'function') {
@@ -1114,12 +1337,15 @@ function pushHandleOpen(open, camp) {
     }
     return; // never open the other camp's thing inside this one
   }
-  if (target === 'schedule') {
-    if (typeof openSchedule === 'function') openSchedule();
+  if (target.startsWith('chat:')) {
+    const ch = target.slice(5);
+    if (typeof openChat === 'function' && (typeof chatChannelById !== 'function' || chatChannelById(ch))) openChat(ch);
     return;
   }
-  const ch = target.slice(5);
-  if (typeof openChat === 'function' && (typeof chatChannelById !== 'function' || chatChannelById(ch))) openChat(ch);
+  // schedule → the sheet over Now; reveal / alert:<id> → Now; game:<id> → the
+  // game takeover (a game this week doesn't have just leaves the app where it is).
+  if (typeof shellOpenTarget === 'function') shellOpenTarget(target);
+  else if (target === 'schedule' && typeof openSchedule === 'function') openSchedule();
 }
 
 function onPushServiceWorkerMessage(e) {
@@ -1175,7 +1401,7 @@ function pushClearBadge() {
   } catch (e) { /* fine */ }
 })();
 
-// From app.js init(): the Settings row, the worker's messages, the badge.
+// From app.js init(): the More → Alerts row, the worker's messages, the badge.
 // init() wires the whole app in sequence, so this must never throw out.
 function wirePush() {
   try {
@@ -1203,7 +1429,7 @@ function wirePush() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// The drawer (Settings → 📲 Phone alerts)
+// The drawer (More → Alerts → "When Camp is closed")
 // ════════════════════════════════════════════════════════════════════
 
 function pushDrawerEl() {
@@ -1217,26 +1443,22 @@ function pushDrawerOpen() {
 
 function renderPushDrawerIfOpen() {
   if (pushDrawerOpen()) renderPushDrawer();
+  // More's Alerts row says in plain words what actually reaches this phone, and
+  // that follows the push state wherever it changes (typeof-guarded: app.js owns it).
+  if (typeof renderAlertsState === 'function') renderAlertsState();
 }
 
-// Same hand-off as openMembers: let the Settings drawer finish closing
-// before this one opens, so their scroll-lock/inert bookkeeping never overlap.
+// Opened from More → This phone → Alerts. The drawer sits on the shell's history
+// stack (shellSheetOpen in app.js), so phone Back closes it.
 function openPushDrawer() {
-  const s = document.getElementById('settings-overlay');
   const overlay = pushDrawerEl();
   if (!overlay) return;
   pushAlertResult = '';
   pushBlocksOpen = false;
   renderPushDrawer();
   pushRefreshServerBits();
-  const openNow = () => overlay.setAttribute('open', '');
-  if (s && s.hasAttribute('open') && customElements.get('jelly-drawer')) {
-    s.addEventListener('close', openNow, { once: true });
-    s.removeAttribute('open');
-  } else {
-    if (s) s.removeAttribute('open');
-    openNow();
-  }
+  if (typeof shellSheetOpen === 'function') shellSheetOpen('alerts');
+  else overlay.setAttribute('open', '');
 }
 
 // What the status card should say.
@@ -1316,7 +1538,7 @@ function pushStatusHTML(st) {
           <li>Tap <strong>Share</strong> <span aria-hidden="true">⬆️</span> in Safari's toolbar.</li>
           <li>Choose <strong>Add to Home Screen</strong>.</li>
           <li>Open <strong>Camp</strong> from the new icon on your Home Screen.</li>
-          <li>Come back to Settings → Phone alerts.</li>
+          <li>Come back to More → Alerts.</li>
         </ol>`;
     case 'denied': {
       const iphone = '<li><strong>iPhone:</strong> Settings → Notifications → Camp → Allow Notifications.</li>';
@@ -1370,7 +1592,7 @@ function pushPrefsHTML() {
     pushRowHTML('📢 Director alerts', '🚨 Urgent ones always come through',
       pushSwitchHTML('data-pa-pref="director"', prefs.director, false, 'Director alerts'));
 
-  const catalog = pushBlockCatalog(DAY_SCHEDULE);
+  const catalog = pushBlockCatalog(scheduleWeek());
   // Each "Mon–Fri 5:00 PM" piece stays on one line; the list breaks between
   // pieces, never inside a time.
   const whenHTML = (when) => when.split(' · ').map((seg) => `<span class="pa-when">${esc(seg)}</span>`).join(' · ');
@@ -1411,7 +1633,7 @@ function pushComposerHTML() {
   const d = pushAlertDraft;
   const teams = ((typeof state !== 'undefined' && state.teams) || []).filter((t) => PUSH_TEAM_RE.test(t.id));
   const audiences = [['all', 'Everyone'], ['editors', 'Directors only']]
-    .concat(teams.map((t) => [t.id, `${teamEmoji(t.id)} ${t.name}`]));
+    .concat(teams.map((t) => [t.id, t.name]));
   if (!audiences.some((a) => a[0] === d.audience)) d.audience = 'all';
   return `<section class="pa-section">
     <h3 class="pa-heading">Send an alert</h3>
@@ -1490,7 +1712,7 @@ function renderPushWeekStatus() {
   if (status) {
     status.textContent = pushWeekStart === undefined ? 'Loading…'
       : !pushWeekStart ? 'Not set — schedule alerts are off until you pick the Sunday camp starts.'
-        : over ? `Last set for ${label} — that week is over. Pick next camp's Sunday when it's time.`
+        : over ? `Last set for ${label} — that week is over. Pick next camp’s Sunday when it’s time.`
           : `Schedule alerts are live for ${label}.`;
   }
   if (note) {
@@ -1505,8 +1727,8 @@ function renderPushHealth() {
   if (pushHealth === undefined) { el.textContent = 'Sender: checking…'; return; }
   if (pushHealth === null) {
     el.textContent = pushCspBlocked
-      ? `Sender: ❌ blocked by this site's security policy — add ${pushServiceBase()} to connect-src in index.html.`
-      : "Sender: ❌ can't reach it right now.";
+      ? `Sender: ❌ blocked by this site’s security policy — add ${pushServiceBase()} to connect-src in index.html.`
+      : "Sender: ❌ can’t reach it right now.";
     return;
   }
   const h = pushHealth;
@@ -1514,7 +1736,7 @@ function renderPushHealth() {
   // Connected but unable to sign pushes: nobody can turn alerts on and nothing
   // gets sent, so this must not read as green just because the timer ticks.
   if (h.vapid === false || h.ok === false) {
-    el.textContent = "Sender: ❌ running, but its signing key has a problem — open the sender's web address to see its status page.";
+    el.textContent = "Sender: ❌ running, but its signing key has a problem — open the sender’s web address to see its status page.";
     return;
   }
   const now = Number(h.time) || Date.now();
@@ -1550,7 +1772,7 @@ function renderPushRecent() {
   const el = document.getElementById('pa-recent');
   if (!el) return;
   if (pushRecentRows === undefined) { el.innerHTML = '<p class="pa-note">Loading…</p>'; return; }
-  if (pushRecentRows === null) { el.innerHTML = '<p class="pa-note">Couldn\'t load recent alerts.</p>'; return; }
+  if (pushRecentRows === null) { el.innerHTML = '<p class="pa-note">Couldn’t load recent alerts.</p>'; return; }
   if (!pushRecentRows.length) { el.innerHTML = '<p class="pa-note">No alerts sent yet.</p>'; return; }
   el.innerHTML = pushRecentRows.map((r) => {
     const sent = Number(r.sent) || 0;
@@ -1594,8 +1816,8 @@ function renderPushDevices() {
       if (!/^[A-Za-z0-9_-]{8,64}$/.test(id || '')) return;
       btn.setAttribute('disabled', '');
       pushRemoveRecord(CAMP.id, id)
-        .then(() => { delete pushDevices[id]; renderPushDevices(); showToast('Removed — that device won\'t get alerts any more.'); })
-        .catch(() => { btn.removeAttribute('disabled'); showToast("Couldn't remove it — check your connection."); });
+        .then(() => { delete pushDevices[id]; renderPushDevices(); showToast('Removed — that device won’t get alerts any more.'); })
+        .catch(() => { btn.removeAttribute('disabled'); showToast("Couldn’t remove it — check your connection."); });
     });
   });
 }
@@ -1698,7 +1920,7 @@ function wirePushDrawer(body) {
 // Keeps the disclosure's "3 picked" in step with the switches inside it.
 function pushUpdateBlocksCount(body) {
   const el = body.querySelector('#pa-blocks-count');
-  if (el) el.textContent = pushBlocksSummary(normalizePushPrefs(pushReadStoredPrefs()), pushBlockCatalog(DAY_SCHEDULE));
+  if (el) el.textContent = pushBlocksSummary(normalizePushPrefs(pushReadStoredPrefs()), pushBlockCatalog(scheduleWeek()));
 }
 
 // "Every schedule block" on ⇒ each block row shows on and can't be changed
@@ -1713,7 +1935,32 @@ function pushSyncBlockRows(body, all) {
   });
 }
 
-async function pushSendAlert() {
+// The Worker call itself, shared by the composer below and by a programmatic sender (the standings
+// reveal's Buzz on a real Start): one /notify of kind 'alert', then drain whatever batches it queued.
+async function pushSendAlertNow(text, audience, urgent) {
+  const res = await pushPost('/notify', { camp: CAMP.id, kind: 'alert', text, audience, urgent }, true);
+  pushDrainBatches(res.batches);
+  return { sent: Number(res.sent) || 0, queued: Number(res.queued) || 0, failed: Number(res.failed) || 0 };
+}
+
+// With no argument: the director's composer (reads the draft, asks before an urgent or everyone alert, writes
+// its result line). With { text, audience?, urgent? }: a DIRECT send for code that already confirmed with the
+// person (the reveal's Buzz): no composer, no confirm, never throws, answers { ok, sent, queued, failed } or
+// { ok: false, error }. Only a director's phone with the sender configured can send either way.
+async function pushSendAlert(opts) {
+  const direct = !!(opts && typeof opts.text === 'string');
+  if (direct) {
+    if (!(typeof canEdit === 'function' && canEdit())) return { ok: false, error: 'not-editor' };
+    if (!pushConfigured()) return { ok: false, error: 'not-configured' };
+    const text = String(opts.text).trim().slice(0, PUSH_ALERT_MAX);
+    if (!text) return { ok: false, error: 'empty' };
+    try {
+      return Object.assign({ ok: true }, await pushSendAlertNow(text, opts.audience || 'all', !!opts.urgent));
+    } catch (e) {
+      console.warn('[push] direct alert failed', e);
+      return { ok: false, error: pushErrorMessage(e) };
+    }
+  }
   if (pushSending) return;
   if (!(typeof canEdit === 'function' && canEdit())) { showToast('Only directors can send alerts.'); return; }
   const text = String(pushAlertDraft.text || '').trim().slice(0, PUSH_ALERT_MAX);
@@ -1722,18 +1969,17 @@ async function pushSendAlert() {
   const urgent = !!pushAlertDraft.urgent;
   const who = pushAudienceLabel(audience);
   if (urgent && !confirm(`Send an URGENT alert to ${who}? It rings through even on phones that muted director alerts.`)) return;
-  if (!urgent && audience === 'all' && !confirm("Send this alert to everyone's phone?")) return;
+  if (!urgent && audience === 'all' && !confirm("Send this alert to everyone’s phone?")) return;
   pushSending = true;
   const send = document.getElementById('pa-send');
   if (send) send.setAttribute('disabled', '');
   pushSetResult('Sending…');
   try {
-    const res = await pushPost('/notify', { camp: CAMP.id, kind: 'alert', text, audience, urgent }, true);
-    pushDrainBatches(res.batches);
-    const n = (Number(res.sent) || 0) + (Number(res.queued) || 0);
-    const failed = Number(res.failed) || 0;
+    const res = await pushSendAlertNow(text, audience, urgent);
+    const n = res.sent + res.queued;
+    const failed = res.failed;
     pushSetResult(n
-      ? `✅ Sent to ${n} phone${n === 1 ? '' : 's'}${failed ? ` · ${failed} couldn't be reached` : ''}.`
+      ? `✅ Sent to ${n} phone${n === 1 ? '' : 's'}${failed ? ` · ${failed} couldn’t be reached` : ''}.`
       : `Nobody in "${who}" has phone alerts on yet — nothing was sent.`);
     pushAlertDraft = { text: '', audience, urgent: false };
     pushResetComposer();
@@ -1776,13 +2022,23 @@ async function pushSaveWeekStart(value) {
   const btn = document.getElementById('pa-week-save');
   if (btn) btn.setAttribute('disabled', '');
   try {
+    // The date lives in setup/meta/weekStart (the Camp week screen sets it too); the published copy follows it. If that
+    // write is refused (the setup is still loading) nothing is published: campWeek() prefers the setup date, so a
+    // published date it did not match would be overwritten with the old week by the next republish.
+    if (typeof commitSetup === 'function') {
+      const r = commitSetup((d) => { d.meta.weekStart = value; }, { undo: false });
+      if (!r.ok) {
+        showToast(r.reason === 'loading' ? 'The camp setup is still loading. Try again in a moment.' : 'Couldn’t save the camp dates just now. Try again.');
+        return;
+      }
+    }
     await pushPublishSchedule(value);
     pushWeekStart = value;
     showToast(`🗓️ Schedule alerts are set for ${pushWeekLabel(value)}.`, { mine: true });
   } catch (e) {
     if (e && e.pushCode === 'save-timeout') {
       pushWeekStart = value;
-      showToast('🗓️ Saved on this phone — it will reach everyone when you\'re back online.');
+      showToast('🗓️ Saved on this phone — it will reach everyone when you’re back online.');
     } else {
       console.warn('[push] saving the week failed', e);
       showToast(pushErrorMessage(e));

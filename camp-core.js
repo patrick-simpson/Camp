@@ -163,6 +163,46 @@ function safeShort(v, fallback) {
   return s || fb;
 }
 
+// The team colour palette (setup-rebuild-spec Appendix A): twelve swatches, each a LIGHT value
+// (`l`: text, outlines and fills on light surfaces) and a DARK value (`d`: the same on dark ones).
+// Order is the order the Teams screen lays them out. A team record's `color` is one of these ids
+// (the rules pin it to /^[a-z]{2,12}$/); everything that reaches a style attribute is looked up HERE,
+// so a database string can only ever select a swatch, never become CSS.
+// Measured by tests/palette.test.js against the app's own --paper / --sheet in both themes. Green's
+// light value is a shade darker than the spec's table (#2f7d32): the table measured against white, and
+// on the cream --paper the spec's value is 4.47:1, a hair under the 4.5:1 rule.
+const CAMP_TEAM_PALETTE = Object.freeze({
+  red: Object.freeze({ l: '#b42318', d: '#ff8a80', name: 'Red' }),
+  pumpkin: Object.freeze({ l: '#b54708', d: '#ffab5e', name: 'Pumpkin' }),
+  gold: Object.freeze({ l: '#8a6100', d: '#f2c24b', name: 'Gold' }),
+  green: Object.freeze({ l: '#2d7830', d: '#7fd88a', name: 'Green' }),
+  forest: Object.freeze({ l: '#1f5e3a', d: '#8ee0b0', name: 'Forest' }),
+  teal: Object.freeze({ l: '#0b7570', d: '#5fd6cf', name: 'Teal' }),
+  blue: Object.freeze({ l: '#1f5fb8', d: '#86b6ff', name: 'Blue' }),
+  indigo: Object.freeze({ l: '#4338ca', d: '#aab4ff', name: 'Indigo' }),
+  purple: Object.freeze({ l: '#7b3fb5', d: '#cfa8ff', name: 'Purple' }),
+  berry: Object.freeze({ l: '#b0306a', d: '#ff93c3', name: 'Berry' }),
+  brown: Object.freeze({ l: '#7a4a22', d: '#dfae82', name: 'Brown' }),
+  slate: Object.freeze({ l: '#4b5563', d: '#c3c9d6', name: 'Slate' }),
+});
+
+// WCAG relative-luminance contrast between two '#rrggbb' colours (1 to 21), or 0 for anything else.
+// Used to tell a team's older single colour (which has no light/dark pair) that is hard to see on a
+// theme's surface from one that is fine; the palette's own swatches are pinned in tests/palette.test.js.
+function campContrast(a, b) {
+  const lum = (hex) => {
+    if (typeof hex !== 'string' || !CAMP_HEX_RE.test(hex)) return -1;
+    const ch = (i) => {
+      const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * ch(1) + 0.7152 * ch(3) + 0.0722 * ch(5);
+  };
+  const la = lum(a), lb = lum(b);
+  if (la < 0 || lb < 0) return 0;
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
 // A team colour as the CSS custom properties the accent rules read, or ''.
 // `color` is a palette id (looked up in `palette`: id → {l, d}, light/dark hex)
 // or a legacy '#rrggbb'; `legacyHex` is the camp's old single accent, used when

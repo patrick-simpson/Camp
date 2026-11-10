@@ -352,8 +352,26 @@ test('pushDeviceLabel names the common devices', () => {
 
 // ── Dormant, sign-out, and the hooks ─────────────────────────────
 
+test('the shipped sender address is the camp-alerts Worker, and the page is allowed to reach exactly that origin', () => {
+  // Step 27 connected the app. The address and index.html's connect-src must change TOGETHER: a sender the page
+  // may not reach is blocked silently by the browser, and a *.workers.dev wildcard would let the page talk to
+  // anyone's Worker.
+  assert.equal(PUSH_SERVICE_URL, 'https://camp-alerts.patricksimpson-fx.workers.dev');
+  assert.ok(pushConfigured(), 'a real https origin counts as configured');
+  assert.equal(pushServiceBase(), 'https://camp-alerts.patricksimpson-fx.workers.dev', 'no trailing slash, no path');
+  const origin = (PUSH_SERVICE_URL.match(/^https:\/\/[^/]+/) || [''])[0];   // no URL() in the test sandbox
+  const index = readFixture('../index.html');
+  const csp = (index.match(/http-equiv="Content-Security-Policy"[\s\S]*?content="([^"]*)"/) || [])[1] || '';
+  const connect = (csp.match(/connect-src([^;]*);/) || [])[1] || '';
+  assert.ok(connect.split(/\s+/).includes(origin), 'connect-src names the sender\'s exact origin');
+  assert.notOk(/workers\.dev/.test(connect.replace(origin, '')), 'and no other workers.dev host, never a wildcard');
+});
+
 test('with no sender configured, the feature is fully dormant', async () => {
-  assert.equal(PUSH_SERVICE_URL, '', 'ships blank until the Worker exists — never an invented URL');
+  // The app shipped dormant until Step 27; this pins that a blank or missing sender still means nothing at all.
+  const realConfigured = pushConfigured;
+  pushConfigured = () => false;
+  try {
   assert.notOk(pushConfigured());
   assert.equal(pushStatus(), 'dormant');
   assert.equal(await pushNotifyChat('general', 'm1', 'hi Jovi'), null, 'a chat send asks nothing of anyone');
@@ -365,6 +383,7 @@ test('with no sender configured, the feature is fully dormant', async () => {
   const html = String(document.getElementById('alerts-body').innerHTML || '');
   assert.notOk(/hit a snag/i.test(html), 'the dormant card rendered without tripping its error fallback');
   assert.ok(/coming soon|aren.t connected|not connected/i.test(html), 'and it says the feature is not on yet');
+  } finally { pushConfigured = realConfigured; }
 });
 
 test('pushSignOut never rejects and clears the on-flag for both camps', async () => {

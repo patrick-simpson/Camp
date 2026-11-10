@@ -21,8 +21,8 @@ function useFakeRef() {
   lastSyncedTree = null;
   pendingWrites = 0;
   dataEditPending = false;
-  pushTimer = null;
-  pushConfigTimer = null;
+  clearTimeout(pushTimer); pushTimer = null;
+  clearTimeout(pushConfigTimer); pushConfigTimer = null;
   document.activeElement = null;
   return ref;
 }
@@ -135,13 +135,14 @@ test('a remote config that only lost empty fields to RTDB is not pushed back by 
   freshState();
   setMemberRole('editor');
   const savedRef = fbConfigRef;
-  fbConfigRef = { set: () => Promise.resolve() };
-  pushConfigTimer = null;
+  fbConfigRef = { transaction: () => Promise.resolve({ committed: false }) }; // config engine v2 sends a transaction, never a set()
+  clearTimeout(pushConfigTimer); pushConfigTimer = null;
   try {
     const remote = clone(state.config);
     remote.games = remote.games.map((g) => { const c = Object.assign({}, g); delete c.rules; return c; }); // pruned []
     applyRemoteConfig(remote);
-    assert.equal(pushConfigTimer, null, 'no whole-config set() from every open editor device');
+    assert.equal(pushConfigTimer, null, 'no config push from every open editor device');
+    assert.deepEqual(cfgUnconfirmed(), {}, 'and healing an empty is not an unconfirmed edit either (the canonical form prunes it)');
   } finally {
     clearTimeout(pushConfigTimer); pushConfigTimer = null;
     fbConfigRef = savedRef;
@@ -192,12 +193,26 @@ test('the deploy auto-reload waits for unconfirmed writes, a running lap and a m
   pendingWrites = 1;
   assert.ok(reloadBlocked(), 'the SDK queue is in memory — a reload loses the score');
   pendingWrites = 0;
+  stateBisecting = true; // S2a: a refused batch being re-sent path by path
+  assert.ok(reloadBlocked(), 'a quarantine bisect in progress holds the reload');
+  stateBisecting = false;
   liveWatches.pic = { running: true, startAt: Date.now() - 40000 };
   assert.ok(reloadBlocked(), 'a running Pictionary lap lives only in this page');
   delete liveWatches.pic;
   chatSendsInFlight = 1;
   assert.ok(reloadBlocked(), 'a chat message still sending');
   chatSendsInFlight = 0;
+  // Tell everyone (tell.js): a director's half-typed alert, or a send still going out
+  setMemberRole('editor');
+  state.ui.tool = 'tell';
+  tell.d.text = 'Come inside now';
+  assert.ok(reloadBlocked(), 'a message typed in Tell everyone');
+  tell.d.text = '';
+  state.ui.tool = null;
+  tell.sending = 1;
+  assert.ok(reloadBlocked(), 'an alert still going out');
+  tell.sending = 0;
+  setMemberRole(null);
   assert.notOk(reloadBlocked());
 });
 

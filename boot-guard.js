@@ -20,7 +20,7 @@
 // forging it shows an empty shell.
 //
 // Keep the storage key literals in sync with AUTH_HINT_KEY / THEME_HINT_KEY in
-// app.js.
+// app.js (and the calm key with LAST_KEY in jelly-motion.js).
 (function () {
   // Nothing legitimately embeds this app. Being framed means someone is trying
   // to get a signed-in editor to click something they can't see, so break out.
@@ -34,6 +34,21 @@
     document.documentElement.classList.add('locked');
     return;
   }
+  // Calm motion, painted before the first frame so a calm phone never plays one
+  // springy frame on its way to calm. jelly-motion.js owns the verdict (the OS
+  // setting beats the switch; Auto adds the battery signals) and keeps
+  // campScoreboardCalmLast in step with it; this only repeats the last one. The
+  // OS query is read live here too, so a phone set to reduce motion is calm even
+  // on a first-ever visit. data-jelly-motion is what Jelly's own components read
+  // (vendor/jelly.js F()). Key literals mirror jelly-motion.js's LAST_KEY.
+  try {
+    var calm = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    if (!calm) calm = !!localStorage.getItem('campScoreboardCalmLast');
+    if (calm) {
+      document.documentElement.classList.add('calm-motion');
+      document.documentElement.setAttribute('data-jelly-motion', 'reduce');
+    }
+  } catch (e) { /* storage or matchMedia blocked: jelly-motion.js decides at boot */ }
   try {
     // One-time cleanup of the retired PIN gate's keys (pre-2026-07-25).
     localStorage.removeItem('campScoreboardUnlocked');

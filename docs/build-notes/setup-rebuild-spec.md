@@ -1329,6 +1329,12 @@ root name. `R` is the camp root literal.
   — a patch field may only be written for a typical block that exists, on a day that **uses** the
   typical day (sync-F16b). Placed on every patch leaf **including `teams`**, which sits at the same
   depth as `start` (four `.parent()` calls, never five; sync-F6 / sec-F6).
+- `ANCHOR_TID` / `PANCHOR_TID` — the same two anchors for the **team-flag leaf** `teams/$tid`, one level
+  deeper than the `teams` node: `ANCHOR_TID` = `newData.parent().parent().child('start').exists() &&
+  newData.parent().parent().child('label').exists()`; `PANCHOR_TID` is `PANCHOR` with FIVE `.parent()`
+  calls to `setup`. Review of Step 10: without them the leaf's only protection was the ancestor `teams`
+  node's validate, exactly what the live evaluator may not run, so a flag write could resurrect a half
+  block or create a patch for a block that does not exist.
 - `NOWKEEP` = `newData.isNumber() && (newData.val() === now || newData.val() === data.val())` — a
   stamp must be server time when it is written, but a whole-node write (A1's transaction, a
   restore) may carry an existing stamp unchanged (sync-F1).
@@ -1479,7 +1485,7 @@ pattern):
   "alertKey":  { ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9-]{1,48}$/) && ANCHOR" },
   "overlapOk": { ".validate": "newData.isBoolean() && ANCHOR" },
   "teams":     { ".validate": "newData.hasChildren() && ANCHOR",
-                 "$tid": { ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true" } },
+                 "$tid": { ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true && ANCHOR_TID" } },
   "$other":    { ".validate": false }
 }
 ```
@@ -1492,7 +1498,8 @@ typical block's `start` and `label` and a typical day): `start` `INT(0,1439) && 
 `ANCHOR`; **`teams` `newData.hasChildren() && PANCHOR`** — the `teams` node is at the same depth
 as `start`, so it is the same four-parent `PANCHOR` (the draft's "five parents, one level deeper"
 reached `<root>/typical` and refused every team patch, including junior's seed; sync-F6, sec-F6) —
-with the same `$tid` child; `"$other": false`. No `alertKey` in a patch.
+with the same `$tid` child, whose rule carries `PANCHOR_TID` (FIVE parents: the leaf is one level
+below the `teams` node); `"$other": false`. No `alertKey` in a patch.
 
 ```jsonc
 "campers": {
@@ -1645,8 +1652,10 @@ shape is untouched.
   in the months between R1 and S7. Gate: the emulator suites (§8.8) print SAFE for both
   directions, and seeded setup trees for **both** camps (from `buildSeed`, including junior's
   team patches) are written successfully under the new rules in the emulator.
-- **Size check (sec-review note b).** The combined file roughly doubles (≈ 82 KB minified, ≈ 110
-  KB as committed). Before R1, confirm the published RTDB rules size limit; a PUT over the limit
+- **Size check (sec-review note b).** The combined file roughly doubles. The estimate here was ≈ 82 KB
+  minified / ≈ 110 KB as committed; **as built (Step 10) it is 130,506 bytes minified / 160,463 as
+  committed**, against RTDB's documented 256 KiB limit, and its longest single expression equals the
+  longest already published (1,916 characters). Before R1, confirm the published RTDB rules size limit; a PUT over the limit
   is refused and leaves the old rules live (nothing breaks), and in that case R1 splits into R1a
   (`state`/`teams`/`meta` amendments, `setup`, restore points, `editorsHere`, the reveal blocks) and R1b (`campers`,
   `teamPhotos`, `accessRequests`, `accessBlocked`), each with the same runbook.
@@ -1764,7 +1773,8 @@ The R1 checklist in CLAUDE.md records each line's result.
   and that no other node name contains `camper`.
 - "image fields are pinned to inline JPEG data URLs" (`:128`) accepts `png|jpeg` for
   `teamPhotos` only, with the full base64 charset regex.
-- New: every setup block leaf (anchor fields included) contains `ANCHOR` or `PANCHOR`, and the
+- New: every setup block leaf (anchor fields included, and the team-flag `teams/$tid` leaf with its
+  `ANCHOR_TID` / five-parent `PANCHOR_TID`) contains `ANCHOR` or `PANCHOR`, and the
   patch `teams` rule is the four-parent `PANCHOR`; every setup/campers container has `BRANCH` or a
   `hasChildren`; `accessRequests` create requires `SELF`, `!MEMBER`, `at === now`, `joinOpen` and
   not-blocked, and self-delete requires the 60 s age; restore nodes refuse deleting
@@ -3690,6 +3700,15 @@ unauthenticated probes that say `Permission denied` under the old and new rules 
   10 minutes and paste block 1 again").
 - **A check only the new rules pass** is run in the browser afterwards (block 4).
 
+**As built (BUILD-PLAN Step 10, 2026-11-02).** The rules file is written and proven in the emulator
+(`tests/emulator/`, `npm run test:r1`; CLAUDE.md "R1"). Its `sha256` prefix, to compare in block 1 and
+set as `EXPECT` in block 2, is **`ccf2e5d3`** (160,463 bytes; it was `6b2a1c96` before the review fixes of Step 10 —
+the four reveal BRANCH guards, the Start-without-`pub` clause and the team-flag leaf anchors; recompute with
+`sha256sum database.rules.json | cut -c1-8` after ANY edit to the file, and quote it in the commit
+message). The source of the R1 blocks is `tests/rules-macros.js`. Three things only the live database can
+answer are added below (block 4b): the ancestor-validate probe, a 100,000-character team photo, and the
+size. The **kill switch** for the one public path is block 5.
+
 **Block 1 — back up and fetch** (Google Cloud Shell, already signed in to gcloud):
 ```
 DB=https://camp-89cea-default-rtdb.firebaseio.com
@@ -3704,7 +3723,9 @@ EXPECT=xxxxxxxx
 [ "$(sha256sum rules.json | cut -c1-8)" = "$EXPECT" ] && \
   curl -s -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @rules.json "$DB/.settings/rules.json"
 ```
-(A refusal — including "too large", §8.6 — leaves the old rules live; nothing breaks.)
+(A refusal — including "too large", §8.6 — leaves the old rules live; nothing breaks. **A "too large"
+refusal means STOP and ask for the R1a / R1b split of §8.6**; do not trim the file by hand, and do not
+publish half of it. The file is 160 KB against RTDB's documented 256 KiB limit, so this is not expected.)
 
 **Block 3 — read back and unauthenticated probes:**
 ```
@@ -3740,6 +3761,41 @@ Signed in as **you** (an editor): all four lines `ALLOWED` — under the old rul
 `DENIED` (decision Q8; if you run it as yourself it is allowed, so `.remove()` it straight away).
 Signed in as **a non-member test account**: all `DENIED`. Record
 the results in CLAUDE.md's R1 checklist (§8.9).
+
+**Block 4b — what only the live evaluator can answer** (same browser console and `db` as block 4,
+signed in as the owner; each deletes its own scratch write):
+```js
+// the ancestor-validate probe: REFUSED => ancestors ARE evaluated (the emulator says so); ACCEPTED =>
+// CLAUDE.md's "known hole" is real (the stray is removed at once; old builds ignore unknown state keys)
+db.ref('campScoreboard/state/zzz-probe/x').set(1).then(
+  () => { console.log('ACCEPTED'); return db.ref('campScoreboard/state/zzz-probe').remove(); },
+  (e) => console.log('REFUSED', e.code));
+// a 100,000-character team photo (22 + 99,978): the full-charset regex at its cap. REFUSED => fall back to the
+// prefix check + !contains('"') / '<' / ' ' for teamPhotos/data (§8.2) and re-publish
+db.ref('campScoreboard/teamPhotos/t0').set({ v: 1, data: 'data:image/png;base64,' + 'A'.repeat(99978) }).then(
+  () => { console.log('ACCEPTED'); return db.ref('campScoreboard/teamPhotos/t0').remove(); },
+  (e) => console.log('REFUSED', e.code));
+```
+Record both answers, and whether block 2 accepted the file's size (158 KB as committed, 129 KB minified;
+a refusal leaves the old rules live and means the R1a / R1b split of §8.6), in CLAUDE.md's R1 checklist.
+
+**Block 5 — the kill switch for the public reveal read** (only if the Firebase usage graph ever shows
+polling of `revealPublic`; one value, both roots; phones and remotes carry on, the big screen shows
+"Waiting" until it is switched back). `setup/.read` is exactly the member expression `MEMBER(R)`:
+```
+python3 - <<'EOF'
+import json
+r = json.load(open('rules.json'))
+for root in ('campScoreboard', 'seniorScoreboard'):
+    r['rules'][root]['revealPublic']['.read'] = r['rules'][root]['setup']['.read']
+json.dump(r, open('rules-killswitch.json', 'w'), indent=2)
+EOF
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @rules-killswitch.json "$DB/.settings/rules.json"
+curl -s "$DB/campScoreboard/revealPublic.json"      # now says Permission denied
+```
+Mirror the same one-line change into `tests/rules-macros.js` (`'.read': true` becomes `MEMBER`) and the repo file
+in the same commit, or the two drift; `rules.test.js` will say so (its "only anonymous read" pin is the line to
+update on purpose). To switch it back, run block 2 with the original `rules.json`.
 
 **Order within a stage:** (1) a rules-only commit (`database.rules.json`, `tests/rules.test.js`,
 emulator suites; no `?v=` bump; the browser never loads the rules file; the commit message states

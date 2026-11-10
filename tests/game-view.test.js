@@ -62,10 +62,11 @@ function fakeArea(parse) {
 
 function parseMedals(html) {
   const medals = [];
-  const re = /<jelly-select data-medal="([^"]+)"([^>]*)>/g;
+  // CHANGED ON PURPOSE (Step 29 finish): the tally's medal picks are native selects, the picked team's option carries `selected`.
+  const re = /<select class="fld-input medal-pick" data-medal="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g;
   let m;
   while ((m = re.exec(html))) {
-    const v = / value="([^"]*)"/.exec(m[2]);
+    const v = /<option value="([^"]*)" selected>/.exec(m[2]);
     medals.push(fireable({ dataset: { medal: m[1] }, value: v ? v[1] : '' }));
   }
   return { '[data-medal]': medals };
@@ -177,7 +178,7 @@ test('a +N tap on a kept form lands in the live draft, not an orphaned one', () 
   });
 });
 
-test('Save on a kept form saves what is in the live draft', () => {
+test('the dock\'s Save on a kept form saves what is in the live draft', () => {
   const g = tallyGame({ t0: '9', t1: '8', t2: '7' }, 'axe-throwing');
   const { el, inputs } = fakeForm();
   const realCelebrate = celebrate;
@@ -190,7 +191,8 @@ test('Save on a kept form saves what is in the live draft', () => {
       const t3 = inputs.all.find((i) => i.dataset.teamId === 't3');
       t3.value = '6';
       t3.fire('input');
-      dom.save.fire('click');
+      // CHANGED ON PURPOSE (Step 29 finish): Save lives in the takeover dock (gamesDock tone 'tally'), which calls tallySave.
+      assert.ok(tallySave(g.id).ok, 'the dock\'s Save saves');
       assert.ok(state.results[g.id], 'the result was saved');
       assert.equal(state.results[g.id].scores.t3, 6, 'including the score typed after the snapshot');
       assert.equal(state.results[g.id].scores.t0, 9);
@@ -253,33 +255,54 @@ function placementGame() {
   return g;
 }
 
-test('a podium pick on a kept placement form lands in the live draft', () => {
-  const g = placementGame();
-  const el = fakeArea(parseMedals);
-  withEntryDom(() => {
-    renderPlacement(el, g);
-    const gold = el.querySelectorAll('[data-medal]')[0];
-    assert.equal(gold.value, 't0');
-    const orphan = swapDrafts()[g.id];
-    renderPlacement(el, g);
-    assert.ok(el.querySelectorAll('[data-medal]')[0] === gold, 'identical draft → the form is kept');
-    gold.value = 't3';
-    gold.fire('change');
-    assert.equal(state.drafts[g.id].medals.gold, 't3', 'the pick is in the live draft');
-    assert.equal(orphan.medals.gold, 't0', 'the orphan is untouched');
-  });
+// CHANGED ON PURPOSE (Step 18, build session 2): the three jelly-selects of a placement game became the podium picker
+// (games-ui.js). The two pins that used to live here — "a pick on a kept form lands in the live draft" and "a form whose select
+// drifted from the draft is rebuilt" — are replaced by their podium forms. The first rule is unchanged (a tap resolves the draft
+// when it FIRES, so a snapshot that swapped state.drafts can't make it write into an orphan). The second has no counterpart
+// any more: the picker is PATCHED from the draft every render, so a key can never show something the draft does not say.
+test('a podium pick lands in the live draft even when a snapshot swapped state.drafts under the picker', () => {
+  const g = placementGame(); // the draft holds t0 t1 t2
+  state.drafts[g.id].medals = {};
+  const orphan = swapDrafts()[g.id]; // a snapshot replaced state.drafts with a copy; `orphan` is the object the picker was built from
+  assert.ok(state.drafts[g.id] !== orphan);
+  assert.equal(podiumPick(g.id, 'gold', 't3').ok, true);
+  assert.equal(state.drafts[g.id].medals.gold, 't3', 'the pick is in the live draft');
+  assert.notOk(orphan.medals.gold, 'not in the orphan');
 });
 
-test('a placement form whose select drifted from the draft is rebuilt', () => {
+test('the picker is built once and patched: an unchanged render, a pick and a clear write no markup', () => {
   const g = placementGame();
-  const el = fakeArea(parseMedals);
-  renderPlacement(el, g);
-  const gold = el.querySelectorAll('[data-medal]')[0];
-  gold.value = 't5'; // picked on screen …
-  state.drafts[g.id].medals.gold = 't0'; // … then a snapshot put it back
-  renderPlacement(el, g);
-  const now = el.querySelectorAll('[data-medal]')[0];
-  assert.ok(now !== gold && now.value === 't0', 'rebuilt from the draft');
+  state.drafts[g.id] = { medals: {} };
+  const root = { querySelector: () => null, querySelectorAll: () => [] };
+  let writes = 0;
+  let html = '';
+  const el = { get innerHTML() { return html; }, set innerHTML(v) { html = v; writes++; }, addEventListener() {}, querySelector: (sel) => (sel === '#podium-picker' && html ? root : null) };
+  renderPodiumPicker(el, g);
+  assert.equal(writes, 1, 'built on the first paint');
+  assert.ok(html.includes('id="podium-picker"') && !html.includes('jelly-select'), 'the keys, not the dropdowns');
+  renderPodiumPicker(el, g);
+  podiumPick(g.id, 'gold', 't0');
+  renderPodiumPicker(el, g);
+  podiumPick(g.id, 'gold', 't0'); // the same key again clears it
+  renderPodiumPicker(el, g);
+  assert.equal(writes, 1, 'a pick and its clear are attribute patches on the nodes that are there');
+  // a different game, or a renamed team, is another picker
+  state.teams[0].name = 'Renamed Foxes';
+  renderPodiumPicker(el, g);
+  assert.equal(writes, 2, 'the team list changed: rebuilt');
+  assert.ok(html.includes('Renamed Foxes'), 'with the new name');
+});
+
+test('without games-ui.js the three dropdowns still score a podium game (score entry never waits on one more file)', () => {
+  const src = readFixture('../app.js');
+  const start = src.indexOf('function renderPlacement(');
+  const body = src.slice(start, src.indexOf('\n}\n', start));
+  assert.ok(/typeof renderPodiumPicker === 'function'\) \{ renderPodiumPicker\(container, g\); return; \}/.test(body), 'delegates when the script is there');
+  assert.ok(body.includes('medalPickerHTML(draft.medals, g)') && body.includes('save-result-btn'), 'and keeps the old form behind it');
+  const rstart = src.indexOf('function renderResult(');
+  const rbody = src.slice(rstart, src.indexOf('\n}\n', rstart));
+  assert.ok(/typeof renderSavedResult === 'function'\) \{ renderSavedResult\(container, g, result\); return; \}/.test(rbody));
+  assert.ok(rbody.includes('clear-result-btn'), 'the plain result keeps its Clear button');
 });
 
 // ── Celebrations and the "Data last updated" stamp ───────────────
@@ -385,7 +408,7 @@ test('a clock hitting zero while a score is being typed does not steal the field
 });
 
 test('focus alone is what editorMidEntry adds over fieldFocused', () => {
-  dataEditPending = false; pushTimer = null; pushConfigTimer = null;
+  dataEditPending = false; clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   document.activeElement = { tagName: 'TEXTAREA' };
   assert.ok(fieldFocused() && editorMidEntry());
   document.activeElement = null;
@@ -425,37 +448,55 @@ function countingWrites(el) {
   return c;
 }
 
-test('renderGameView builds the head once per game, and again only when the game changes', () => {
+test('renderGameView builds the takeover body once per game, and again only when the game changes', () => {
   freshState();
   setMemberRole('editor');
   const [a, b] = state.config.games.filter((x) => x.format === 'placement');
-  const view = document.getElementById('game-view');
-  const w = countingWrites(view);
-  const back = document.getElementById('back-btn');
-  let wired = 0;
-  back.addEventListener = () => { wired++; };
+  const tk = document.getElementById('takeover-game');
+  const body = document.getElementById('takeover-game-body');
+  const w = countingWrites(body);
+  tk.hidden = true;
 
   state.ui.gameId = a.id;
   renderGameView();
   assert.equal(w.writes, 1, 'built on open');
-  assert.equal(wired, 1);
-  const head = view.__headHtml;
+  assert.equal(tk.hidden, false, 'the takeover is up');
+  const head = body.__headHtml;
   renderGameView();
   renderGameView();
-  assert.equal(w.writes, 1, 'unchanged renders leave the back pill, title and open rules alone');
-  assert.equal(wired, 1, 'and do not re-wire Back');
-  assert.ok(view.__headHtml === head);
+  assert.equal(w.writes, 1, 'unchanged renders leave the title, the open rules and the scroll alone');
+  assert.ok(body.__headHtml === head);
 
   state.ui.gameId = b.id;
   renderGameView();
-  assert.equal(w.writes, 2, 'a different game is a different head');
+  assert.equal(w.writes, 2, 'a different game (Next game) is a different head');
 
   state.ui.gameId = null;
   renderGameView();
-  assert.equal(view.__headHtml, null, 'closing forgets it, so the next open plays the entrance');
+  assert.equal(body.__headHtml, null, 'closing forgets it, so the next open builds afresh');
+  assert.equal(tk.hidden, true);
   state.ui.gameId = b.id;
   renderGameView();
   assert.equal(w.writes, 3, 'reopened → built afresh');
+});
+
+test('the takeover header names the game and where Back goes, written only when it differs', () => {
+  freshState();
+  setMemberRole('editor');
+  const g = state.config.games.find((x) => x.format === 'placement');
+  const title = document.getElementById('takeover-game-title');
+  const label = document.getElementById('takeover-game-back-label');
+  let titleWrites = 0;
+  let t = '';
+  Object.defineProperty(title, 'textContent', { configurable: true, get: () => t, set: (v) => { t = v; titleWrites += 1; } });
+  state.ui.gameFrom = 'games';
+  state.ui.gameId = g.id;
+  renderGameView();
+  assert.ok(t.includes(g.name));
+  assert.equal(label.textContent, dayById(g.dayId).name + ' games', '"‹ Wednesday games": the place Back lands');
+  renderGameView();
+  assert.equal(titleWrites, 1, 'a second render writes nothing');
+  state.ui.gameId = null; renderGameView();
 });
 
 test('the Pictionary tools survive a render that changes nothing — a running lap included', () => {
@@ -486,25 +527,6 @@ test('the Pictionary tools survive a render that changes nothing — a running l
     renderTools(wrap, g);
     assert.equal(binds, 3, 'stopping rebuilds');
   } finally { bindPicRound = real; liveWatches[g.id].running = false; }
-});
-
-test('the home Live-now strip is rewritten only when what it shows changes', () => {
-  freshState();
-  setMemberRole('editor');
-  const g = state.config.games.find((x) => x.id === 'axe-throwing');
-  state.ui.gameId = null;
-  state.drafts[g.id] = { scores: { t0: '4', t1: '2' }, medals: {} };
-  const wrap = document.getElementById('live-home');
-  const w = countingWrites(wrap);
-  delete wrap.__liveKey; delete wrap.__liveHolds;
-  renderLiveHome();
-  assert.equal(w.writes, 1, 'first paint');
-  renderLiveHome();
-  renderLiveHome();
-  assert.equal(w.writes, 1, 'idle renders keep the cards (their pulse phase, a press in flight)');
-  state.drafts[g.id].scores.t0 = '9';
-  renderLiveHome();
-  assert.equal(w.writes, 2, 'a new score is a rewrite');
 });
 
 test('the not-started bracket card is kept by idle renders; a started bracket forgets the key', () => {
@@ -622,19 +644,26 @@ test('the game view head and the live panels are not rebuilt by every render', (
     assert.ok(start > -1, name + ' exists');
     return src.slice(start, src.indexOf('\n}\n', start));
   };
-  assert.ok(/view\.__headHtml !== headHtml/.test(body('renderGameView')), 'head rebuilt only when it changes');
-  assert.notOk(/\bview\.innerHTML = html\b/.test(body('renderGameView')), 'no unconditional whole-view rewrite');
-  ['renderLiveHome', 'renderLiveWatch', 'renderLiveTallyWatch', 'renderResult', 'renderTally', 'renderPlacement']
+  assert.ok(/body\.__headHtml !== headHtml/.test(body('renderGameView')), 'head rebuilt only when it changes');
+  assert.notOk(/\bbody\.innerHTML = html\b/.test(body('renderGameView')), 'no unconditional whole-body rewrite');
+  ['rememberGameOpener', 'restoreGameOpener', 'scrollToGameView', 'setCardOpenNow', 'gameOpener'].forEach((n) =>
+    assert.notOk(new RegExp('\\b' + n + '\\b').test(src.replace(/\/\/.*$/gm, '')), n + ' retired: the tab under a takeover never moves'));
+  // (renderResult and renderPlacement hand their work to games-ui.js's renderSavedResult / renderPodiumPicker, which skip the
+  // same way; the plain forms they keep behind a missing file still go through setLiveHtmlIfChanged.)
+  ['renderLiveWatch', 'renderLiveTallyWatch', 'renderResult', 'renderTally', 'renderPlacement']
     .forEach((fn) => assert.ok(body(fn).includes('setLiveHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
+  const gui = readFixture('../games-ui.js');
+  assert.ok(/function renderSavedResult[\s\S]*?setLiveHtmlIfChanged\(container/.test(gui), 'the saved result is compared, not rewritten');
+  assert.ok(/function renderPodiumPicker[\s\S]*?gamesPodiumPatch\(root, m\)/.test(gui), 'the picker is patched in place after its first build');
   assert.ok(/paintBoardClocks\(\);\s*$/.test(body('renderAll')), 'renderAll ends by painting the clocks');
   assert.notOk(/if \(settled\) renderAll\(\)/.test(src), 'the clock settle no longer renders under a focused field');
 });
 
-test('the zero-clock flash ends, and stops entirely under reduced motion', () => {
+test('the zero-clock flash ends, and stops entirely under calm motion', () => {
   const css = readFixture('../styles.css');
   assert.notOk(/\.tool-box\.alarming\s*\{[^}]*infinite/.test(css), 'no endless strobe');
-  const reduce = css.split('@media (prefers-reduced-motion: reduce)').slice(1).map((s) => s.slice(0, s.indexOf('\n}\n')));
-  assert.ok(reduce.some((b) => /\.tool-box\.alarming\s*\{\s*animation:\s*none/.test(b)), 'reduced motion turns it off');
+  // Calm motion (the OS setting included) is html.calm-motion, the one switch.
+  assert.ok(/html\.calm-motion \.tool-box\.alarming\s*\{\s*animation:\s*none/.test(css), 'calm motion turns it off');
 });
 
 test('the viewer note no longer points at a PIN that does not exist', () => {

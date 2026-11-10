@@ -162,3 +162,41 @@ test('writes through the fake carry plain data across the vm boundary', async ()
   out.list.push(4);
   assert.deepEqual(db.serverGet('x').list, [1, 2, 3], 'a returned value is a copy, not the stored tree');
 });
+
+test('transaction: a returned ServerValue.TIMESTAMP is resolved by the database, like set and update', async () => {
+  const db = makeFakeRtdb();
+  const r = await db.ref('setup').transaction(() => ({ meta: { seeded: { at: { '.sv': 'timestamp' }, byKey: 'x' } } }));
+  assert.equal(r.committed, true);
+  const at = db.serverGet('setup/meta/seeded/at');
+  assert.equal(typeof at, 'number');
+  assert.ok(Math.abs(at - db.now()) < 5000);
+});
+
+test('queries: orderByChild + limitToLast / limitToFirst / equalTo, read by a value listener or once(); forEach walks query order; a row leaving the window is gone', async () => {
+  const db = makeFakeRtdb();
+  [['a', 5], ['b', 1], ['c', 9], ['d', 3]].forEach(([k, at]) => db.serverSet('q/' + k, { at, ch: at > 4 ? 'x' : 'y' }));
+  const seen = [];
+  db.ref('q').orderByChild('at').limitToLast(2).on('value', (snap) => { const ks = []; snap.forEach((c) => { ks.push(c.key); }); seen.push(ks.join('')); });
+  assert.deepEqual(seen, ['ac'], 'the two newest, oldest first (query order)');
+  db.serverSet('q/e', { at: 7, ch: 'x' });
+  assert.deepEqual(seen, ['ac', 'ec'], 'a newer row pushes the oldest out of the window');
+  const once = await db.ref('q').orderByChild('at').limitToFirst(3).once('value');
+  assert.deepEqual(Object.keys(once.val()).sort(), ['b', 'd', 'e'.replace('e', 'a')].sort());
+  const eq = await db.ref('q').orderByChild('ch').equalTo('y').once('value');
+  assert.equal(eq.numChildren(), 2);
+  assert.equal(db.ref('q').orderByChild('at').limitToLast(1).once !== undefined, true);
+});
+
+test('every ServerValue.TIMESTAMP of one write is the same moment, like the real server (a clock that ticks per reading must not split one update)', async () => {
+  const db = makeFakeRtdb();
+  let tick = 1000;
+  db.now = () => tick++; // a clock that moves on every reading
+  const TS = { '.sv': 'timestamp' };
+  await db.ref().update({ 'a/epochAt': TS, 'b/epochAt': TS, 'c': { deep: { at: TS } } });
+  const t = db.serverTree();
+  assert.equal(t.a.epochAt, t.b.epochAt, 'two paths of one update');
+  assert.equal(t.c.deep.at, t.a.epochAt, 'and a nested one');
+  await db.ref('d').set({ x: TS, y: TS });
+  assert.equal(db.serverGet('d').x, db.serverGet('d').y, 'one set');
+  assert.ok(db.serverGet('d').x !== t.a.epochAt, 'a later write is a later moment');
+});

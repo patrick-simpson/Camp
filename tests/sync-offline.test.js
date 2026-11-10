@@ -32,7 +32,7 @@ showToast = (m) => { toasts.push(m); };
 function boot(serverRaw) {
   // Device adopted serverRaw last session, then "reload": bootSyncedTree from persisted base.
   const ref = fakeRef();
-  fbRef = ref; remoteReady = true; pendingWrites = 0; dataEditPending = false; pushTimer = null; pushConfigTimer = null;
+  fbRef = ref; remoteReady = true; pendingWrites = 0; dataEditPending = false; clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   document.activeElement = null;
   applyRemoteState(clone(serverRaw));
   // simulate reload: re-read persisted state
@@ -139,13 +139,13 @@ function reload() {
   normalizeSyncedState();
   confirmedTree = null;
   bootSyncedTree = readConfirmedTree() || syncedSnapshot();
-  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; pushTimer = null;
+  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; clearTimeout(pushTimer); pushTimer = null;
 }
 
 test('offline score, reconnect just long enough for the first snapshot, wifi drops, app killed -> score lost?', () => {
   freshState();
   setMemberRole('editor');
-  fbRef = hangingRef(); remoteReady = true; pendingWrites = 0; pushTimer = null; pushConfigTimer = null; document.activeElement = null;
+  fbRef = hangingRef(); remoteReady = true; pendingWrites = 0; clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null; document.activeElement = null;
   const serverRaw = prune(syncedSnapshot());
   applyRemoteState(clone(serverRaw));      // session 1: synced
   reload();                                 // session 2 starts offline
@@ -180,12 +180,12 @@ function reload() {
   normalizeSyncedState();
   confirmedTree = null;
   bootSyncedTree = readConfirmedTree() || syncedSnapshot();
-  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; pushTimer = null;
+  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; clearTimeout(pushTimer); pushTimer = null;
 }
 test('ref types custom Pictionary words while offline, then the first snapshot arrives', () => {
   freshState();
   setMemberRole('editor');
-  fbRef = fakeRef(); remoteReady = true; pendingWrites = 0; pushTimer = null; pushConfigTimer = null; document.activeElement = null;
+  fbRef = fakeRef(); remoteReady = true; pendingWrites = 0; clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null; document.activeElement = null;
   const serverRaw = prune(syncedSnapshot());
   applyRemoteState(clone(serverRaw));
   reload();
@@ -200,7 +200,7 @@ test('ref types custom Pictionary words while offline, then the first snapshot a
 test('same, but picSetup existed (numbered) on server and ref switches to own offline', () => {
   freshState();
   setMemberRole('editor');
-  fbRef = fakeRef(); remoteReady = true; pendingWrites = 0; pushTimer = null; pushConfigTimer = null; document.activeElement = null;
+  fbRef = fakeRef(); remoteReady = true; pendingWrites = 0; clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null; document.activeElement = null;
   state.picSetup.pic1 = { source: 'numbered', words: [] };
   const serverRaw = prune(syncedSnapshot());
   applyRemoteState(clone(serverRaw));
@@ -236,7 +236,7 @@ test('fast-clock editor reopens mid-game: pre-sign-in "settle" stops everyone\'s
   // A 10-min clock started by the head ref, 2 minutes left in real (server) time.
   state.clocks[g.id] = { running: true, endAt: serverRealNow + 120000, remaining: 600000, duration: 600000, round: 1 };
   // Last session this phone adopted that exact server state.
-  fbRef = fakeRef(); remoteReady = true; pendingWrites = 0; pushTimer = null; document.activeElement = null;
+  fbRef = fakeRef(); remoteReady = true; pendingWrites = 0; clearTimeout(pushTimer); pushTimer = null; document.activeElement = null;
   const serverRaw = prune(syncedSnapshot());
   applyRemoteState(clone(serverRaw));
   // --- relaunch: hint-painted editor, sign-in still resolving (fbRef null) ---
@@ -277,13 +277,13 @@ function serverRef(hangAck) {
 function reload() {
   state = JSON.parse(localStorage.getItem(STORAGE_KEY)); normalizeSyncedState();
   confirmedTree = null; bootSyncedTree = readConfirmedTree() || syncedSnapshot();
-  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; pushTimer = null;
+  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; clearTimeout(pushTimer); pushTimer = null;
 }
 const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
 
 test('result saved online (ack recorded, echo not yet re-read), app killed; next day corrected offline', async () => {
   freshState(); setMemberRole('editor');
-  document.activeElement = null; pushConfigTimer = null;
+  document.activeElement = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   let ref = serverRef(); fbRef = ref; remoteReady = true; lastSyncedTree = null; server = null;
   handleRemoteSnapshot(null); await flush();             // seed
   handleRemoteSnapshot(clone(server)); await flush();    // adopt (sorted)
@@ -332,7 +332,7 @@ function fakeRef() { const ref = { writes: [], update(u) { ref.writes.push(clone
 function reload() {
   state = JSON.parse(localStorage.getItem(STORAGE_KEY)); normalizeSyncedState();
   confirmedTree = null; bootSyncedTree = readConfirmedTree() || syncedSnapshot();
-  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; pushTimer = null;
+  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; clearTimeout(pushTimer); pushTimer = null;
 }
 test('final saved at the far field (offline), app reopened later: bracket stays "Live now"?', () => {
   freshState(); setMemberRole('editor');
@@ -342,7 +342,7 @@ test('final saved at the far field (offline), app reopened later: bracket stays 
   b.matches = [{ a: 't0', b: 't1', winner: 't0', loser: 't1' }, { a: 't2', b: 't3', winner: 't2', loser: 't3' }, { a: 't4', b: 't5', winner: 't4', loser: 't5' }];
   b.pool = []; b.byeTeamId = 't0'; b.semifinal = { a: 't2', b: 't4', winner: 't2', loser: 't4' }; b.phase = 'championship';
   state.brackets[g.id] = b;
-  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; pushConfigTimer = null;
+  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   const serverRaw = prune(syncedSnapshot());
   applyRemoteState(clone(serverRaw));
   reload();
@@ -368,13 +368,13 @@ function fakeRef() { const ref = { writes: [], update(u) { ref.writes.push(clone
 function reload() {
   state = JSON.parse(localStorage.getItem(STORAGE_KEY)); normalizeSyncedState();
   confirmedTree = null; bootSyncedTree = readConfirmedTree() || syncedSnapshot();
-  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; pushTimer = null;
+  remoteReady = false; lastSyncedTree = null; dirtySinceLoad = false; pendingWrites = 0; dataEditPending = false; clearTimeout(pushTimer); pushTimer = null;
 }
 test('notice with no zones yet: offline edit to it', () => {
   freshState(); setMemberRole('editor');
 
   state.notice.zones = [];
-  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; pushConfigTimer = null;
+  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   const serverRaw = prune(syncedSnapshot());
   applyRemoteState(clone(serverRaw));
   reload();
@@ -394,7 +394,7 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 function fakeRef() { const ref = { writes: [], update(u) { ref.writes.push(clone(u)); return Promise.resolve(); }, set() { return Promise.resolve(); }, once() { return Promise.resolve({ val: () => null }); } }; return ref; }
 test('yesterday\'s unuploaded scores: does sign-out warn before wiping them?', () => {
   freshState(); setMemberRole('editor');
-  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; pushConfigTimer = null; pushTimer = null;
+  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; clearTimeout(pushConfigTimer); pushConfigTimer = null; clearTimeout(pushTimer); pushTimer = null;
   applyRemoteState(clone(prune(syncedSnapshot())));
   // offline edit, app killed before upload
   state.results.gZ = { medals: { gold: 't1', silver: 't2', bronze: 't3' }, savedAt: 'x' };
@@ -402,7 +402,7 @@ test('yesterday\'s unuploaded scores: does sign-out warn before wiping them?', (
   // next day: app opened (offline, or sign-in still resolving)
   state = JSON.parse(localStorage.getItem(STORAGE_KEY)); normalizeSyncedState();
   confirmedTree = null; bootSyncedTree = readConfirmedTree() || syncedSnapshot();
-  fbRef = null; remoteReady = false; pendingWrites = 0; dataEditPending = false; pushTimer = null; pushConfigTimer = null;
+  fbRef = null; remoteReady = false; pendingWrites = 0; dataEditPending = false; clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   const unconfirmed = Object.keys(computeSyncUpdates(bootSyncedTree, syncedSnapshot()));
 
 
@@ -424,10 +424,10 @@ test('scores entered in an offline session reach the server but never the change
   freshState(); setMemberRole('editor');
   authUser = { email: 'ref@example.com' };
   appStarted = true;
-  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; pushConfigTimer = null; pushTimer = null;
+  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; clearTimeout(pushConfigTimer); pushConfigTimer = null; clearTimeout(pushTimer); pushTimer = null;
   const serverRaw = prune(syncedSnapshot());
   applyRemoteState(clone(serverRaw));
-  renderStandings();                                  // baseline
+  runStandingsSideEffects();                                  // baseline
   // App opened OFFLINE: member read can't resolve, so initSync never ran (fbRef null).
   fbRef = null; remoteReady = false; lastSyncedTree = null;
   bootSyncedTree = readConfirmedTree();
@@ -453,7 +453,7 @@ function fakeRef() { const ref = { writes: [], update(u) { ref.writes.push(clone
 test('director wipes state/ for a fresh session; first stale device to open re-seeds last week', () => {
   freshState(); setMemberRole('editor');
   state.results.oldWeek = { medals: { gold: 't1', silver: 't2', bronze: 't3' }, savedAt: 'last week' };
-  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; pushConfigTimer = null; pushTimer = null;
+  fbRef = fakeRef(); remoteReady = true; document.activeElement = null; clearTimeout(pushConfigTimer); pushConfigTimer = null; clearTimeout(pushTimer); pushTimer = null;
   applyRemoteState(clone(prune(syncedSnapshot())));   // this device last saw last week's data, confirmed
   state = JSON.parse(localStorage.getItem(STORAGE_KEY)); normalizeSyncedState();
   confirmedTree = null; bootSyncedTree = readConfirmedTree();
@@ -474,18 +474,25 @@ test('chat: a backward device-clock correction stalls every later send by the si
   firebase = { database: () => ({ ref: () => ({ update: (u) => { calls.push(Date.now()); return Promise.resolve(); } }) }) };
   firebase.database.ServerValue = { TIMESTAMP: {} };
   const realNow = Date.now;
+  const realSetTimeout = setTimeout;
+  // What the send chain ASKS to wait is the thing under test, not how long a loaded machine takes to wait it: record the
+  // requested delays and run them at once, so the check neither takes 1.2 s of real time nor depends on how stalled the process is.
+  const asked = [];
+  setTimeout = (fn, ms, ...rest) => { asked.push(ms); return realSetTimeout(fn, 0, ...rest); };
   let skew = 0;
   Date.now = () => realNow() + skew;
   try {
+    chatSendTail = Promise.resolve();
+    chatLastAckAt = 0;
     skew = 3000;                                   // phone clock 3 s fast…
     await chatAtomicSend({ 'chat/general/a': { text: 'one' } }, 'chatRate/x');
     skew = 0;                                      // …NTP pulls it back
-    const t0 = realNow();
+    asked.length = 0;
     await chatAtomicSend({ 'chat/general/b': { text: 'two' } }, 'chatRate/x');
-    const waited = realNow() - t0;
 
-    assert.ok(waited < CHAT_MIN_SEND_MS + 300, 'the spacing should never exceed CHAT_MIN_SEND_MS');
-  } finally { Date.now = realNow; }
+    assert.equal(asked.length, 1, 'one spacing wait before the second send: ' + asked.join(','));
+    assert.ok(asked[0] <= CHAT_MIN_SEND_MS, 'the spacing should never exceed CHAT_MIN_SEND_MS (asked for ' + asked[0] + ' ms)');
+  } finally { Date.now = realNow; setTimeout = realSetTimeout; }
 });
 
 }

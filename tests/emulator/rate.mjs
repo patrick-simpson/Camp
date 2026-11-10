@@ -6,7 +6,7 @@ import { ref, set, update, push, remove, serverTimestamp } from 'firebase/databa
 
 const env = await initializeTestEnvironment({
   projectId: 'camp-rate',
-  database: { rules: readFileSync('./database.rules.json', 'utf8'), host: '127.0.0.1', port: 9000 },
+  database: { rules: readFileSync(new URL('../../database.rules.json', import.meta.url), 'utf8'), host: '127.0.0.1', port: 9000 },
 });
 await env.clearDatabase();
 const VK = 'vw@x,com', V = 'vw@x.com', EK = 'ed@x,com', E = 'ed@x.com';

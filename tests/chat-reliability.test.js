@@ -114,19 +114,6 @@ test('marking a channel seen covers the newest message even when serverNow() lag
   chatMsgs.general = [];
 });
 
-// ── chat#5 / pages#4: the announcement composer survives the 30 s tick ──
-
-test('the 30-second refresh leaves the announcement composer alone when nothing changed', () => {
-  setMemberRole('editor');
-  try {
-    announceComposerOpen = true;
-    renderAnnouncements();
-    const wrap = document.getElementById('announcements');
-    wrap.innerHTML = 'LIVE-NODES';            // stand-in for the nodes an editor is typing into
-    renderAnnouncements();                    // the tick
-    assert.equal(wrap.innerHTML, 'LIVE-NODES', 'identical markup must not be rebuilt');
-  } finally {
-    announceComposerOpen = false;
-    setMemberRole(null);
-  }
-});
+// ── chat#5 / pages#4 (retired): the announcement composer is gone; its job was keeping a half-typed
+// message through the 30 s tick, which is now Tell everyone's draft (tell.test.js). What the tick still
+// owes the strip is "identical markup is not rewritten" (home.test.js).

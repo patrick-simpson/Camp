@@ -1,9 +1,9 @@
 // Home-screen panels that re-render on every snapshot and every 30 s tick:
-// the rain hint must not rebuild the Happening-now bar, idle renders must not
-// rewrite plain panels (that drops selected text), a points-pulse must survive
-// the next render, toasts are capped and plain text, and the announcement
-// composer's live <input> survives a banner change. The visible effect of each
-// is only checkable in a browser; these pin the rules the fixes rest on.
+// idle renders must not rewrite plain panels (that drops selected text), what the
+// standings do besides being drawn runs on every pass and draws nothing, toasts are capped and plain text,
+// and a banner strip writes only when it changed. The visible effect of each
+// is only checkable in a browser; these pin the rules the fixes rest on. (The
+// Now card's own render stability is now-ui.test.js's.)
 
 // Counts innerHTML writes on a stub element (the stub's innerHTML is a plain
 // property, so an accessor makes every rewrite observable).
@@ -22,235 +22,75 @@ function countWrites(el, keepStamp) {
   return () => writes;
 }
 
-// ── Happening now: the rain hint is patched, never part of the shape ──
-
-test('splitNowBanner: the bar value and the rain hint never change the shape', () => {
-  const main = (v, hint, label) => `<div class="now-main"><div class="now-body"><div class="now-label">${label || 'Worship'}</div>${hint}</div></div>` +
-    `<jelly-progress class="now-progress" size="small" value="${v}" max="100" aria-hidden="true"></jelly-progress>`;
-  const wx = (t) => `<div class="now-wx">🌧️ ${t}</div>`;
-  const a = splitNowBanner(main(40, wx('60% chance of rain near 8pm')));
-  const b = splitNowBanner(main(41, wx('60% chance of rain this hour')));
-  const c = splitNowBanner(main(42, ''));
-  assert.equal(a.shape, b.shape, 'the hint text changing at an hour rollover is not a new shape');
-  assert.equal(a.shape, c.shape, 'the hint appearing or clearing is not a new shape');
-  assert.equal(a.value, '40');
-  assert.equal(c.value, '42');
-  assert.equal(b.wx, wx('60% chance of rain this hour'));
-  assert.equal(c.wx, '');
-  assert.notOk(splitNowBanner(main(42, '', 'Dinner')).shape === c.shape, 'a different block IS a new shape (the bar refills for it)');
-  const none = splitNowBanner(null);
-  assert.equal(none.shape, '');
-  assert.equal(none.value, null);
-});
-
-test('nowBannerHtml: a rain hint that moves mid-block leaves the banner shape alone', () => {
-  const realNow = campNow;
-  const realWx = weatherData;
-  try {
-    campNow = () => ({ dow: 0, minutes: 900 }); // Sunday 3pm — a timed block with a bar
-    const date = campDateStr();
-    const forecast = (byHour) => {
-      const byTime = {};
-      for (let h = 0; h < 24; h++) byTime[`${date}T${String(h).padStart(2, '0')}:00`] = { temp: 60, code: 3, precip: byHour[h] == null ? 10 : byHour[h] };
-      return { dates: [date], byTime, at: Date.now() };
-    };
-    const at = (byHour) => { weatherData = forecast(byHour); return splitNowBanner(nowBannerHtml(0, 900)); };
-    const dry = at({});
-    const now = at({ 15: 60 });
-    const later = at({ 16: 70 });
-    assert.ok(dry.value != null, 'precondition: this block has a progress bar');
-    assert.equal(dry.wx, '');
-    assert.ok(/this hour/.test(now.wx), now.wx);
-    assert.ok(/near 4pm/.test(later.wx), later.wx);
-    assert.equal(now.shape, dry.shape);
-    assert.equal(later.shape, dry.shape);
-  } finally {
-    campNow = realNow;
-    weatherData = realWx;
-  }
-});
-
-// renderNowBanner against a hand-rolled banner: the stub DOM can't tell a kept
-// node from a re-created one, so this fake counts exactly what the render does.
-function fakeNowBanner() {
-  const bar = { v: '40', sets: 0, getAttribute(k) { return k === 'value' ? this.v : null }, setAttribute(k, v) { if (k === 'value') { this.v = v; this.sets++; } } };
-  const body = { inserted: [], insertAdjacentHTML(pos, html) { this.inserted.push({ pos, html }); } };
-  const banner = { hidden: false, wx: null, bar, body };
-  banner.querySelector = (sel) => {
-    if (!banner.innerHTML) return null; // nothing built yet (or cleared)
-    if (sel === 'jelly-progress.now-progress') return bar;
-    if (sel === '.now-wx') return banner.wx;
-    if (sel === '.now-body') return body;
-    return null;
-  };
-  const writes = countWrites(banner);
-  return { banner, bar, body, writes };
-}
-
-test('renderNowBanner patches the bar and the rain hint in place, rebuilding only for a new block', () => {
-  const realGet = document.getElementById;
-  const realHtml = nowBannerHtml;
-  const realBoard = homeBoardGame;
-  const realNow = campNow;
-  const { banner, bar, body, writes } = fakeNowBanner();
-  const page = (v, wx, label) => `<div class="now-main"><div class="now-body"><div class="now-label">${label || 'Worship'}</div>${wx || ''}</div></div>` +
-    `<jelly-progress class="now-progress" size="small" value="${v}" max="100" aria-hidden="true"></jelly-progress>`;
-  const wx = (t) => `<div class="now-wx">🌧️ ${t}</div>`;
-  let html = '';
-  let board = false;
-  document.getElementById = (id) => (id === 'now-banner' ? banner : realGet.call(document, id));
-  nowBannerHtml = () => html;
-  homeBoardGame = () => (board ? { id: 'g' } : null);
-  campNow = () => ({ dow: 0, minutes: 900 });
-  try {
-    html = page(40);
-    renderNowBanner();
-    assert.equal(writes(), 1, 'first paint builds the markup');
-
-    html = page(41);
-    renderNowBanner();
-    assert.equal(writes(), 1, 'only the elapsed value moved: nudge the live bar');
-    assert.equal(bar.v, '41');
-
-    html = page(42, wx('60% chance of rain this hour'));
-    renderNowBanner();
-    assert.equal(writes(), 1, 'a hint appearing does not rebuild the bar');
-    assert.deepEqual(body.inserted.map((i) => i.pos), ['beforeend']);
-    assert.equal(body.inserted[0].html, wx('60% chance of rain this hour'));
-
-    banner.wx = { outerHTML: wx('60% chance of rain this hour'), removed: false, remove() { this.removed = true; } };
-    const node = banner.wx;
-    html = page(42, wx('70% chance of rain near 4pm'));
-    renderNowBanner();
-    assert.equal(writes(), 1, 'a hint changing does not rebuild the bar');
-    assert.equal(node.outerHTML, wx('70% chance of rain near 4pm'), 'the hint is replaced in place');
-
-    const sets = bar.sets;
-    renderNowBanner();
-    assert.equal(bar.sets, sets, 'nothing moved: nothing touched');
-    assert.equal(body.inserted.length, 1);
-
-    html = page(43);
-    renderNowBanner();
-    assert.ok(node.removed, 'a cleared hint is removed in place');
-    assert.equal(writes(), 1);
-
-    // A live match's Big Board hides the banner, and the bar must survive that.
-    board = true;
-    renderNowBanner();
-    assert.equal(banner.hidden, true);
-    assert.equal(writes(), 1, 'hiding keeps the markup — a cleared bar refilled from empty when it came back');
-    board = false;
-    html = page(44);
-    renderNowBanner();
-    assert.equal(banner.hidden, false);
-    assert.equal(writes(), 1, 'same block on return: the kept bar is nudged, not re-created');
-    assert.equal(bar.v, '44');
-
-    html = page(5, '', 'Dinner');
-    renderNowBanner();
-    assert.equal(writes(), 2, 'a different block IS a rebuild');
-  } finally {
-    document.getElementById = realGet;
-    nowBannerHtml = realHtml;
-    homeBoardGame = realBoard;
-    campNow = realNow;
-  }
-});
-
 // ── Idle renders leave plain panels alone ──
 
 test('the home panels that rebuild on every snapshot go through the guard', () => {
-  const src = readFixture('../app.js');
+  const src = readFixture('../app.js') + '\n' + readFixture('../games-ui.js');
   const body = (name) => {
     const start = src.indexOf('function ' + name + '(');
     assert.ok(start > -1, name + ' exists');
     return src.slice(start, src.indexOf('\n}\n', start));
   };
-  ['renderNoticeBoard', 'renderMyElectives', 'renderCatchupHint', 'renderStandings']
-    .forEach((fn) => assert.ok(body(fn).includes('setHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
-  assert.notOk(/innerHTML\s*=/.test(body('renderNoticeBoard')), 'the notice card is never assigned directly');
-  assert.notOk(/tbody\.innerHTML/.test(body('renderStandings')), 'standings rows are never assigned directly');
-});
-
-test('the posted notice card is not rewritten when nothing changed', () => {
-  freshState();
-  setMemberRole('editor');
-  setNoticeStatus('posted');
-  const writes = countWrites(document.getElementById('notice-board'));
-  renderNoticeBoard();
-  renderNoticeBoard();
-  renderNoticeBoard();
-  assert.equal(writes(), 1, 'one paint, then nothing');
-  noticeBoard().title = 'A different headline';
-  renderNoticeBoard();
-  assert.equal(writes(), 2, 'a real change still repaints');
-  setMemberRole(null);
-});
-
-test('My electives is not rewritten when nothing changed', () => {
-  freshState();
-  const realNow = campNow;
-  try {
-    campNow = () => ({ dow: 1, minutes: 600 });
-    state.identity = 'Zac'; // on Monday's elective sheet
-    const writes = countWrites(document.getElementById('my-electives-card'));
-    renderMyElectives();
-    renderMyElectives();
-    assert.equal(writes(), 1);
-    state.identity = null;
-    renderMyElectives();
-    assert.equal(document.getElementById('my-electives-card').hidden, true, 'no identity: the card hides');
-  } finally {
-    campNow = realNow;
-    state.identity = null;
-  }
+  ['gamesPaintStandings', 'gamesPaintPicker', 'gamesPaintDay']
+    .forEach((fn) => assert.ok(/setHtmlIfChanged\(|paintKeyedList\(/.test(body(fn)), fn + ' skips unchanged rebuilds'));
+  assert.notOk(/\.innerHTML\s*=[^=]/.test(body('gamesPaintStandings') + body('gamesPaintPicker') + body('gamesPaintDay')), 'the Games panels never assign markup directly');
+  // §13.9: what the standings DO (the change history, the point alerts, the day baseline) draws nothing
+  const side = body('runStandingsSideEffects');
+  assert.notOk(/getElementById|querySelector|innerHTML|textContent|\.hidden/.test(side), 'runStandingsSideEffects touches no DOM');
 });
 
 function giveSomePoints() {
   freshState();
-  setMemberRole('editor'); // the standings panels are directors' (standings secrecy); secrecy.test.js pins what a counselor sees
+  setMemberRole('editor'); // the standings panel is directors' (standings secrecy); secrecy.test.js pins what a counselor sees
   state.config.games.slice(0, 3).forEach((g, i) => {
     state.results[g.id] = { medals: { gold: 't' + (i % 3), silver: 't' + ((i + 1) % 3), bronze: 't' + ((i + 2) % 3) }, savedAt: '2026-07-20T12:00:00Z' };
   });
   lastPointsByTeam = null;
   remoteJustApplied = false;
-  Object.keys(pointsPulseUntil).forEach((k) => delete pointsPulseUntil[k]);
+  try { localStorage.removeItem(DAY_RANK_KEY); } catch (e) { /* none */ }
 }
 
-test('the standings table and catch-up hint are not rewritten by a render that changes nothing', () => {
+test('the standings list and gap sentence are not rewritten by a render that changes nothing', () => {
   giveSomePoints();
-  const tbody = countWrites(document.getElementById('standings-tbody'));
-  const hint = countWrites(document.getElementById('catchup-hint'));
-  renderStandings();
-  renderStandings();
-  renderStandings();
-  assert.equal(tbody(), 1, 'rows built once');
-  assert.equal(hint(), 1, 'hint built once');
+  const list = countWrites(document.getElementById('gs-list'));
+  const gap = countWrites(document.getElementById('gs-gap'));
+  renderGamesPanel(gamesModel());
+  renderGamesPanel(gamesModel());
+  renderGamesPanel(gamesModel());
+  assert.equal(list(), 1, 'rows built once');
+  assert.equal(gap(), 1, 'sentence built once');
   state.bonuses.pts1 = { id: 'pts1', teamId: 't0', category: 'custom', label: 'x', points: 4, at: '2026-07-20T12:05:00Z' };
-  renderStandings();
-  assert.equal(tbody(), 2, 'a points change still repaints the rows');
+  renderGamesPanel(gamesModel());
+  assert.equal(list(), 2, 'a points change still repaints the rows');
 });
 
-test('a points-pulse is held through the next render, then ends by itself', () => {
+test('the standings side effects run without the Games tab: the day baseline, the alert for a change from another phone, nothing drawn', () => {
   giveSomePoints();
-  const tbody = document.getElementById('standings-tbody');
-  renderStandings(); // baseline: the first render never pulses
-  assert.notOk(tbody.innerHTML.includes('points-pulse'));
-
-  state.bonuses.pulse1 = { id: 'pulse1', teamId: 't0', category: 'custom', label: 'x', points: 3, at: '2026-07-20T12:05:00Z' };
-  remoteJustApplied = true;
-  renderStandings();
-  assert.ok(tbody.innerHTML.includes('points-pulse'), 'the remote change pulses its row');
-
-  const writes = countWrites(tbody, true);
-  renderStandings(); // an unrelated snapshot / the 30 s tick lands inside the 0.6 s fade
-  assert.ok(tbody.innerHTML.includes('points-pulse'), 'still pulsing — the animation is not cut off');
-  assert.equal(writes(), 0, 'and the animating rows were not re-created');
-
-  pointsPulseUntil.t0 = Date.now() - 1; // the window has passed
-  renderStandings();
-  assert.notOk(tbody.innerHTML.includes('points-pulse'), 'the class ends so the next change can pulse again');
+  const list = countWrites(document.getElementById('gs-list'));
+  const alerts = [];
+  const realNotify = notifyPointChanges;
+  notifyPointChanges = (changed) => { alerts.push(changed); };
+  try {
+    runStandingsSideEffects(); // baseline: the first pass raises nothing
+    assert.deepEqual(alerts, []);
+    const snap = JSON.parse(localStorage.getItem(DAY_RANK_KEY));
+    assert.equal(snap.date, campDateStr(), 'the day\'s baseline was taken on the first pass');
+    assert.ok(snap.places && typeof snap.flat === 'boolean');
+    state.bonuses.pulse1 = { id: 'pulse1', teamId: 't0', category: 'custom', label: 'x', points: 3, at: '2026-07-20T12:05:00Z' };
+    remoteJustApplied = true;
+    runStandingsSideEffects();
+    assert.equal(alerts.length, 1, 'a change that arrived from elsewhere is alerted');
+    assert.deepEqual(alerts[0].map((c) => [c.team.id, c.delta]), [['t0', 3]]);
+    assert.equal(remoteJustApplied, false, 'and the flag is spent');
+    runStandingsSideEffects();
+    assert.equal(alerts.length, 1, 'a pass with nothing new alerts nothing');
+    assert.equal(list(), 0, 'and not one pass wrote the standings list');
+    // a phone that may not read points computes nothing and forgets what it had
+    setMemberRole('viewer');
+    setStandingsGuardThrows(true);
+    try { runStandingsSideEffects(); } finally { setStandingsGuardThrows(false); }
+    assert.equal(lastPointsByTeam, null);
+  } finally { notifyPointChanges = realNotify; setMemberRole(null); }
 });
 
 // ── Toasts ──
@@ -370,116 +210,126 @@ test('up-next alerts are plain text too', () => {
   }
 });
 
-// ── Announcement composer ──
+// ── Message banners (Now's strip) ──
+// The old inline composer (and its keyboard-preserving node swap) is gone: a banner is written by Tell everyone
+// (tell.js). What is left of this panel is a list that re-renders on every snapshot and every 30 s tick, so the
+// same rules as every other home panel apply: write only a change, wire once, never rebuild what did not move.
 
-test('a remote announcement swaps the banners and leaves the open composer alone', () => {
+test('Now\'s strip draws every banner with messageHtml, and an idle re-render writes nothing', () => {
   freshState();
   setMemberRole('editor');
   const wrap = document.getElementById('announcements');
-  wrap.__lastHtml = undefined;
-  wrap.__lastComposerKey = undefined;
+  wrap.__html = undefined;
+  wrap.__dom = undefined;
   wrap.hidden = true;
-  announceComposerOpen = true;
+  const writes = countWrites(wrap, true);
   try {
-    renderAnnouncements(); // first paint builds the composer
-    const painted = wrap.innerHTML;
-    assert.ok(painted.includes('announce-input'), 'precondition: the composer is up');
-
-    const inserted = [];
-    wrap.insertAdjacentHTML = (pos, html) => inserted.push({ pos, html });
-    state.announcements = { a1: { id: 'a1', text: 'Dinner moved to six', at: new Date().toISOString(), ttlMs: 3600000, by: 'X' } };
+    state.announcements = { a1: { id: 'a1', text: 'Dinner moved to six', at: new Date().toISOString(), ttlMs: 3600000, by: 'Jenn' } };
     renderAnnouncements();
-    assert.equal(wrap.innerHTML, painted, 'the composer markup was not rewritten, so its <input> keeps caret, focus and IME');
-    assert.equal(inserted.length, 1);
-    assert.equal(inserted[0].pos, 'afterbegin', 'banners sit above the composer');
-    assert.ok(inserted[0].html.includes('Dinner moved to six'));
-
-    renderAnnouncements(); // the 30 s tick: identical markup
-    assert.equal(inserted.length, 1, 'nothing more to do');
-
-    announceComposerOpen = false; // closing it is a real composer change
-    renderAnnouncements();
-    assert.notOk(wrap.innerHTML === painted, 'then it rebuilds');
-    assert.ok(wrap.innerHTML.includes('announce-open-btn'));
-  } finally {
-    announceComposerOpen = false;
+    assert.equal(writes(), 1, 'the first paint writes the banner');
+    assert.equal(wrap.hidden, false, 'and shows the strip');
+    assert.ok(wrap.innerHTML.includes('Dinner moved to six') && wrap.innerHTML.includes('class="msg"'), 'a .msg, the one banner markup');
+    assert.ok(wrap.innerHTML.includes('Take down for everyone'), 'a director may take a synced banner down from here');
+    assert.notOk(/announce-(input|form|open-btn|post-btn)/.test(wrap.innerHTML), 'no composer in the strip any more');
+    assert.equal(wrap.innerHTML, [...liveAnnouncements(), ].map((a) => messageHtml(a, { editor: true })).join(''), 'exactly what messageHtml writes');
+    renderAnnouncements(); // the 30 s tick
+    assert.equal(writes(), 1, 'identical markup is not rewritten');
     state.announcements = {};
-    setMemberRole(null);
-    delete wrap.insertAdjacentHTML;
-  }
-});
-
-test('the full-rebuild path restores focus and caret even with an empty draft, and rebuilds if the composer is gone', () => {
-  freshState();
-  setMemberRole('editor');
-  const wrap = document.getElementById('announcements');
-  wrap.__lastHtml = undefined;
-  wrap.__lastBanners = undefined;
-  wrap.__lastComposerKey = undefined;
-  wrap.hidden = true;
-  const realGet = document.getElementById;
-  const input = {
-    value: '', selectionStart: 3, selectionEnd: 5, focused: 0, range: null,
-    focus() { this.focused++; },
-    setSelectionRange(a, b) { this.range = [a, b]; },
-  };
-  document.getElementById = (id) => (id === 'announce-input' ? input : realGet.call(document, id));
-  announceComposerOpen = true;
-  try {
     renderAnnouncements();
-    const first = wrap.innerHTML;
-    assert.ok(first.includes('announce-input'), 'precondition: composer up');
-    assert.equal(input.focused, 0, 'not focused, so the rebuild does not grab focus');
-
-    // The composer closes while the (empty) box has focus: a real rebuild.
-    document.activeElement = input;
-    announceComposerOpen = false;
-    renderAnnouncements();
-    assert.equal(input.focused, 1, 'focus restored without a draft to carry');
-    assert.deepEqual(input.range, [3, 5], 'caret restored');
-    document.activeElement = null;
-
-    // A banner-only change takes the in-place path only while the composer
-    // node is really there; if it isn't, the whole strip is rebuilt.
-    const realQuery = wrap.querySelector;
-    wrap.querySelector = () => null;
-    const before = wrap.innerHTML;
-    state.announcements = { a2: { id: 'a2', text: 'Bring a towel', at: new Date().toISOString(), ttlMs: 3600000, by: 'X' } };
-    renderAnnouncements();
-    assert.ok(wrap.innerHTML !== before && wrap.innerHTML.includes('Bring a towel'), 'no composer node: rebuilt rather than patched');
-    wrap.querySelector = realQuery;
+    assert.equal(wrap.hidden, true, 'no banner: the strip is hidden, even for a director (the composer link is gone)');
   } finally {
-    document.getElementById = realGet;
-    document.activeElement = null;
-    announceComposerOpen = false;
     state.announcements = {};
     setMemberRole(null);
   }
 });
 
-// ── Day-tab pill ──
-
-test('settleDayTabPill snaps the pill onto its target at creation, and again after the re-sync', async () => {
-  const seg = { pillX: -123, pillTarget: 62, pillXVelocity: 9, reflecting: false, frames: 0, requestFrame() { this.frames++; } };
-  const tabs = { shadowRoot: { querySelector: (sel) => (sel === 'jelly-segmented' ? seg : null) } };
-  settleDayTabPill(tabs);
-  assert.equal(seg.pillX, 62, 'no spring from the first tab');
-  assert.equal(seg.pillXVelocity, 0);
-  assert.ok(seg.frames > 0, 'repaints at the new spot');
-  seg.pillTarget = 124; // the segmented's own corrected sync lands a microtask later
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.equal(seg.pillX, 124);
-  assert.doesNotThrow(() => settleDayTabPill(null));
-  assert.doesNotThrow(() => settleDayTabPill({}));
-  assert.doesNotThrow(() => settleDayTabPill({ shadowRoot: { querySelector: () => ({}) } }), 'an element that is not a jelly-segmented is left alone');
+test('a counselor sees the same banner with no Remove, and a chat-sourced one never has one', () => {
+  freshState();
+  const a = { id: 'a1', text: 'Bring a towel', at: new Date().toISOString(), ttlMs: 3600000, by: 'Jenn' };
+  const viewer = messageHtml(a, { editor: false });
+  assert.notOk(viewer.includes('msg-remove'), 'a counselor cannot take a banner down');
+  assert.ok(viewer.includes('msg-x') && viewer.includes('Dismiss this announcement on this phone'), 'but can dismiss it on this phone');
+  const chat = messageHtml(Object.assign({}, a, { fromChat: true }), { editor: true });
+  assert.ok(chat.includes('data-kind="chat"') && chat.includes('Announcements chat'), 'a chat message reads as one');
+  assert.notOk(chat.includes('msg-remove'), 'delete it in chat instead');
+  const preview = messageHtml(a, { editor: true, preview: true });
+  assert.ok(/Now · Jenn/.test(preview), 'the preview says "Now"');
+  assert.notOk(preview.includes('msg-remove'), 'and never offers Remove');
+  const hostile = messageHtml({ id: 'x"><i', text: '<img src=x onerror=alert(1)>', at: new Date().toISOString(), by: '<b>' }, { editor: true });
+  assert.notOk(/<img|<b>|<i[ >]/.test(hostile.replace(/<svg[\s\S]*?<\/svg>/g, '')), 'every database string is escaped');
 });
 
-test('the pill snap is creation-only — the change handler never calls it', () => {
+test('a banner is written by postBanner and taken down by takeDownBanner: directors only, no render, no save', () => {
+  freshState();
+  setMemberRole('viewer');
+  assert.equal(postBanner('hi', 3600000), null, 'a counselor cannot post');
+  setMemberRole('editor');
+  try {
+    assert.equal(postBanner('   ', 3600000), null, 'nothing to say');
+    const id = postBanner('  Water break  ', 3 * 3600000);
+    const a = state.announcements[id];
+    assert.equal(a.text, 'Water break', 'trimmed');
+    assert.equal(a.ttlMs, 3 * 3600000);
+    assert.ok(Number.isFinite(Date.parse(a.at)), 'stamped with its time');
+    assert.equal(postBanner('x'.repeat(400), 0) && Object.values(state.announcements).pop().text.length, BANNER_MAX, 'cut to the message limit');
+    assert.equal(Object.values(state.announcements).pop().ttlMs, ANNOUNCE_DEFAULT_TTL_MS, 'a missing duration is the one-hour default');
+    assert.ok(liveAnnouncements().some((x) => x.id === id));
+    assert.equal(takeDownBanner(id), true);
+    assert.equal(takeDownBanner(id), false, 'a second take down finds nothing');
+    setMemberRole('viewer');
+    assert.equal(takeDownBanner(Object.keys(state.announcements)[0]), false, 'and a counselor cannot take one down');
+  } finally {
+    state.announcements = {};
+    setMemberRole(null);
+  }
+});
+
+// ── Day picker ──
+
+test('the day picker rewrites nothing when nothing changed, and the chosen day is this device\'s own', () => {
+  freshState();
+  setMemberRole('editor');
+  const track = countWrites(document.getElementById('games-days-pick'));
+  state.ui.day = state.config.days[0].id;
+  renderGamesPanel(gamesModel());
+  renderGamesPanel(gamesModel());
+  assert.equal(track(), 1, 'the tabs are written once');
+  const other = state.config.days[1].id;
+  gamesPickDay(other);
+  assert.equal(state.ui.day, other, 'a tap chooses the day');
+  assert.equal(track(), 2, 'and rewrites the tabs once');
+  gamesPickDay(other);
+  gamesPickDay('not-a-day');
+  assert.equal(track(), 2, 'a repeat tap and a stale id change nothing');
+  assert.equal(state.ui.day, other);
+  setMemberRole(null);
+});
+
+test('Now hosts the Now engine (card, runs, messages strip); Games hosts the day tabs; More hosts the rest; renderAll gives each to ITS tab only', () => {
   const src = readFixture('../app.js');
-  const start = src.indexOf('function renderDayTabs(');
-  const body = src.slice(start, src.indexOf('\n}\n', start));
-  assert.ok(body.includes('settleDayTabPill(tabs)'), 'a freshly built tab bar is settled');
-  const handler = body.slice(body.indexOf("addEventListener('change'"), body.indexOf('settleDayTabPill(tabs)'));
-  assert.ok(handler.length > 0 && !handler.includes('settleDayTabPill'), 'the spring is the point of a tap');
+  const panel = src.slice(src.indexOf('const SHELL_PANELS = {'), src.indexOf('const SHELL_ALWAYS'));
+  const part = (from, to) => panel.slice(panel.indexOf(from), panel.indexOf(to));
+  const now = part('now: {', 'games: {');
+  ['nowRefresh', 'nowTick', 'renderAnnouncements'].forEach((fn) => assert.ok(now.includes(fn + '('), fn + ' renders with Now'));
+  // The old Now sections are DELETED, not just unwired (Step 17): the Now card paints from nowModel().
+  ['renderNoticeBoard', 'renderNowBanner', 'splitNowBanner', 'renderFollowCard', 'renderMyElectives', 'renderLiveHome', 'homeBoardGame', 'liveHomeGames']
+    .forEach((fn) => assert.notOk(new RegExp('\\b' + fn + '\\b').test(src), fn + ' is gone from app.js (the Now engine replaced it)'));
+  ['gamesRefresh', 'renderMemoryVerse', 'renderMealCleanup', 'renderFooter']
+    .forEach((fn) => assert.notOk(now.includes(fn + '('), fn + ' left Now'));
+  // The old Games cards are DELETED too (Step 18): the Games tab paints from gamesModel().
+  ['renderDayTabs', 'renderBonuses', 'bindBonusEntry', 'renderCatchupHint', 'renderStandings', 'dayGamesHTML', 'wireDayPanels', 'settleDayTabPill']
+    .forEach((fn) => assert.notOk(new RegExp('\\b' + fn + '\\b').test(src.replace(/\/\/.*$/gm, '')), fn + ' is gone from app.js (the Games engine replaced it)'));
+  const games = part('games: {', 'chat: {');
+  assert.ok(games.includes('gamesRefresh('), 'the Games panel renders with Games');
+  assert.ok(part('more: {', '};').includes('renderMore()'), 'More renders its volatile lines');
+  // The reading sheets render while they are open, whatever tab is under them.
+  assert.ok(/function renderShellSheets\(\)[\s\S]*shellSheetFill/.test(src));
+  assert.ok(/function shellSheetFill[\s\S]*renderMemoryVerse\(\)[\s\S]*renderMealCleanup\(\)/.test(src));
+  const all = src.slice(src.indexOf('function renderAll() {'), src.indexOf('// ── Week builder'));
+  assert.notOk(/renderNowBanner\(\)|renderLiveHome\(\)|renderDayTabs\(\)|gamesRefresh\(\)/.test(all), 'renderAll no longer renders them unconditionally');
+  assert.ok(all.includes('renderShellTabs()'));
+  const always = src.slice(src.indexOf('const SHELL_ALWAYS'), src.indexOf('function renderTab('));
+  assert.ok(/pruneExpiredAnnouncements\(\)/.test(always), 'announcement pruning still runs on every pass');
+  assert.ok(/runStandingsSideEffects\(\)/.test(always), 'and so do the standings\' side effects (§13.9)');
 });
+

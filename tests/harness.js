@@ -17,10 +17,11 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const fakeRtdb = require('./fake-rtdb.js'); // waitQuiet() asks it how many acknowledgements are still owed
 
 const ROOT = path.join(__dirname, '..');
 // Load order mirrors the <script> tags at the bottom of index.html.
-const APP_FILES = ['defaults.js', 'camp-core.js', 'reveal-core.js', 'camps.js', 'app.js', 'settings.js', 'chat.js', 'push.js'];
+const APP_FILES = ['defaults.js', 'camp-core.js', 'reveal-core.js', 'camps.js', 'jelly-motion.js', 'app.js', 'reveal.js', 'reveal-ui.js', 'setup-sync.js', 'settings.js', 'setup-ui.js', 'chat.js', 'push.js', 'tell.js', 'award.js', 'now-ui.js', 'games-ui.js'];
 
 const noop = () => {};
 
@@ -130,22 +131,68 @@ function makeContext(opts) {
   // Every timer the app starts inside this context, so __clearTimers can cancel
   // the ones a file leaves behind (the handle is dropped when it fires).
   const pendingTimers = new Set();
+  const timerDelays = new Map(); // handle -> the delay it was asked for (waitQuiet looks at the short ones)
   const realSetTimeout = setTimeout;
   const realClearTimeout = clearTimeout;
   const trackedSetTimeout = (fn, ms, ...args) => {
     const handle = realSetTimeout(() => {
       pendingTimers.delete(handle);
+      timerDelays.delete(handle);
       if (typeof fn === 'function') fn(...args);
     }, ms);
     pendingTimers.add(handle);
+    timerDelays.set(handle, Number(ms) || 0);
     return handle;
   };
   const trackedClearTimeout = (handle) => {
     pendingTimers.delete(handle);
+    timerDelays.delete(handle);
     realClearTimeout(handle);
+  };
+
+  // ── Waiting for the app, not for the clock ─────────────────────────────────────────────────────────────────
+  // A fixed `await sleep(40)` is a bet that a chain of timers and acknowledgements finishes inside 40 ms. It
+  // does on an idle laptop and loses when the process stalls (a GC pause, a cold container, three suites at
+  // once): the sleep's own timer comes due before the next link of the chain has even been scheduled. The two
+  // helpers below wait for the thing itself and have a generous deadline instead of a short guess, so a stall
+  // only makes a test slower, never wrong. They use the REAL timers, so they leave nothing in the tracked set.
+  const WAIT_DEADLINE_MS = 20000;
+  const SHORT_TIMER_MS = 1000; // a timer asked for longer than this (the calm-motion sampler's 2 s, a toast, a long fallback) is not a debounce to wait out
+  const hop = () => new Promise((resolve) => realSetTimeout(resolve, 2));
+  // waitUntil(cond, label, ms): resolves as soon as cond() is truthy (checked every 2 ms), rejects with `label` at the
+  // deadline. cond may be async. Returns the truthy value.
+  const waitUntil = async (cond, label, ms) => {
+    const deadline = Date.now() + (ms || WAIT_DEADLINE_MS);
+    for (;;) {
+      const v = await cond();
+      if (v) return v;
+      if (Date.now() > deadline) throw new AssertionError('timed out waiting for ' + (label || 'the condition'));
+      await hop();
+    }
+  };
+  // waitQuiet(): resolves once every short app timer (a debounce, a retry, a floor) this context started has fired AND
+  // every acknowledgement fake-rtdb still owes has been delivered, and nothing new started for two hops in a row —
+  // "the push went out, was acknowledged and everything it set off has settled". Timers asked for longer than
+  // SHORT_TIMER_MS are ignored on purpose (a toast, a long fallback), and so is a write queued by a database that is
+  // offline: it is not in flight, it is waiting for goOnline().
+  const waitQuiet = async (ms) => {
+    const deadline = Date.now() + (ms || WAIT_DEADLINE_MS);
+    let calm = 0;
+    while (calm < 2) {
+      await hop();
+      const busy = [...timerDelays.values()].filter((d) => d <= SHORT_TIMER_MS);
+      const acks = fakeRtdb.inflight();
+      if (busy.length === 0 && acks === 0) calm += 1;
+      else {
+        calm = 0;
+        if (Date.now() > deadline) throw new AssertionError('timed out waiting for ' + busy.length + ' app timer(s) (delays ' + busy.join(', ') + ' ms) and ' + acks + ' database acknowledgement(s) to settle');
+      }
+    }
   };
   const sandbox = {
     console,
+    waitUntil,
+    waitQuiet,
     document: doc,
     localStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
@@ -207,6 +254,15 @@ function makeContext(opts) {
     __domSweep: () => [...byId.values(), ...bySelector.values()]
       .map((e) => ({ kind: 'innerHTML', text: String(e.innerHTML || '') + ' ' + String(e.textContent || '') }))
       .filter((e) => e.text.trim()),
+    // The same sweep keyed by what the page looked the node up with (an id, or a selector), for tests that compare two
+    // pages node for node (preview.test.js: a preview against a real counselor's phone).
+    __domEntries: () => {
+      const out = {};
+      byId.forEach((e, k) => { out['#' + k] = String(e.innerHTML || '') + ' ' + String(e.textContent || ''); });
+      bySelector.forEach((e, k) => { out[k] = String(e.innerHTML || '') + ' ' + String(e.textContent || ''); });
+      return out;
+    },
+    __domHidden: (id) => !!(byId.has(id) && byId.get(id).hidden),
     __docListeners: docListeners,
     __reloads: 0,
     // Cancels every timer this context still has pending. run.js calls it when
@@ -222,9 +278,28 @@ function makeContext(opts) {
   sandbox.globalThis = sandbox;
 
   const ctx = vm.createContext(sandbox);
-  APP_FILES.forEach((f) => {
+  // makeContext({ without: ['jelly-motion.js'] }): a page where one script never loaded.
+  APP_FILES.filter((f) => !(opts && opts.without && opts.without.includes(f))).forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
   });
+  // The schedule oracle (nowBannerHtml) is a test-only script: the page no longer ships the old banner renderer, but the week / seed
+  // tests compare the schedule's data through it. It needs the app's functions, so it loads after them.
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'schedule-oracle.js'), 'utf8'), ctx, { filename: 'tests/schedule-oracle.js' });
+
+  // makeContext({ seeded: true }): a camp whose schedule is already edited here — what the page holds once the owner
+  // has pressed Edit the week here and the first setup snapshot has landed: the seed (through RTDB's canonical form,
+  // as a round trip would leave it) is the setup tree with the switches on, and the catalog's games sit on their
+  // schedule items (A2). Every existing week / push / chat / shell test re-runs against it (run.js, the seeded pass),
+  // which is how the accessors' "on" half is proven to change nothing anyone can see.
+  // makeContext({ seeded: 'all' }): the same, with the four smaller sections (meals, verses, cleanup, electives) on too —
+  // what the page holds once the owner has turned everything on (step 19's switches, pressed at step 20).
+  if (opts && opts.seeded) {
+    vm.runInContext(`
+      setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP${opts.seeded === 'all' ? ", ['schedule', 'meals', 'verses', 'cleanup', 'electives']" : ''}))));
+      setupRev++;
+      setupApplyGameAttachments(state.config, setupGameAttachments(state.config, (dow) => planForDow(dow), CAMP).ops);
+    `, ctx);
+  }
 
   // The function-level half of the sink recorder: wraps the app's own ways of
   // making noise (showToast, maybeNativeNotification, copyTextToClipboard, the

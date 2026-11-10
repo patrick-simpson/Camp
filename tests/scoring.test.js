@@ -247,17 +247,17 @@ test('a negative Hide-and-Seek score ranks last and reaches the medal auto-fill'
 
 // ── A leftover bracket must not keep a non-tournament game "live" ──
 
-test('liveHomeGames only treats a bracket as live for a tournament game', () => {
+test('gameRowStatus only treats a bracket as live for a tournament game', () => {
   freshState();
   const g = state.config.games.find((x) => x.format === 'tournament');
   state.brackets[g.id] = freshBracket();
-  assert.ok(liveHomeGames().some((x) => x.id === g.id), 'a started tournament is live');
+  assert.equal(gameRowStatus(g), 'live', 'a started tournament is live');
 
   // The director switches the game to tally; its bracket stays behind in state.
   const original = g.format;
   g.format = 'tally';
-  assert.notOk(liveHomeGames().some((x) => x.id === g.id), 'the stale bracket no longer pins it to Live now');
-  assert.equal(homeBoardGame(), null, 'nor takes over the home Big Board');
+  assert.equal(gameRowStatus(g), 'todo', 'the stale bracket no longer pins it to Live on the Now card');
   g.format = original;
   delete state.brackets[g.id];
 });
+

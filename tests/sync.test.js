@@ -24,8 +24,8 @@ function useFakeRef(serverValue) {
   lastSyncedTree = null;
   pendingWrites = 0;
   dataEditPending = false;
-  pushTimer = null;
-  pushConfigTimer = null;
+  clearTimeout(pushTimer); pushTimer = null;
+  clearTimeout(pushConfigTimer); pushConfigTimer = null;
   document.activeElement = null;
   return ref;
 }
@@ -238,7 +238,7 @@ test('a view-only save (day tab, theme) is not treated as scoreboard activity', 
   assert.notOk(dataEditPending, 'so it never counts as an edit worth protecting');
   // Its 400ms debounce does briefly hold a snapshot off (any unsent write does),
   // but only until the push fires — and the deferred read is retried, not lost.
-  pushTimer = null;
+  clearTimeout(pushTimer); pushTimer = null;
   assert.ok(canAdoptRemote());
 });
 
@@ -412,10 +412,15 @@ test('a new pairing or mode switch replaces the whole live node', () => {
     'a fresh matchup must not inherit the old one leftover fields');
 });
 
-test('teams are written whole (meta is per field — see sync-merge.test.js)', () => {
+// CHANGED ON PURPOSE in S2b (it used to assert teams are written whole): a rename
+// is one FIELD now. The whole array still goes up when the roster doesn't line up
+// by position — the structural case; teams-sync.test.js has the full matrix.
+test('teams are written per field when they line up, whole when they do not (meta is per field — see sync-merge.test.js)', () => {
   freshState();
   const up = computeSyncUpdates({ teams: [{ id: 't0', name: 'A' }] }, { teams: [{ id: 't0', name: 'B' }] });
-  assert.deepEqual(Object.keys(up), ['teams']);
+  assert.deepEqual(up, { 'teams/0/name': 'B' });
+  const whole = computeSyncUpdates({ teams: [{ id: 't0', name: 'A' }, { id: 't1', name: 'B' }] }, { teams: [{ id: 't1', name: 'B' }, { id: 't0', name: 'A' }] });
+  assert.deepEqual(Object.keys(whole), ['teams'], 'a reorder moves ids between positions, so it is the whole roster');
 });
 
 test('syncedSnapshot covers exactly the synced keys', () => {
@@ -426,9 +431,20 @@ test('syncedSnapshot covers exactly the synced keys', () => {
 test('flushPendingPush sends both the score push AND the week-config push', () => {
   freshState();
   const ref = useFakeRef();
+  // The week config goes up as a TRANSACTION of this phone's unconfirmed ops (config
+  // engine v2, tests/config-sync.test.js) — it needs a confirmed baseline and a real edit.
   const configWrites = [];
-  fbConfigRef = { set: (v) => { configWrites.push(v); return Promise.resolve(); } };
+  const serverConfig = JSON.parse(JSON.stringify(state.config));
+  fbConfigRef = {
+    transaction: (fn) => {
+      const next = fn(JSON.parse(JSON.stringify(serverConfig)));
+      configWrites.push(next);
+      return Promise.resolve({ committed: true, snapshot: { val: () => next } });
+    },
+  };
   configReady = true; // the first config snapshot has landed (tests/config-gate.test.js covers before it)
+  state._cfgBase = cfgCanon(state.config);
+  state.config.games[0].name += ' (edited)';
 
   state.results = { g1: { medals: { gold: 't0' } } };
   schedulePush();
@@ -450,4 +466,23 @@ test('an unchanged state pushes nothing at all', () => {
   lastSyncedTree = syncedSnapshot();
   pushState();
   assert.equal(ref.writes.length, 0);
+});
+
+test('a snapshot applied while another tab shows leaves Now to catch up, but the standings side effects still run', () => {
+  freshState();
+  setMemberRole('editor');
+  useFakeRef();
+  state.ui.tab = 'chat';
+  renderAll();
+  const realStandings = runStandingsSideEffects;
+  let standings = 0;
+  runStandingsSideEffects = () => { standings += 1; };
+  try {
+    applyRemoteState({ teams: state.teams, results: { g1: { medals: { gold: 't0' } } } });
+    renderAll();
+    assert.ok(standings >= 1, 'the change history and point alerts do not wait for the Games tab');
+    assert.ok(shell.dirty.now, 'Now is marked stale, not rendered under the Chat tab');
+    showTab('now');
+    assert.notOk(shell.dirty.now, 'and renders once, when shown');
+  } finally { runStandingsSideEffects = realStandings; state.ui.tab = 'now'; }
 });

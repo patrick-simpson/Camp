@@ -234,7 +234,7 @@ Find the line the status page shows, then do what the right-hand column says.
 | Everything is ✅ but a phone gets nothing | The phone itself isn't set up | On an **iPhone**: it needs iOS 16.4 or newer, and the camp site must be opened from its **Home Screen icon** (Share ⬆️ → **Add to Home Screen**), with notifications allowed. On any phone: open **📲 Phone alerts** in the app and tap **Send me a test**. |
 | Alerts arrive, but some phones only get them a minute or two late on busy moments | Many phones at once — the sender works through them 20 at a time | Normal. Nothing to fix. |
 | One person's older phone stopped getting alerts after they set up several | Each person's **four most recently set-up** phones get alerts; older ones are tidied away within the hour | On that phone: **📲 Phone alerts** → turn them on again. |
-| Someone was mentioned in chat but their phone didn't say "mentioned you" | The sender only treats it as a mention if the message itself contains their name (or first name) or their team's name (or a distinctive word of it, like "Maples") | Nothing to fix — spell the name the way it appears in the Members list. |
+| Someone was mentioned in chat but their phone didn't say "mentioned you" | The sender only treats it as a mention if the message itself contains their name (or first name) or their team's name or short name — and a one-word team name like "Red" or "Maples" only counts when it is typed with a capital ("Red meet at the dock") or followed by "team" ("go red team"), so "a red shirt" pings nobody | Nothing to fix — spell the name the way it appears in the Members list, and capitalise a team's name. |
 | Cloudflare's **Logs** mention "Exceeded CPU" | Runs are doing too much at once | Worker → Settings → Variables and Secrets → **+ Add** → Type **Text**, name `PUSH_BATCH`, value `10` → **Deploy**. |
 
 ---
@@ -268,10 +268,20 @@ Worker does nothing.
   no access, and the Worker uses admin access). `pushServer/vapid` is the
   sender's signing key — **never delete it** casually: every phone would have
   to turn alerts on again. Per-camp data the app reads/writes: `push/`,
-  `pushSchedule`, `pushAlerts`.
+  `pushSchedule`, `pushAlerts`. `pushServer/schedSeen/<camp>` is the sender's
+  memory of what phones were last told about each schedule block (for "the
+  schedule changed" alerts); it tidies itself away a week after camp.
+- **Schedule alerts went live at Step 27 (Sat Nov 7, 2026).** This `worker.js`
+  is deployed as `camp-alerts` with the every-minute timer, `PUSH_SERVICE_URL` in
+  `push.js` is its address and the page's `connect-src` names it, so the app
+  shows "Tell people who follow this" on the schedule item sheet and the rain
+  plan's Done sheet. An older Worker that answers `bad-kind` makes the app hide
+  the tick by itself. The first schedule call for a camp only makes the memory
+  (`schedSeen`) and tells nobody; changes after that are alerted.
 - **Endpoints.** `GET /` status page · `GET /health` (JSON, for the app's
   director status line) · `GET /vapid-key` · `POST /notify` (Firebase ID token
-  required) · `POST /drain` · `POST /resubscribe`. Errors are always
+  required; a chat message, a director alert, a test, or — directors only — a
+  schedule change) · `POST /drain` · `POST /resubscribe`. Errors are always
   `{ ok: false, error, message }` with a plain-English `message`.
 - **Free-plan budget.** Every network call goes through one counter capped at
   45 per run (the plan allows 50), and each run sends at most `PUSH_BATCH`
