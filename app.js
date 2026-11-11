@@ -1545,13 +1545,17 @@ function campNowOverride() {
   const t = m[2].padStart(4, '0');
   return { dow: +m[1], minutes: +t.slice(0, 2) * 60 + +t.slice(2) };
 }
+let _campNowFmt = null;
 function campNow() {
   const over = campNowOverride();
   if (over) return over;
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
-    }).formatToParts(new Date());
+    if (!_campNowFmt) {
+      _campNowFmt = new Intl.DateTimeFormat('en-US', {
+        timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+      });
+    }
+    const parts = _campNowFmt.formatToParts(new Date());
     const get = (type) => (parts.find((p) => p.type === type) || {}).value;
     const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
     const hour = parseInt(get('hour'), 10) % 24; // hour12:false renders midnight as "24"
